@@ -131,6 +131,7 @@ export default function Home() {
   const [timestampStatus, setTimestampStatus] = useState("all");
   const [reportLateQuery, setReportLateQuery] = useState("");
   const [reportLateDept, setReportLateDept] = useState("all");
+  const [selectedReportDept, setSelectedReportDept] = useState("all");
 
   const activeMasterMap = useMemo(
     () =>
@@ -553,8 +554,10 @@ export default function Home() {
             loadReportDashboard={loadReportDashboard}
             query={reportLateQuery}
             reportData={reportData}
+            selectedDept={selectedReportDept}
             setDeptFilter={setReportLateDept}
             setQuery={setReportLateQuery}
+            setSelectedDept={setSelectedReportDept}
           />
         ) : null}
 
@@ -1401,16 +1404,20 @@ function ReportDashboard({
   loadReportDashboard,
   query,
   reportData,
+  selectedDept,
   setDeptFilter,
   setQuery,
+  setSelectedDept,
 }: {
   deptFilter: string;
   isLoadingReport: boolean;
   loadReportDashboard: () => Promise<void>;
   query: string;
   reportData: ReportData | null;
+  selectedDept: string;
   setDeptFilter: (value: string) => void;
   setQuery: (value: string) => void;
+  setSelectedDept: (value: string) => void;
 }) {
   const data = reportData ?? {
     targetDate: "-",
@@ -1423,14 +1430,22 @@ function ReportDashboard({
     records: [],
     timestampRows: [],
   };
-  const lateRate = data.totalEmployees
-    ? ((data.late / data.totalEmployees) * 100).toFixed(1)
+  const scopedRecords = selectedDept === "all"
+    ? data.records
+    : data.records.filter((row) => row.dept === selectedDept);
+  const scopedTotal = scopedRecords.length;
+  const scopedPresent = scopedRecords.filter((row) => row.status === "Present").length;
+  const scopedLate = scopedRecords.filter((row) => row.status === "Late").length;
+  const scopedAbsent = scopedRecords.filter((row) => row.status === "Absent").length;
+  const lateRate = scopedTotal
+    ? ((scopedLate / scopedTotal) * 100).toFixed(1)
     : "0.0";
   const maxDeptTotal = Math.max(...data.deptRows.map((row) => row.total), 1);
-  const presentPercent = data.totalEmployees ? (data.present / data.totalEmployees) * 100 : 0;
-  const latePercent = data.totalEmployees ? (data.late / data.totalEmployees) * 100 : 0;
-  const absentPercent = data.totalEmployees ? (data.absent / data.totalEmployees) * 100 : 0;
+  const presentPercent = scopedTotal ? (scopedPresent / scopedTotal) * 100 : 0;
+  const latePercent = scopedTotal ? (scopedLate / scopedTotal) * 100 : 0;
+  const absentPercent = scopedTotal ? (scopedAbsent / scopedTotal) * 100 : 0;
   const lateDeptOptions = Array.from(new Set(data.lateRows.map((row) => row.dept))).sort();
+  const selectedDeptLabel = selectedDept === "all" ? "ทั้งโรงงาน" : selectedDept;
   const normalizedQuery = query.trim().toLowerCase();
   const filteredLateRows = data.lateRows.filter((row) => {
     const matchesQuery = !normalizedQuery || [
@@ -1441,7 +1456,8 @@ function ReportDashboard({
       row.scanIn,
       row.status,
     ].some((value) => String(value).toLowerCase().includes(normalizedQuery));
-    const matchesDept = deptFilter === "all" || row.dept === deptFilter;
+    const effectiveDept = deptFilter !== "all" ? deptFilter : selectedDept;
+    const matchesDept = effectiveDept === "all" || row.dept === effectiveDept;
     return matchesQuery && matchesDept;
   });
 
@@ -1468,19 +1484,34 @@ function ReportDashboard({
       </div>
 
       <section className="report-kpis">
-        <ReportMetric value={data.totalEmployees} label="จำนวนพนักงานทั้งหมด" />
-        <ReportMetric value={data.present} label="Present" tone="green" />
-        <ReportMetric value={data.late} label="Late" tone="amber" />
-        <ReportMetric value={data.absent} label="Absent" tone="red" />
+        <ReportMetric value={scopedTotal} label={`จำนวนพนักงานทั้งหมด (${selectedDeptLabel})`} />
+        <ReportMetric value={scopedPresent} label="Present" tone="green" />
+        <ReportMetric value={scopedLate} label="Late" tone="amber" />
+        <ReportMetric value={scopedAbsent} label="Absent" tone="red" />
         <ReportMetric value={`${lateRate} %`} label="Late Rate %" />
       </section>
 
       <section className="report-grid">
         <div className="panel report-card">
-          <h3>การเข้างานรายแผนก</h3>
+          <div className="panel-title-row">
+            <h3>การเข้างานรายแผนก</h3>
+            {selectedDept !== "all" ? (
+              <button className="ghost-button" onClick={() => setSelectedDept("all")} type="button">
+                ดูทั้งหมด
+              </button>
+            ) : null}
+          </div>
           <div className="stacked-bars">
             {data.deptRows.map((row) => (
-              <div className="stacked-row" key={row.dept}>
+              <button
+                className={`stacked-row dept-click ${selectedDept === row.dept ? "active" : ""}`}
+                key={row.dept}
+                onClick={() => {
+                  setSelectedDept(row.dept);
+                  setDeptFilter("all");
+                }}
+                type="button"
+              >
                 <span>{row.dept}</span>
                 <div className="stacked-track">
                   <i
@@ -1497,14 +1528,14 @@ function ReportDashboard({
                   />
                 </div>
                 <strong>{row.total}</strong>
-              </div>
+              </button>
             ))}
             {data.deptRows.length === 0 ? <p className="empty-copy">ยังไม่มีข้อมูล report</p> : null}
           </div>
         </div>
 
         <div className="panel report-card center">
-          <h3>การเข้างานทั้งโรงงาน</h3>
+          <h3>การเข้างาน{selectedDept === "all" ? "ทั้งโรงงาน" : selectedDept}</h3>
           <div
             className="report-donut"
             style={{
@@ -1512,14 +1543,14 @@ function ReportDashboard({
             }}
           >
             <div>
-              <strong>{data.totalEmployees}</strong>
+              <strong>{scopedTotal}</strong>
               <span>ทั้งหมด</span>
             </div>
           </div>
           <div className="report-legend">
-            <LegendRow color="green" label="Present" value={String(data.present)} percent={`${presentPercent.toFixed(1)}%`} />
-            <LegendRow color="amber" label="Late" value={String(data.late)} percent={`${latePercent.toFixed(1)}%`} />
-            <LegendRow color="red" label="Absent" value={String(data.absent)} percent={`${absentPercent.toFixed(1)}%`} />
+            <LegendRow color="green" label="Present" value={String(scopedPresent)} percent={`${presentPercent.toFixed(1)}%`} />
+            <LegendRow color="amber" label="Late" value={String(scopedLate)} percent={`${latePercent.toFixed(1)}%`} />
+            <LegendRow color="red" label="Absent" value={String(scopedAbsent)} percent={`${absentPercent.toFixed(1)}%`} />
           </div>
         </div>
 

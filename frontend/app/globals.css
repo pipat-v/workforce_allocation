@@ -773,6 +773,25 @@ button {
   font-size: 12px;
 }
 
+button.stacked-row {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.stacked-row.dept-click {
+  border-radius: 6px;
+  padding: 3px 4px;
+}
+
+.stacked-row.dept-click:hover,
+.stacked-row.dept-click.active {
+  background: #eef8f1;
+}
+
 .stacked-row > span {
   overflow: hidden;
   text-overflow: ellipsis;
