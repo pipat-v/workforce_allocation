@@ -509,7 +509,7 @@ function MasterDataPage({
   setMasterUploads: Dispatch<SetStateAction<MasterUploadState>>;
 }) {
   return (
-    <section className="workspace-grid">
+    <section className="workspace-grid master-page">
       <section className="panel master-management">
         <div className="panel-title-row">
           <div>
