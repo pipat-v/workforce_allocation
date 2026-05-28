@@ -17,7 +17,7 @@ import {
   UploadCloud,
   UsersRound,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { supabase } from "@/lib/supabase";
 
 type AllocationRun = {
@@ -43,16 +43,27 @@ const masterFileTypes = [
   { key: "skill_matrix", label: "Skill Matrix" },
 ] as const;
 
+type TabId =
+  | "dashboard"
+  | "timestamp"
+  | "run"
+  | "results"
+  | "timestamp_dept"
+  | "master"
+  | "skill"
+  | "report"
+  | "setting";
+
 const navItems = [
-  { label: "Dashboard", icon: HomeIcon, active: true },
-  { label: "Upload Timestamp", icon: UploadCloud },
-  { label: "Run Allocation", icon: ClipboardCheck },
-  { label: "ผลลัพธ์การจัดสรร", icon: BriefcaseBusiness },
-  { label: "Timestamp With Dept", icon: Database },
-  { label: "Master Data", icon: FileSpreadsheet },
-  { label: "Skill Matrix", icon: LayoutGrid },
-  { label: "Report & Dashboard", icon: BarChart3 },
-  { label: "Setting", icon: Settings },
+  { id: "dashboard", label: "Dashboard", icon: HomeIcon },
+  { id: "timestamp", label: "Upload Timestamp", icon: UploadCloud },
+  { id: "run", label: "Run Allocation", icon: ClipboardCheck },
+  { id: "results", label: "ผลลัพธ์การจัดสรร", icon: BriefcaseBusiness },
+  { id: "timestamp_dept", label: "Timestamp With Dept", icon: Database },
+  { id: "master", label: "Master Data", icon: FileSpreadsheet },
+  { id: "skill", label: "Skill Matrix", icon: LayoutGrid },
+  { id: "report", label: "Report & Dashboard", icon: BarChart3 },
+  { id: "setting", label: "Setting", icon: Settings },
 ];
 
 const deptRows = [
@@ -77,6 +88,7 @@ type MasterUploadState = Record<MasterFileKey, File | null>;
 const publicWorkspace = "public";
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [masterUploads, setMasterUploads] = useState<MasterUploadState>({
     employee_master: null,
     manpower_plan: null,
@@ -120,6 +132,7 @@ export default function Home() {
     month: "long",
     year: "numeric",
   });
+  const activeNav = navItems.find((item) => item.id === activeTab);
 
   useEffect(() => {
     void loadDashboard();
@@ -288,13 +301,18 @@ export default function Home() {
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
-              <div className={`nav-item ${item.active ? "active" : ""}`} key={item.label}>
+              <button
+                className={`nav-item ${activeTab === item.id ? "active" : ""}`}
+                key={item.label}
+                onClick={() => setActiveTab(item.id as TabId)}
+                type="button"
+              >
                 <Icon size={19} />
                 <span>{item.label}</span>
                 {item.label === "Master Data" || item.label === "Report & Dashboard" ? (
                   <ChevronDown className="nav-chevron" size={15} />
                 ) : null}
-              </div>
+              </button>
             );
           })}
         </nav>
@@ -332,212 +350,335 @@ export default function Home() {
         </header>
 
         <section className="dashboard-head">
-          <h2>Dashboard</h2>
+          <h2>{activeNav?.label ?? "Dashboard"}</h2>
           {(message || error) ? (
             <div className={`toast ${error ? "error" : ""}`}>{error || message}</div>
           ) : null}
         </section>
 
-        <section className="kpi-grid">
-          <KpiCard
-            icon={<UsersRound size={34} />}
-            tone="green"
-            label="พนักงานที่มาทำงาน"
-            value={totalActivePeople.toLocaleString()}
-            unit="คน"
-            note="จากทั้งหมด 1,024 คน"
-            progress={83}
-          />
-          <KpiCard
-            icon={<ClipboardCheck size={34} />}
-            tone="blue"
-            label="จัดสรรสำเร็จ"
-            value={assignedPeople.toLocaleString()}
-            unit="คน"
-            note="94.60% ของผู้ที่มาทำงาน"
-          />
-          <KpiCard
-            icon={<UsersRound size={34} />}
-            tone="amber"
-            label="รอจัดสรร (ไม่มี Skill)"
-            value={noSkillPeople.toLocaleString()}
-            unit="คน"
-            note="5.40% ของผู้ที่มาทำงาน"
-          />
-          <KpiCard
-            icon={<BriefcaseBusiness size={34} />}
-            tone="purple"
-            label="หน่วยงานทั้งหมด"
-            value="12"
-            unit="แผนก"
-            note="สถานีงานทั้งหมด 68 สถานี"
-          />
-        </section>
-
-        <section className="dashboard-grid">
-          <section className="panel allocation-status">
-            <h3>สถานะการจัดสรรในวันนี้</h3>
-            <div className="donut-area">
-              <div className="donut">
-                <div>
-                  <strong>{totalActivePeople}</strong>
-                  <span>พนักงาน</span>
-                </div>
-              </div>
-              <div className="legend">
-                <LegendRow color="green" label="จัดสรรสำเร็จ" value="806" percent="94.60%" />
-                <LegendRow color="amber" label="ไม่มี Skill" value="46" percent="5.40%" />
-                <LegendRow color="gray" label="รอข้อมูล" value="0" percent="0.00%" />
-                <LegendRow color="red" label="ขาดงาน" value="172" percent="16.80%" />
-              </div>
-            </div>
-            <p className="panel-note">หมายเหตุ : ขาดงาน คือ พนักงานที่ไม่พบการสแกนเข้างาน</p>
-          </section>
-
-          <section className="panel dept-panel">
-            <div className="panel-title-row">
-              <h3>การจัดสรรตามหน่วยงาน (Top 5)</h3>
-              <button className="ghost-button" type="button">ทั้งหมด <ChevronDown size={14} /></button>
-            </div>
-            <div className="dept-bars">
-              {deptRows.map((row) => (
-                <div className="dept-row" key={row.dept}>
-                  <span>{row.dept}</span>
-                  <div className="bar-track">
-                    <div className="bar-fill" style={{ width: `${row.percent}%` }} />
-                  </div>
-                  <strong>{row.value}</strong>
-                </div>
-              ))}
-            </div>
-            <button className="link-button" type="button">ดูทั้งหมด</button>
-          </section>
-
-          <section className="panel files-panel">
-            <h3>ไฟล์ล่าสุด</h3>
-            <div className="file-stack">
-              {masterFileTypes.map((item) => {
-                const activeFile = activeMasterMap[item.key];
-                return (
-                  <div className="file-card" key={item.key}>
-                    <FileSpreadsheet size={24} />
-                    <div>
-                      <strong>{activeFile?.original_filename ?? item.label}</strong>
-                      <span>
-                        {activeFile
-                          ? new Date(activeFile.created_at).toLocaleString("th-TH")
-                          : "ยังไม่มีไฟล์"}
-                      </span>
-                    </div>
-                    <Download size={18} />
-                  </div>
-                );
-              })}
-            </div>
-            <button className="link-button" type="button">ดูทั้งหมด</button>
-          </section>
-
-          <section className="panel upload-panel">
-            <h3>Master Data</h3>
-            <div className="compact-upload-list">
-              {masterFileTypes.map((item) => (
-                <label className="upload-row" key={item.key}>
-                  <span>{item.label}</span>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={(event) =>
-                      setMasterUploads((current) => ({
-                        ...current,
-                        [item.key]: event.target.files?.[0] ?? null,
-                      }))
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-            <button
-              className="primary-button"
-              disabled={!canSaveMasters || isSavingMasters}
-              onClick={saveMasterFiles}
-              type="button"
-            >
-              <UploadCloud size={17} />
-              {isSavingMasters ? "Saving" : "Save Master Files"}
-            </button>
-          </section>
-
-          <section className="panel upload-panel">
-            <h3>Upload Timestamp</h3>
-            <label className="upload-row wide">
-              <span>{timestampFile?.name ?? "Timestamp / Time Record"}</span>
-              <input
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={(event) => setTimestampFile(event.target.files?.[0] ?? null)}
+        {activeTab === "dashboard" ? (
+          <>
+            <section className="kpi-grid">
+              <KpiCard
+                icon={<UsersRound size={34} />}
+                tone="green"
+                label="พนักงานที่มาทำงาน"
+                value={totalActivePeople.toLocaleString()}
+                unit="คน"
+                note="จากทั้งหมด 1,024 คน"
+                progress={83}
               />
-            </label>
-            <button
-              className="primary-button"
-              disabled={!timestampFile || !hasAllActiveMasters || isCreatingRun}
-              onClick={createDailyRun}
-              type="button"
-            >
-              <ClipboardCheck size={17} />
-              {isCreatingRun ? "Creating" : "Create Daily Run"}
-            </button>
-            {!hasAllActiveMasters ? (
-              <p className="inline-warning">ต้องมี master files ครบ 3 ไฟล์ก่อน</p>
-            ) : null}
-          </section>
-        </section>
+              <KpiCard
+                icon={<ClipboardCheck size={34} />}
+                tone="blue"
+                label="จัดสรรสำเร็จ"
+                value={assignedPeople.toLocaleString()}
+                unit="คน"
+                note="94.60% ของผู้ที่มาทำงาน"
+              />
+              <KpiCard
+                icon={<UsersRound size={34} />}
+                tone="amber"
+                label="รอจัดสรร (ไม่มี Skill)"
+                value={noSkillPeople.toLocaleString()}
+                unit="คน"
+                note="5.40% ของผู้ที่มาทำงาน"
+              />
+              <KpiCard
+                icon={<BriefcaseBusiness size={34} />}
+                tone="purple"
+                label="หน่วยงานทั้งหมด"
+                value="12"
+                unit="แผนก"
+                note="สถานีงานทั้งหมด 68 สถานี"
+              />
+            </section>
 
-        <section className="panel results-panel">
-          <div className="panel-title-row">
-            <h3>ผลลัพธ์การจัดสรรล่าสุด</h3>
-            <div className="table-actions">
-              <button className="ghost-button" type="button">ดูทั้งหมด</button>
-              <button className="primary-button small" type="button">
-                Export <ChevronDown size={15} />
-              </button>
-            </div>
-          </div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>No.</th>
-                <th>รหัสพนักงาน</th>
-                <th>ชื่อ-สกุล</th>
-                <th>หน่วยงาน</th>
-                <th>ตำแหน่ง</th>
-                <th>สถานีงานที่จัดสรร</th>
-                <th>ระดับ Skill</th>
-                <th>เวลาเข้า</th>
-                <th>สถานะ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {allocationRows.map((row, index) => (
-                <tr key={row[0]}>
-                  <td>{index + 1}</td>
-                  {row.map((cell) => (
-                    <td key={`${row[0]}-${cell}`}>{cell}</td>
-                  ))}
-                  <td><span className="status-pill">จัดสรรสำเร็จ</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="pagination">
-            <span>1-5 จาก {assignedPeople || 806} รายการ</span>
-            <button type="button">1</button>
-            <button type="button">2</button>
-            <button type="button">3</button>
-            <button type="button">...</button>
-          </div>
-        </section>
+            <DashboardPanels
+              activeMasterMap={activeMasterMap}
+              assignedPeople={assignedPeople}
+              totalActivePeople={totalActivePeople}
+            />
+          </>
+        ) : null}
+
+        {activeTab === "master" ? (
+          <MasterDataPage
+            activeMasterMap={activeMasterMap}
+            canSaveMasters={canSaveMasters}
+            isSavingMasters={isSavingMasters}
+            saveMasterFiles={saveMasterFiles}
+            setMasterUploads={setMasterUploads}
+          />
+        ) : null}
+
+        {activeTab === "timestamp" ? (
+          <TimestampPage
+            createDailyRun={createDailyRun}
+            hasAllActiveMasters={hasAllActiveMasters}
+            isCreatingRun={isCreatingRun}
+            setTimestampFile={setTimestampFile}
+            timestampFile={timestampFile}
+          />
+        ) : null}
+
+        {!["dashboard", "master", "timestamp"].includes(activeTab) ? (
+          <section className="panel empty-page">
+            <h3>{activeNav?.label}</h3>
+            <p>แท็บนี้จะเชื่อมข้อมูลจริงในขั้นถัดไป</p>
+          </section>
+        ) : null}
       </section>
     </main>
+  );
+}
+
+function DashboardPanels({
+  activeMasterMap,
+  assignedPeople,
+  totalActivePeople,
+}: {
+  activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
+  assignedPeople: number;
+  totalActivePeople: number;
+}) {
+  return (
+    <>
+      <section className="dashboard-grid">
+        <section className="panel allocation-status">
+          <h3>สถานะการจัดสรรในวันนี้</h3>
+          <div className="donut-area">
+            <div className="donut">
+              <div>
+                <strong>{totalActivePeople}</strong>
+                <span>พนักงาน</span>
+              </div>
+            </div>
+            <div className="legend">
+              <LegendRow color="green" label="จัดสรรสำเร็จ" value="806" percent="94.60%" />
+              <LegendRow color="amber" label="ไม่มี Skill" value="46" percent="5.40%" />
+              <LegendRow color="gray" label="รอข้อมูล" value="0" percent="0.00%" />
+              <LegendRow color="red" label="ขาดงาน" value="172" percent="16.80%" />
+            </div>
+          </div>
+          <p className="panel-note">หมายเหตุ : ขาดงาน คือ พนักงานที่ไม่พบการสแกนเข้างาน</p>
+        </section>
+
+        <section className="panel dept-panel">
+          <div className="panel-title-row">
+            <h3>การจัดสรรตามหน่วยงาน (Top 5)</h3>
+            <button className="ghost-button" type="button">ทั้งหมด <ChevronDown size={14} /></button>
+          </div>
+          <div className="dept-bars">
+            {deptRows.map((row) => (
+              <div className="dept-row" key={row.dept}>
+                <span>{row.dept}</span>
+                <div className="bar-track">
+                  <div className="bar-fill" style={{ width: `${row.percent}%` }} />
+                </div>
+                <strong>{row.value}</strong>
+              </div>
+            ))}
+          </div>
+          <button className="link-button" type="button">ดูทั้งหมด</button>
+        </section>
+
+        <section className="panel files-panel">
+          <h3>ไฟล์ล่าสุด</h3>
+          <LatestMasterFiles activeMasterMap={activeMasterMap} />
+          <button className="link-button" type="button">ดูทั้งหมด</button>
+        </section>
+      </section>
+
+      <ResultsPanel assignedPeople={assignedPeople} />
+    </>
+  );
+}
+
+function MasterDataPage({
+  activeMasterMap,
+  canSaveMasters,
+  isSavingMasters,
+  saveMasterFiles,
+  setMasterUploads,
+}: {
+  activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
+  canSaveMasters: boolean;
+  isSavingMasters: boolean;
+  saveMasterFiles: () => Promise<void>;
+  setMasterUploads: Dispatch<SetStateAction<MasterUploadState>>;
+}) {
+  return (
+    <section className="workspace-grid">
+      <section className="panel master-management">
+        <div className="panel-title-row">
+          <div>
+            <h3>Master Data</h3>
+            <p>อัปโหลดไฟล์หลัก 3 ไฟล์ครั้งเดียว แล้วระบบจะใช้ชุดล่าสุดกับ daily run อัตโนมัติ</p>
+          </div>
+        </div>
+
+        <div className="master-upload-grid">
+          {masterFileTypes.map((item) => {
+            const activeFile = activeMasterMap[item.key];
+            return (
+              <label className="master-upload-card" key={item.key}>
+                <FileSpreadsheet size={28} />
+                <strong>{item.label}</strong>
+                <span>{activeFile?.original_filename ?? "ยังไม่มีไฟล์ active"}</span>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={(event) =>
+                    setMasterUploads((current) => ({
+                      ...current,
+                      [item.key]: event.target.files?.[0] ?? null,
+                    }))
+                  }
+                />
+              </label>
+            );
+          })}
+        </div>
+
+        <button
+          className="primary-button save-master-button"
+          disabled={!canSaveMasters || isSavingMasters}
+          onClick={saveMasterFiles}
+          type="button"
+        >
+          <UploadCloud size={18} />
+          {isSavingMasters ? "Saving" : "Save Master Files"}
+        </button>
+      </section>
+
+      <section className="panel files-panel">
+        <h3>Active Master Files</h3>
+        <LatestMasterFiles activeMasterMap={activeMasterMap} />
+      </section>
+    </section>
+  );
+}
+
+function TimestampPage({
+  createDailyRun,
+  hasAllActiveMasters,
+  isCreatingRun,
+  setTimestampFile,
+  timestampFile,
+}: {
+  createDailyRun: () => Promise<void>;
+  hasAllActiveMasters: boolean;
+  isCreatingRun: boolean;
+  setTimestampFile: (file: File | null) => void;
+  timestampFile: File | null;
+}) {
+  return (
+    <section className="workspace-grid">
+      <section className="panel master-management">
+        <h3>Upload Timestamp</h3>
+        <p>อัปโหลดเฉพาะไฟล์ timestamp รายวัน ระบบจะใช้ master data ชุด active ล่าสุด</p>
+        <label className="master-upload-card single">
+          <UploadCloud size={30} />
+          <strong>{timestampFile?.name ?? "Timestamp / Time Record"}</strong>
+          <span>รองรับ .csv, .xlsx, .xls</span>
+          <input
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            onChange={(event) => setTimestampFile(event.target.files?.[0] ?? null)}
+          />
+        </label>
+        <button
+          className="primary-button save-master-button"
+          disabled={!timestampFile || !hasAllActiveMasters || isCreatingRun}
+          onClick={createDailyRun}
+          type="button"
+        >
+          <ClipboardCheck size={18} />
+          {isCreatingRun ? "Creating" : "Create Daily Run"}
+        </button>
+        {!hasAllActiveMasters ? (
+          <p className="inline-warning">ต้องมี master files ครบ 3 ไฟล์ก่อนสร้าง daily run</p>
+        ) : null}
+      </section>
+    </section>
+  );
+}
+
+function LatestMasterFiles({
+  activeMasterMap,
+}: {
+  activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
+}) {
+  return (
+    <div className="file-stack">
+      {masterFileTypes.map((item) => {
+        const activeFile = activeMasterMap[item.key];
+        return (
+          <div className="file-card" key={item.key}>
+            <FileSpreadsheet size={24} />
+            <div>
+              <strong>{activeFile?.original_filename ?? item.label}</strong>
+              <span>
+                {activeFile
+                  ? new Date(activeFile.created_at).toLocaleString("th-TH")
+                  : "ยังไม่มีไฟล์"}
+              </span>
+            </div>
+            <Download size={18} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ResultsPanel({ assignedPeople }: { assignedPeople: number }) {
+  return (
+    <section className="panel results-panel">
+      <div className="panel-title-row">
+        <h3>ผลลัพธ์การจัดสรรล่าสุด</h3>
+        <div className="table-actions">
+          <button className="ghost-button" type="button">ดูทั้งหมด</button>
+          <button className="primary-button small" type="button">
+            Export <ChevronDown size={15} />
+          </button>
+        </div>
+      </div>
+      <table className="table">
+        <thead>
+          <tr>
+            <th>No.</th>
+            <th>รหัสพนักงาน</th>
+            <th>ชื่อ-สกุล</th>
+            <th>หน่วยงาน</th>
+            <th>ตำแหน่ง</th>
+            <th>สถานีงานที่จัดสรร</th>
+            <th>ระดับ Skill</th>
+            <th>เวลาเข้า</th>
+            <th>สถานะ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {allocationRows.map((row, index) => (
+            <tr key={row[0]}>
+              <td>{index + 1}</td>
+              {row.map((cell) => (
+                <td key={`${row[0]}-${cell}`}>{cell}</td>
+              ))}
+              <td><span className="status-pill">จัดสรรสำเร็จ</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="pagination">
+        <span>1-5 จาก {assignedPeople || 806} รายการ</span>
+        <button type="button">1</button>
+        <button type="button">2</button>
+        <button type="button">3</button>
+        <button type="button">...</button>
+      </div>
+    </section>
   );
 }
 
