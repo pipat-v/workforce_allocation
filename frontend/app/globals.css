@@ -1003,6 +1003,29 @@ button.stacked-row {
   font-weight: 700;
 }
 
+.sort-button {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: inherit;
+  text-align: left;
+}
+
+.sort-button span {
+  color: #708090;
+  font-size: 11px;
+}
+
+.sort-button.active span {
+  color: #005b43;
+}
+
 .table td {
   max-width: 240px;
   overflow: hidden;
