@@ -24,6 +24,17 @@ create table if not exists public.allocation_runs (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.master_data_files (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  file_type text not null check (file_type in ('employee_master', 'manpower_plan', 'skill_matrix')),
+  file_path text not null,
+  original_filename text,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.allocation_results (
   id bigint generated always as identity primary key,
   run_id uuid not null references public.allocation_runs(id) on delete cascade,
@@ -62,6 +73,7 @@ create table if not exists public.gap_summaries (
 
 alter table public.profiles enable row level security;
 alter table public.allocation_runs enable row level security;
+alter table public.master_data_files enable row level security;
 alter table public.allocation_results enable row level security;
 alter table public.gap_summaries enable row level security;
 
@@ -75,6 +87,11 @@ using (auth.uid() = id);
 
 create policy "runs_owner_all"
 on public.allocation_runs for all
+using (auth.uid() = owner_id)
+with check (auth.uid() = owner_id);
+
+create policy "master_files_owner_all"
+on public.master_data_files for all
 using (auth.uid() = owner_id)
 with check (auth.uid() = owner_id);
 
@@ -122,10 +139,20 @@ with check (
   and auth.uid()::text = (storage.foldername(name))[1]
 );
 
+create policy "input_files_owner_update"
+on storage.objects for update
+using (
+  bucket_id = 'workforce-inputs'
+  and auth.uid()::text = (storage.foldername(name))[1]
+)
+with check (
+  bucket_id = 'workforce-inputs'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
 create policy "output_files_owner_select"
 on storage.objects for select
 using (
   bucket_id = 'workforce-outputs'
   and auth.uid()::text = (storage.foldername(name))[1]
 );
-

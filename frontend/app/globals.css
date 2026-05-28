@@ -110,6 +110,40 @@ input {
   color: var(--muted);
 }
 
+.master-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.master-row {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  background: #fbfcfd;
+}
+
+.master-row strong,
+.master-row span {
+  display: block;
+}
+
+.master-row strong {
+  font-size: 14px;
+}
+
+.master-row span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .file-input {
   width: 100%;
   min-height: 42px;
@@ -192,4 +226,3 @@ input {
     grid-template-columns: 1fr;
   }
 }
-
