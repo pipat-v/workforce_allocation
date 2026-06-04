@@ -1,17 +1,20 @@
 :root {
-  --bg: #f6f8fb;
+  --bg: #f5f7fb;
   --panel: #ffffff;
-  --line: #dfe5ee;
-  --text: #10251d;
-  --muted: #667381;
-  --green: #07863c;
-  --green-dark: #004734;
-  --green-deep: #003d31;
-  --blue: #1769c2;
-  --amber: #d99000;
-  --purple: #6d45c6;
-  --red: #e03a3a;
-  --shadow: 0 12px 28px rgba(13, 35, 47, 0.07);
+  --line: #dde4ee;
+  --text: #142033;
+  --muted: #64748b;
+  --green: #10b981;
+  --green-dark: #047857;
+  --green-deep: #064e3b;
+  --blue: #2563eb;
+  --amber: #d97706;
+  --purple: #7c3aed;
+  --red: #dc2626;
+  --slate: #111827;
+  --slate-soft: #1f2937;
+  --accent: #10b981;
+  --shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
 }
 
 * {
@@ -53,8 +56,8 @@ button {
   gap: 24px;
   padding: 18px 16px;
   background:
-    radial-gradient(circle at 90% 10%, rgba(51, 176, 108, 0.32), transparent 28%),
-    linear-gradient(160deg, #00623f 0%, #004333 48%, #00372e 100%);
+    radial-gradient(circle at 90% 8%, rgba(16, 185, 129, 0.2), transparent 30%),
+    linear-gradient(165deg, #111827 0%, #172033 52%, #0f172a 100%);
   color: #ffffff;
 }
 
@@ -101,9 +104,10 @@ button {
 }
 
 .nav-item.active {
-  background: rgba(49, 177, 91, 0.52);
+  background: rgba(16, 185, 129, 0.18);
   color: #ffffff;
   font-weight: 700;
+  box-shadow: inset 3px 0 0 #10b981;
 }
 
 .nav-chevron {
@@ -112,7 +116,7 @@ button {
 
 .logout {
   margin-top: auto;
-  background: rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .main {
@@ -133,12 +137,12 @@ button {
   margin: 0;
   font-size: 28px;
   line-height: 1.15;
-  color: #083d2e;
+  color: #0f172a;
 }
 
 .subtitle {
   margin: 5px 0 0;
-  color: #223429;
+  color: #475569;
   font-size: 15px;
 }
 
@@ -184,7 +188,7 @@ button {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: linear-gradient(135deg, #98c0ff, #467ddd);
+  background: linear-gradient(135deg, #60a5fa, #2563eb);
   color: #ffffff;
   font-weight: 800;
 }
@@ -205,8 +209,8 @@ button {
 .toast {
   border-radius: 8px;
   padding: 10px 12px;
-  background: #eaf8ef;
-  color: #0a6b32;
+  background: #ecfdf5;
+  color: #047857;
   font-size: 14px;
 }
 
@@ -247,28 +251,28 @@ button {
 }
 
 .kpi-icon.green {
-  color: #1e9f4f;
-  background: #e3f4e8;
+  color: #059669;
+  background: #d1fae5;
 }
 
 .kpi-icon.blue {
   color: var(--blue);
-  background: #e4efff;
+  background: #dbeafe;
 }
 
 .kpi-icon.amber {
   color: var(--amber);
-  background: #fff2c9;
+  background: #fef3c7;
 }
 
 .kpi-icon.purple {
   color: var(--purple);
-  background: #eee5ff;
+  background: #ede9fe;
 }
 
 .kpi-body span,
 .kpi-body p {
-  color: #25372c;
+  color: #334155;
   font-size: 14px;
 }
 
@@ -325,20 +329,20 @@ button {
   width: 100%;
   max-width: 150px;
   border-radius: 999px;
-  background: #e1e5e9;
+  background: #e2e8f0;
 }
 
 .progress-line i {
   height: 100%;
   border-radius: inherit;
-  background: #2fab58;
+  background: linear-gradient(90deg, #10b981, #34d399);
 }
 
 .progress-line em {
   position: absolute;
   left: calc(100% + 12px);
   top: -3px;
-  color: #111;
+  color: #0f172a;
   font-size: 12px;
   font-style: normal;
 }
@@ -377,7 +381,7 @@ button {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: conic-gradient(#2fad55 0 78%, #ffc400 78% 84%, #d1d6dc 84% 86%, #2fad55 86% 100%);
+  background: conic-gradient(#10b981 0 78%, #f59e0b 78% 84%, #cbd5e1 84% 86%, #10b981 86% 100%);
 }
 
 .donut > div {
@@ -437,7 +441,7 @@ button {
 }
 
 .legend-row em {
-  color: #101010;
+  color: #0f172a;
   font-style: normal;
 }
 
@@ -456,15 +460,15 @@ button {
 }
 
 .dot.green {
-  background: #2fad55;
+  background: #10b981;
 }
 
 .dot.amber {
-  background: #ffc400;
+  background: #f59e0b;
 }
 
 .dot.gray {
-  background: #aeb5bc;
+  background: #94a3b8;
 }
 
 .dot.red {
@@ -498,12 +502,12 @@ button {
 .ghost-button {
   border: 1px solid var(--line);
   background: #ffffff;
-  color: #173027;
+  color: #1e293b;
 }
 
 .primary-button {
   border: 0;
-  background: linear-gradient(135deg, #07844c, #005b43);
+  background: linear-gradient(135deg, #10b981, #047857);
   color: #ffffff;
 }
 
@@ -534,20 +538,20 @@ button {
   height: 10px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e6e8ea;
+  background: #e2e8f0;
 }
 
 .bar-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #2fad55, #36b76a);
+  background: linear-gradient(90deg, #10b981, #38bdf8);
 }
 
 .link-button {
   margin-top: 20px;
   border: 0;
   background: transparent;
-  color: #007244;
+  color: #047857;
   font-weight: 700;
 }
 
@@ -805,17 +809,17 @@ button {
 
 .report-metric.green strong,
 .report-metric.green span {
-  color: #58991f;
+  color: #059669;
 }
 
 .report-metric.amber strong,
 .report-metric.amber span {
-  color: #ef9b14;
+  color: #d97706;
 }
 
 .report-metric.red strong,
 .report-metric.red span {
-  color: #cc1f1f;
+  color: #dc2626;
 }
 
 .report-grid {
@@ -862,7 +866,7 @@ button.stacked-row {
 
 .stacked-row.dept-click:hover,
 .stacked-row.dept-click.active {
-  background: #eef8f1;
+  background: #f0fdfa;
 }
 
 .stacked-row > span {
@@ -875,7 +879,7 @@ button.stacked-row {
   height: 28px;
   display: flex;
   overflow: hidden;
-  background: #eef0f2;
+  background: #e2e8f0;
 }
 
 .stacked-track i {
@@ -883,15 +887,15 @@ button.stacked-row {
 }
 
 .stacked-track .present {
-  background: #58991f;
+  background: #10b981;
 }
 
 .stacked-track .late {
-  background: #f4a21d;
+  background: #f59e0b;
 }
 
 .stacked-track .absent {
-  background: #cc1f1f;
+  background: #dc2626;
 }
 
 .report-card.center {
@@ -1062,8 +1066,8 @@ button.stacked-row {
   width: fit-content;
   border-radius: 999px;
   padding: 6px 12px;
-  background: #eaf8ef;
-  color: #08733f;
+  background: #ecfdf5;
+  color: #047857;
 }
 
 .table-count {
@@ -1141,8 +1145,8 @@ button.stacked-row {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f7f9fb;
-  color: #17261f;
+  background: #f8fafc;
+  color: #1e293b;
   font-weight: 700;
 }
 
@@ -1161,12 +1165,12 @@ button.stacked-row {
 }
 
 .sort-button span {
-  color: #708090;
+  color: #94a3b8;
   font-size: 11px;
 }
 
 .sort-button.active span {
-  color: #005b43;
+  color: #047857;
 }
 
 .table td {
@@ -1181,25 +1185,25 @@ button.stacked-row {
   min-height: 26px;
   border-radius: 999px;
   padding: 0 10px;
-  background: #dff3e5;
-  color: #09843e;
+  background: #d1fae5;
+  color: #047857;
   font-size: 12px;
   font-weight: 700;
 }
 
 .status-pill.late {
-  background: #fff0d7;
-  color: #b76c00;
+  background: #fef3c7;
+  color: #b45309;
 }
 
 .status-pill.absent {
-  background: #ffe0e0;
-  color: #b32626;
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .status-pill.present {
-  background: #dff3e5;
-  color: #09843e;
+  background: #d1fae5;
+  color: #047857;
 }
 
 .pagination {
@@ -1221,7 +1225,7 @@ button.stacked-row {
 }
 
 .pagination button.active {
-  background: #005b43;
+  background: #0f172a;
   color: #ffffff;
 }
 

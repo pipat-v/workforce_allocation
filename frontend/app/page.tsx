@@ -2048,7 +2048,7 @@ function ReportDashboard({
     .map(([dept, count]) => ({ dept, count }))
     .sort((a, b) => b.count - a.count);
   const lateDeptTotal = Math.max(lateDeptRows.reduce((sum, row) => sum + row.count, 0), 1);
-  const pieColors = ["#238ff0", "#2528aa", "#14a35b", "#f4a21d", "#c91d1d", "#7a57d1"];
+  const pieColors = ["#2563eb", "#0f172a", "#10b981", "#f59e0b", "#dc2626", "#7c3aed"];
   let pieCursor = 0;
   const lateDeptPie = lateDeptRows.length
     ? `conic-gradient(${lateDeptRows.map((row, index) => {
@@ -2184,7 +2184,7 @@ function ReportDashboard({
             <div
               className="report-donut compact"
               style={{
-                background: `conic-gradient(#58991f 0 ${presentPercent}%, #f4a21d ${presentPercent}% ${presentPercent + latePercent}%, #cc1f1f ${presentPercent + latePercent}% 100%)`,
+                background: `conic-gradient(#10b981 0 ${presentPercent}%, #f59e0b ${presentPercent}% ${presentPercent + latePercent}%, #dc2626 ${presentPercent + latePercent}% 100%)`,
               }}
             >
               <div>
