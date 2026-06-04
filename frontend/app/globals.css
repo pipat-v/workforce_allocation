@@ -689,6 +689,41 @@ button {
   min-width: 190px;
 }
 
+.dayoff-editor-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.dayoff-editor-panel .primary-button {
+  width: fit-content;
+}
+
+.dayoff-editor-filters {
+  grid-template-columns: minmax(260px, 1fr) auto;
+  align-items: center;
+}
+
+.dayoff-editor-filters span {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.dayoff-editor-table {
+  max-height: 520px;
+  overflow: auto;
+}
+
+.dayoff-editor-table select {
+  width: 100%;
+  min-width: 96px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #ffffff;
+}
+
 .empty-page {
   min-height: 220px;
 }

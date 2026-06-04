@@ -38,6 +38,15 @@ type MasterFile = {
   created_at: string;
 };
 
+type DayoffShiftEditorRow = {
+  id: string;
+  empId: string;
+  name: string;
+  dayoff: string;
+  shift: string;
+  raw: Record<string, unknown>;
+};
+
 type AttendanceRecord = {
   empId: string;
   name: string;
@@ -307,6 +316,66 @@ export default function Home() {
     });
     setMessage("บันทึก master files แล้ว");
     setIsSavingMasters(false);
+    await loadActiveMasters();
+  }
+
+  async function saveDayoffShiftRows(rows: DayoffShiftEditorRow[]) {
+    setError("");
+    setMessage("");
+
+    const fileId = crypto.randomUUID();
+    const path = `${publicWorkspace}/masters/dayoff_shift/${fileId}.xlsx`;
+    const workbookRows = rows.map((row) => ({
+      ...row.raw,
+      "User ID (Job Information)": row.empId,
+      "ชื่อ นามสกุล": row.name,
+      "วันหยุด\nประจำสัปดาห์": row.dayoff,
+      "อยู่กะไหน": row.shift,
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(workbookRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Dayoffandshift");
+    const output = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const file = new Blob([output], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    const { error: uploadError } = await supabase.storage
+      .from("workforce-inputs")
+      .upload(path, file, { upsert: true });
+
+    if (uploadError) {
+      setError(uploadError.message);
+      return;
+    }
+
+    const { error: deactivateError } = await supabase
+      .from("master_data_files")
+      .update({ is_active: false })
+      .is("owner_id", null)
+      .eq("file_type", "dayoff_shift");
+
+    if (deactivateError) {
+      setError(deactivateError.message);
+      return;
+    }
+
+    const { error: insertError } = await supabase
+      .from("master_data_files")
+      .insert({
+        owner_id: null,
+        file_type: "dayoff_shift",
+        file_path: path,
+        original_filename: "Dayoffandshift-edited.xlsx",
+        is_active: true,
+      });
+
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+
+    setMessage("บันทึก Dayoff & Shift master แล้ว");
     await loadActiveMasters();
   }
 
@@ -591,6 +660,7 @@ export default function Home() {
             activeMasterMap={activeMasterMap}
             canSaveMasters={canSaveMasters}
             isSavingMasters={isSavingMasters}
+            saveDayoffShiftRows={saveDayoffShiftRows}
             saveMasterFiles={saveMasterFiles}
             setMasterUploads={setMasterUploads}
           />
@@ -883,6 +953,21 @@ function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
     });
   }
   return map;
+}
+
+function toDayoffShiftEditorRow(row: Record<string, unknown>, index: number): DayoffShiftEditorRow {
+  const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+  const firstName = String(row["First Name (Local)"] ?? "").trim();
+  const lastName = String(row["Last Name (Local)"] ?? "").trim();
+  const fallbackName = String(row["ชื่อ นามสกุล"] ?? row["Employee Name"] ?? row["Name"] ?? "").trim();
+  return {
+    id: `${empId || "row"}-${index}`,
+    empId,
+    name: `${firstName} ${lastName}`.trim() || fallbackName || empId,
+    dayoff: String(row["วันหยุด\nประจำสัปดาห์"] ?? row["วันหยุดประจำสัปดาห์"] ?? row["dayoff"] ?? "").trim(),
+    shift: String(row["อยู่กะไหน"] ?? row["shift"] ?? row["กะ"] ?? "").trim(),
+    raw: row,
+  };
 }
 
 function makeDeptShiftKey(dept: string, shift: string) {
@@ -1193,12 +1278,14 @@ function MasterDataPage({
   activeMasterMap,
   canSaveMasters,
   isSavingMasters,
+  saveDayoffShiftRows,
   saveMasterFiles,
   setMasterUploads,
 }: {
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   canSaveMasters: boolean;
   isSavingMasters: boolean;
+  saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
   saveMasterFiles: () => Promise<void>;
   setMasterUploads: Dispatch<SetStateAction<MasterUploadState>>;
 }) {
@@ -1208,7 +1295,7 @@ function MasterDataPage({
         <div className="panel-title-row">
           <div>
             <h3>Master Data</h3>
-            <p>อัปโหลดไฟล์หลัก 3 ไฟล์ครั้งเดียว แล้วระบบจะใช้ชุดล่าสุดกับ daily run อัตโนมัติ</p>
+            <p>อัปโหลดไฟล์หลัก 4 ไฟล์ครั้งเดียว แล้วระบบจะใช้ชุดล่าสุดกับ daily run อัตโนมัติ</p>
           </div>
         </div>
 
@@ -1250,6 +1337,179 @@ function MasterDataPage({
         <h3>Active Master Files</h3>
         <LatestMasterFiles activeMasterMap={activeMasterMap} />
       </section>
+
+      <DayoffShiftEditor
+        activeFile={activeMasterMap.dayoff_shift}
+        saveDayoffShiftRows={saveDayoffShiftRows}
+      />
+    </section>
+  );
+}
+
+function DayoffShiftEditor({
+  activeFile,
+  saveDayoffShiftRows,
+}: {
+  activeFile?: MasterFile;
+  saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
+}) {
+  const [rows, setRows] = useState<DayoffShiftEditorRow[]>([]);
+  const [query, setQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const dayoffOptions = ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา", "พระ"];
+  const shiftOptions = Array.from(new Set([
+    "กะ1",
+    "กะ2",
+    "กะ3",
+    ...rows.map((row) => row.shift).filter(Boolean),
+  ]));
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRows = rows.filter((row) => {
+    if (!normalizedQuery) return true;
+    return [row.empId, row.name, row.dayoff, row.shift]
+      .some((value) => value.toLowerCase().includes(normalizedQuery));
+  });
+
+  useEffect(() => {
+    if (!activeFile?.file_path) {
+      setRows([]);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoading(true);
+    downloadSheetRows(activeFile.file_path)
+      .then((sourceRows) => {
+        if (!isMounted) return;
+        setRows(sourceRows.map(toDayoffShiftEditorRow));
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setRows([]);
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeFile?.file_path]);
+
+  function updateRow(id: string, field: "dayoff" | "shift", value: string) {
+    setRows((current) =>
+      current.map((row) => (
+        row.id === id
+          ? {
+              ...row,
+              [field]: value,
+              raw: {
+                ...row.raw,
+                [field === "dayoff" ? "วันหยุด\nประจำสัปดาห์" : "อยู่กะไหน"]: value,
+              },
+            }
+          : row
+      )),
+    );
+  }
+
+  async function handleSave() {
+    setIsSaving(true);
+    try {
+      await saveDayoffShiftRows(rows);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <section className="panel dayoff-editor-panel">
+      <div className="panel-title-row">
+        <div>
+          <h3>แก้ไข Dayoff & Shift</h3>
+          <p>ปรับวันหยุดประจำสัปดาห์และกะทำงานรายคน แล้วบันทึกเป็น master active ชุดใหม่</p>
+        </div>
+        <button
+          className="primary-button"
+          disabled={!rows.length || isSaving}
+          onClick={handleSave}
+          type="button"
+        >
+          <UploadCloud size={17} />
+          {isSaving ? "Saving" : "Save Changes"}
+        </button>
+      </div>
+
+      <div className="table-filters dayoff-editor-filters">
+        <input
+          aria-label="ค้นหา dayoff shift"
+          placeholder="ค้นหา รหัส ชื่อ วันหยุด กะ"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <span>{filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} คน</span>
+      </div>
+
+      <div className="dayoff-editor-table">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Emp ID</th>
+              <th>ชื่อ</th>
+              <th>Dayoff</th>
+              <th>Shift</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRows.map((row) => (
+              <tr key={row.id}>
+                <td>{row.empId}</td>
+                <td>{row.name}</td>
+                <td>
+                  <select
+                    value={row.dayoff}
+                    onChange={(event) => updateRow(row.id, "dayoff", event.target.value)}
+                  >
+                    <option value="">-</option>
+                    {dayoffOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  <select
+                    value={row.shift}
+                    onChange={(event) => updateRow(row.id, "shift", event.target.value)}
+                  >
+                    <option value="">-</option>
+                    {shiftOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </td>
+              </tr>
+            ))}
+            {!activeFile ? (
+              <tr>
+                <td colSpan={4}>อัปโหลด Dayoff & Shift master ก่อน จึงจะแก้ไขในหน้านี้ได้</td>
+              </tr>
+            ) : null}
+            {activeFile && isLoading ? (
+              <tr>
+                <td colSpan={4}>Loading Dayoff & Shift...</td>
+              </tr>
+            ) : null}
+            {activeFile && !isLoading && filteredRows.length === 0 ? (
+              <tr>
+                <td colSpan={4}>ไม่พบข้อมูลที่ค้นหา</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -1292,7 +1552,7 @@ function TimestampPage({
           {isCreatingRun ? "Creating" : "Create Daily Run"}
         </button>
         {!hasAllActiveMasters ? (
-          <p className="inline-warning">ต้องมี master files ครบ 3 ไฟล์ก่อนสร้าง daily run</p>
+          <p className="inline-warning">ต้องมี master files ครบ 4 ไฟล์ก่อนสร้าง daily run</p>
         ) : null}
       </section>
     </section>
@@ -1339,7 +1599,7 @@ function RunAllocationPage({
           {isCreatingRun ? "Creating" : "Create Allocation Run"}
         </button>
         {!hasAllActiveMasters ? (
-          <p className="inline-warning">ต้องมี master files ครบ 3 ไฟล์ก่อน</p>
+          <p className="inline-warning">ต้องมี master files ครบ 4 ไฟล์ก่อน</p>
         ) : null}
       </section>
 
