@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
+import { IBM_Plex_Sans_Thai } from "next/font/google";
 import "./globals.css";
+
+const ibmPlexSansThai = IBM_Plex_Sans_Thai({
+  subsets: ["latin", "thai"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-sans",
+});
 
 export const metadata: Metadata = {
   title: "Workforce Allocation",
@@ -13,8 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="th">
-      <body>{children}</body>
+      <body className={ibmPlexSansThai.variable}>{children}</body>
     </html>
   );
 }
-
