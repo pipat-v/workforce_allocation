@@ -68,6 +68,7 @@ const masterFileTypes = [
   { key: "employee_master", label: "รายชื่อพนักงาน" },
   { key: "manpower_plan", label: "Manpower Plan" },
   { key: "skill_matrix", label: "Skill Matrix" },
+  { key: "dayoff_shift", label: "Dayoff & Shift" },
 ] as const;
 
 type TabId =
@@ -126,6 +127,7 @@ export default function Home() {
     employee_master: null,
     manpower_plan: null,
     skill_matrix: null,
+    dayoff_shift: null,
   });
   const [activeMasters, setActiveMasters] = useState<MasterFile[]>([]);
   const [timestampFile, setTimestampFile] = useState<File | null>(null);
@@ -177,6 +179,7 @@ export default function Home() {
       ? [
           activeMasterMap.employee_master.file_path,
           activeMasterMap.manpower_plan?.file_path,
+          activeMasterMap.dayoff_shift?.file_path,
           latestRun.scan_file_path,
         ].filter(Boolean).join("|")
       : "";
@@ -300,6 +303,7 @@ export default function Home() {
       employee_master: null,
       manpower_plan: null,
       skill_matrix: null,
+      dayoff_shift: null,
     });
     setMessage("บันทึก master files แล้ว");
     setIsSavingMasters(false);
@@ -343,6 +347,7 @@ export default function Home() {
       master_file_path: activeMasterMap.employee_master?.file_path,
       manpower_file_path: activeMasterMap.manpower_plan?.file_path,
       skill_file_path: activeMasterMap.skill_matrix?.file_path,
+      dayoff_shift_file_path: activeMasterMap.dayoff_shift?.file_path,
     });
 
     if (insertError) {
@@ -372,15 +377,18 @@ export default function Home() {
         return;
       }
 
-      const [employeeRows, scanRows, manpowerRows] = await Promise.all([
+      const [employeeRows, scanRows, manpowerRows, dayoffShiftRows] = await Promise.all([
         downloadSheetRows(employeeMaster.file_path),
         downloadSheetRows(latestRun.scan_file_path),
         activeMasterMap.manpower_plan
           ? downloadSheetRows(activeMasterMap.manpower_plan.file_path)
           : Promise.resolve([]),
+        activeMasterMap.dayoff_shift
+          ? downloadSheetRows(activeMasterMap.dayoff_shift.file_path)
+          : Promise.resolve([]),
       ]);
 
-      const latestReport = buildReportData(employeeRows, scanRows, manpowerRows);
+      const latestReport = buildReportData(employeeRows, scanRows, manpowerRows, dayoffShiftRows);
       try {
         await saveTimestampWithDeptRows(latestRun.id, latestReport);
       } catch (saveError) {
@@ -405,7 +413,7 @@ export default function Home() {
       );
 
       for (const rows of monthlyScanRows) {
-        const dayReport = buildReportData(employeeRows, rows, manpowerRows);
+        const dayReport = buildReportData(employeeRows, rows, manpowerRows, dayoffShiftRows);
         if (dayReport.targetMonthKey !== latestReport.targetMonthKey) continue;
 
         for (const lateRow of dayReport.lateRows) {
@@ -420,6 +428,7 @@ export default function Home() {
       setLoadedReportKey([
         employeeMaster.file_path,
         activeMasterMap.manpower_plan?.file_path,
+        activeMasterMap.dayoff_shift?.file_path,
         latestRun.scan_file_path,
       ].filter(Boolean).join("|"));
     } catch (reportError) {
@@ -716,6 +725,7 @@ function buildReportData(
   employeeRows: Record<string, unknown>[],
   scanRows: Record<string, unknown>[],
   manpowerRows: Record<string, unknown>[],
+  dayoffShiftRows: Record<string, unknown>[] = [],
 ): ReportData {
   const employees = employeeRows.map((row) => {
     const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
@@ -731,6 +741,7 @@ function buildReportData(
   }).filter((row) => row.empId);
 
   const employeeMap = new Map(employees.map((employee) => [employee.empId, employee]));
+  const dayoffShiftMap = buildDayoffShiftMap(dayoffShiftRows);
   const deptShiftStart = buildDeptShiftStart(manpowerRows);
   const scanByEmp = new Map<string, { name: string; times: Date[] }>();
 
@@ -771,24 +782,34 @@ function buildReportData(
         position: "พนักงาน",
       }));
 
-  const records: AttendanceRecord[] = baseEmployees.map((employee) => {
+  const records: AttendanceRecord[] = baseEmployees.flatMap((employee) => {
+    const dayoffShift = dayoffShiftMap.get(employee.empId);
     const scans = scanByEmp.get(employee.empId)?.times ?? [];
     const scanIn = scans.sort((a, b) => a.getTime() - b.getTime())[0];
-    const shiftStart = deptShiftStart.get(employee.dept) ?? "07:00";
+    const shift = normalizeShiftLabel(dayoffShift?.shift) || "กะ 1";
+    const shiftStart =
+      deptShiftStart.get(makeDeptShiftKey(employee.dept, shift)) ??
+      deptShiftStart.get(makeDeptShiftKey(employee.dept, "")) ??
+      "07:00";
+    const isScheduledOff = latestTimestamp
+      ? isEmployeeDayOff(dayoffShift?.dayoff, latestTimestamp)
+      : false;
+    if (!scanIn && isScheduledOff) return [];
+
     const minutesLate = scanIn ? Math.max(0, minutesBetween(shiftStart, scanIn)) : 0;
     const status = !scanIn ? "Absent" : minutesLate > 5 ? "Late" : "Present";
 
-    return {
+    return [{
       empId: employee.empId,
       name: employee.name,
       dept: employee.dept,
       position: employee.position,
-      shift: "กะ 1",
+      shift,
       shiftStart,
       scanIn: scanIn ? toTimeText(scanIn) : "-",
       status,
       minutesLate,
-    };
+    }];
   });
 
   const deptMap = new Map<string, { dept: string; present: number; late: number; absent: number; total: number }>();
@@ -831,12 +852,91 @@ function buildDeptShiftStart(rows: Record<string, unknown>[]) {
   const map = new Map<string, string>();
   for (const row of rows) {
     const dept = String(row["หน่วยงาน"] ?? row["dept"] ?? "").trim();
+    const shift = normalizeShiftLabel(row["กะ"] ?? row["shift"] ?? row["อยู่กะไหน"]);
     const shiftStart = normalizeTimeText(row["เวลาเข้า"] ?? row["shift_start"]);
-    if (dept && shiftStart && !map.has(dept)) {
-      map.set(dept, shiftStart);
+    if (!dept || !shiftStart) continue;
+
+    const defaultKey = makeDeptShiftKey(dept, "");
+    if (!map.has(defaultKey)) {
+      map.set(defaultKey, shiftStart);
+    }
+
+    if (shift) {
+      const shiftKey = makeDeptShiftKey(dept, shift);
+      if (!map.has(shiftKey)) {
+        map.set(shiftKey, shiftStart);
+      }
     }
   }
   return map;
+}
+
+function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
+  const map = new Map<string, { dayoff: string; shift: string }>();
+  for (const row of rows) {
+    const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+    if (!empId) continue;
+
+    map.set(empId, {
+      dayoff: String(row["วันหยุด\nประจำสัปดาห์"] ?? row["วันหยุดประจำสัปดาห์"] ?? row["dayoff"] ?? "").trim(),
+      shift: String(row["อยู่กะไหน"] ?? row["shift"] ?? row["กะ"] ?? "").trim(),
+    });
+  }
+  return map;
+}
+
+function makeDeptShiftKey(dept: string, shift: string) {
+  return `${dept.trim()}|${normalizeShiftKey(shift)}`;
+}
+
+function normalizeShiftLabel(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+
+  const match = text.match(/กะ\s*(\d+)/);
+  return match ? `กะ ${match[1]}` : text;
+}
+
+function normalizeShiftKey(value: unknown) {
+  return normalizeShiftLabel(value).replace(/\s+/g, "");
+}
+
+function isEmployeeDayOff(dayoff: string | undefined, targetDate: Date) {
+  const value = String(dayoff ?? "").trim();
+  if (!value) return false;
+  if (value === "พระ") return isBuddhistHolyDay(targetDate);
+  return value === getThaiWeekdayCode(targetDate);
+}
+
+function getThaiWeekdayCode(date: Date) {
+  return ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"][date.getDay()];
+}
+
+const buddhistHolyDays2026 = new Set([
+  "2026-01-03", "2026-01-11", "2026-01-18", "2026-01-26",
+  "2026-02-02", "2026-02-10", "2026-02-16", "2026-02-24",
+  "2026-03-03", "2026-03-11", "2026-03-18", "2026-03-26",
+  "2026-04-02", "2026-04-10", "2026-04-16", "2026-04-24",
+  "2026-05-01", "2026-05-09", "2026-05-16", "2026-05-24", "2026-05-31",
+  "2026-06-08", "2026-06-14", "2026-06-22", "2026-06-29",
+  "2026-07-07", "2026-07-14", "2026-07-22", "2026-07-29", "2026-07-30",
+  "2026-08-06", "2026-08-13", "2026-08-21", "2026-08-28",
+  "2026-09-05", "2026-09-11", "2026-09-19", "2026-09-26",
+  "2026-10-04", "2026-10-11", "2026-10-19", "2026-10-26",
+  "2026-11-03", "2026-11-09", "2026-11-17", "2026-11-24",
+  "2026-12-02", "2026-12-09", "2026-12-17", "2026-12-24",
+]);
+
+function isBuddhistHolyDay(date: Date) {
+  return buddhistHolyDays2026.has(toDateKey(date));
+}
+
+function toDateKey(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function cleanEmpId(value: unknown) {

@@ -17,6 +17,7 @@ create table if not exists public.allocation_runs (
   master_file_path text,
   manpower_file_path text,
   skill_file_path text,
+  dayoff_shift_file_path text,
   output_file_path text,
   solver_status text,
   error_message text,
@@ -27,7 +28,7 @@ create table if not exists public.allocation_runs (
 create table if not exists public.master_data_files (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid references auth.users(id) on delete cascade,
-  file_type text not null check (file_type in ('employee_master', 'manpower_plan', 'skill_matrix')),
+  file_type text not null check (file_type in ('employee_master', 'manpower_plan', 'skill_matrix', 'dayoff_shift')),
   file_path text not null,
   original_filename text,
   is_active boolean not null default true,
