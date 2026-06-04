@@ -819,9 +819,6 @@ function buildReportData(
     const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? row["รหัสพนักงาน"]);
     const timestamp = parseTimestamp(row["Timestamp"]);
     if (!empId || !timestamp) continue;
-    const employee = employeeMap.get(empId);
-    const scanDept = employee?.dept ?? String(row["หน่วยงาน"] ?? row["dept"] ?? "").trim();
-    if (isIgnoredEarlySpecialCuttingScan(scanDept, timestamp)) continue;
 
     const current = scanByEmp.get(empId) ?? {
       name: String(row["Employee Name"] ?? row["name"] ?? "").trim(),
@@ -1127,13 +1124,6 @@ function parseTimestamp(value: unknown) {
 
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function isIgnoredEarlySpecialCuttingScan(dept: string, timestamp: Date) {
-  if (!dept.trim().includes("ตัดแต่งพิเศษ")) return false;
-
-  const minutes = timestamp.getHours() * 60 + timestamp.getMinutes();
-  return minutes >= 0 && minutes <= 6 * 60;
 }
 
 function normalizeTimeText(value: unknown) {
