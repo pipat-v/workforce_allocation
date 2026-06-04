@@ -913,7 +913,7 @@ function buildReportData(
       .sort((a, b) => b.minutesLate - a.minutesLate)
       .slice(0, 80),
     records,
-    timestampRows: records.filter((record) => record.scanIn !== "-"),
+    timestampRows: records,
     monthlyLateCounts: {},
   };
 }
