@@ -758,7 +758,7 @@ async function downloadSheetRows(path: string): Promise<Record<string, unknown>[
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, {
     defval: "",
-    raw: false,
+    raw: true,
   });
 
   if (rows.some((row) => "Timestamp" in row && "Employee ID" in row)) {
@@ -768,7 +768,7 @@ async function downloadSheetRows(path: string): Promise<Record<string, unknown>[
   const rawRows = XLSX.utils.sheet_to_json<unknown[]>(firstSheet, {
     header: 1,
     defval: "",
-    raw: false,
+    raw: true,
   });
   const headerIndex = rawRows.findIndex(
     (row) =>
@@ -1108,6 +1108,10 @@ function parseTimestamp(value: unknown) {
     return value;
   }
 
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return excelSerialDateToDate(value);
+  }
+
   const text = String(value ?? "").trim();
   const thaiStyle = text.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
   if (thaiStyle) {
@@ -1131,10 +1135,22 @@ function normalizeTimeText(value: unknown) {
     return toTimeText(value);
   }
 
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const totalMinutes = Math.round((value % 1) * 24 * 60);
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const minutes = totalMinutes % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+
   const text = String(value ?? "").trim();
   const match = text.match(/(\d{1,2}):(\d{2})/);
   if (!match) return "";
   return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
+
+function excelSerialDateToDate(value: number) {
+  const excelEpoch = Date.UTC(1899, 11, 30);
+  return new Date(excelEpoch + value * 24 * 60 * 60 * 1000);
 }
 
 function toTimeText(value: Date) {
