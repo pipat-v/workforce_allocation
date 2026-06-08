@@ -1573,47 +1573,80 @@ function TimestampPage({
 }) {
   return (
     <section className="workspace-grid">
-      <section className="panel master-management">
-        <h3>Upload Timestamp</h3>
-        <p>อัปโหลดเฉพาะไฟล์ timestamp รายวัน ระบบจะใช้ master data ชุด active ล่าสุด</p>
-        <label className="master-upload-card single">
-          <UploadCloud size={30} />
-          <strong>{timestampFile?.name ?? "Timestamp / Time Record"}</strong>
-          <span>รองรับ .csv, .xlsx, .xls</span>
+      <section className="panel ts-upload-panel">
+        <div className="ts-panel-header">
+          <h3>Upload Timestamp</h3>
+          <p>อัปโหลดไฟล์ timestamp รายวัน ระบบจะใช้ master data ชุด active ล่าสุด</p>
+        </div>
+
+        <label className={`ts-dropzone ${timestampFile ? "has-file" : ""}`}>
+          <UploadCloud size={38} />
+          {timestampFile ? (
+            <>
+              <strong>{timestampFile.name}</strong>
+              <span>{(timestampFile.size / 1024).toFixed(0)} KB · คลิกเพื่อเปลี่ยนไฟล์</span>
+            </>
+          ) : (
+            <>
+              <strong>ลากไฟล์มาวางที่นี่</strong>
+              <span>หรือคลิกเพื่อเลือกไฟล์ · รองรับ .csv, .xlsx, .xls</span>
+            </>
+          )}
           <input
             type="file"
             accept=".csv,.xlsx,.xls"
             onChange={(event) => setTimestampFile(event.target.files?.[0] ?? null)}
           />
         </label>
+
+        <div className={`ts-master-status ${hasAllActiveMasters ? "ready" : "not-ready"}`}>
+          <span className={`ts-status-dot ${hasAllActiveMasters ? "ready" : "not-ready"}`} />
+          {hasAllActiveMasters
+            ? "Master files พร้อมใช้งานครบทั้ง 4 ไฟล์"
+            : "ต้องมี master files ครบ 4 ไฟล์ก่อนสร้าง daily run"}
+        </div>
+
         <button
-          className="primary-button save-master-button"
+          className="primary-button ts-submit-btn"
           disabled={!timestampFile || !hasAllActiveMasters || isCreatingRun}
           onClick={createDailyRun}
           type="button"
         >
           <ClipboardCheck size={18} />
-          {isCreatingRun ? "Creating" : "Create Daily Run"}
+          {isCreatingRun ? "กำลังสร้าง..." : "Create Daily Run"}
         </button>
-        {!hasAllActiveMasters ? (
-          <p className="inline-warning">ต้องมี master files ครบ 4 ไฟล์ก่อนสร้าง daily run</p>
-        ) : null}
       </section>
 
-      <section className="panel files-panel">
+      <section className="panel ts-history-panel">
         {latestRun ? (
-          <div className="latest-run-card">
-            <div>
-              <p className="latest-run-label">Latest Run</p>
-              <strong>{latestRun.original_filename ?? latestRun.scan_file_path?.split("/").pop() ?? "-"}</strong>
-              <span>{new Date(latestRun.created_at).toLocaleString("th-TH")}</span>
+          <div className="ts-latest-run">
+            <div className="ts-latest-header">
+              <span>Latest Run</span>
+              <span className={`status-pill ${latestRun.status.toLowerCase()}`}>{latestRun.status}</span>
             </div>
-            <span className={`status-pill ${latestRun.status.toLowerCase()}`}>{latestRun.status}</span>
+            <strong className="ts-latest-filename">
+              {latestRun.original_filename ?? latestRun.scan_file_path?.split("/").pop() ?? "-"}
+            </strong>
+            <span className="ts-latest-meta">
+              {latestRun.record_count != null ? `${latestRun.record_count.toLocaleString()} รายการ · ` : ""}
+              {new Date(latestRun.created_at).toLocaleString("th-TH", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              })}
+            </span>
           </div>
         ) : null}
 
-        <h3>ประวัติการอัปโหลด</h3>
-        <div className="file-stack">
+        <div className="ts-history-header">
+          <h3>ประวัติการอัปโหลด</h3>
+          <span className="table-count">{runs.length} ไฟล์</span>
+        </div>
+
+        <div className="ts-history-list">
           {runs.length === 0 ? (
             <p className="empty-copy">ยังไม่มีประวัติการอัปโหลด</p>
           ) : null}
@@ -1634,27 +1667,29 @@ function TimestampPage({
               dateText,
             ].filter(Boolean).join(" · ");
             return (
-              <div className="file-card" key={run.id}>
-                <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="ts-history-row" key={run.id}>
+                <div className="ts-history-info">
                   <strong>{filename}</strong>
                   <span>{meta}</span>
                 </div>
-                <button
-                  className="icon-button"
-                  onClick={() => void downloadTimestampFile(run)}
-                  title="ดาวน์โหลด"
-                  type="button"
-                >
-                  <Download size={16} />
-                </button>
-                <button
-                  className="icon-button danger"
-                  onClick={() => void deleteRun(run)}
-                  title="ลบ"
-                  type="button"
-                >
-                  <X size={16} />
-                </button>
+                <div className="ts-history-actions">
+                  <button
+                    className="icon-button"
+                    onClick={() => void downloadTimestampFile(run)}
+                    title="ดาวน์โหลด"
+                    type="button"
+                  >
+                    <Download size={15} />
+                  </button>
+                  <button
+                    className="icon-button danger"
+                    onClick={() => void deleteRun(run)}
+                    title="ลบ"
+                    type="button"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
               </div>
             );
           })}
