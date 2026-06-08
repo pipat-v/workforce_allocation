@@ -498,11 +498,11 @@ export default function Home() {
       try {
         await saveTimestampWithDeptRows(latestRun.id, latestReport);
       } catch (saveError) {
-        setError(
+        const errMsg =
           saveError instanceof Error
-            ? `โหลด report ได้ แต่บันทึก Timestamp With Dept ลง Supabase ไม่สำเร็จ: ${saveError.message}`
-            : "โหลด report ได้ แต่บันทึก Timestamp With Dept ลง Supabase ไม่สำเร็จ",
-        );
+            ? saveError.message
+            : (saveError as { message?: string })?.message ?? JSON.stringify(saveError);
+        setError(`โหลด report ได้ แต่บันทึก Timestamp With Dept ไม่สำเร็จ: ${errMsg}`);
       }
       const scanPaths = Array.from(
         new Set(runs.map((run) => run.scan_file_path).filter(Boolean) as string[]),
@@ -554,24 +554,28 @@ export default function Home() {
       throw deleteError;
     }
 
-    const rows = report.timestampRows.map((row) => ({
-      run_id: runId,
-      target_date: report.targetDate,
-      emp_id: row.empId,
-      name: row.name,
-      dept: row.dept,
-      position: row.position,
-      shift: row.shift,
-      shift_start: row.shiftStart,
-      scan_in: row.scanIn,
-      attendance_status: row.status,
-      minutes_late: row.minutesLate,
-    }));
+    const rowMap = new Map<string, object>();
+    for (const row of report.timestampRows) {
+      rowMap.set(row.empId, {
+        run_id: runId,
+        target_date: report.targetDate,
+        emp_id: row.empId,
+        name: row.name,
+        dept: row.dept,
+        position: row.position,
+        shift: row.shift,
+        shift_start: row.shiftStart,
+        scan_in: row.scanIn,
+        attendance_status: row.status,
+        minutes_late: row.minutesLate,
+      });
+    }
+    const rows = Array.from(rowMap.values());
 
     for (let index = 0; index < rows.length; index += 500) {
       const { error: insertError } = await supabase
         .from("timestamp_with_dept")
-        .insert(rows.slice(index, index + 500));
+        .upsert(rows.slice(index, index + 500), { onConflict: "run_id,emp_id" });
 
       if (insertError) {
         throw insertError;
