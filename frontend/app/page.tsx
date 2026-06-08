@@ -2135,8 +2135,9 @@ function ReportDashboard({
   const scopedPresent = scopedRecords.filter((row) => row.status === "Present").length;
   const scopedLate = scopedRecords.filter((row) => row.status === "Late").length;
   const scopedAbsent = scopedRecords.filter((row) => row.status === "Absent").length;
-  const lateRate = scopedTotal
-    ? ((scopedLate / scopedTotal) * 100).toFixed(1)
+  const scopedCameToWork = scopedPresent + scopedLate;
+  const lateRate = scopedCameToWork
+    ? ((scopedLate / scopedCameToWork) * 100).toFixed(1)
     : "0.0";
   const maxDeptTotal = Math.max(...data.deptRows.map((row) => row.total), 1);
   const presentPercent = scopedTotal ? (scopedPresent / scopedTotal) * 100 : 0;
