@@ -948,27 +948,13 @@ button {
   border: 1.5px solid var(--line);
   border-radius: 12px;
   padding: 16px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, background 0.15s;
   background: #fbfcfd;
-  position: relative;
-}
-
-.md-card input { display: none; }
-
-.md-card:hover {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px #dbeafe;
 }
 
 .md-card.active {
   border-color: #10b981;
   background: #f0fdf4;
-}
-
-.md-card.active:hover {
-  border-color: #059669;
-  box-shadow: 0 0 0 3px #d1fae5;
 }
 
 .md-card.pending {
@@ -1042,20 +1028,47 @@ button {
 }
 
 .md-card-action {
-  font-size: 11px;
-  color: var(--muted);
-  text-align: center;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--blue);
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  margin-top: auto;
+  transition: background 0.12s;
 }
 
-.md-card.pending .md-card-action {
-  color: var(--blue);
-  border-color: #bfdbfe;
+.md-card-action input { display: none; }
+
+.md-card-action:hover {
+  background: #dbeafe;
 }
 
 .md-card.active .md-card-action {
+  color: #166534;
+  background: #dcfce7;
   border-color: #bbf7d0;
+}
+
+.md-card.active .md-card-action:hover {
+  background: #bbf7d0;
+}
+
+.md-card.empty .md-card-action {
+  color: var(--muted);
+  background: #f1f5f9;
+  border-color: var(--line);
+}
+
+.md-card.empty .md-card-action:hover {
+  background: #e2e8f0;
+  color: var(--text);
 }
 
 .dayoff-editor-panel {

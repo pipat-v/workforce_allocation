@@ -1352,18 +1352,9 @@ function MasterDataPage({
             const activeFile = activeMasterMap[item.key];
             const pendingFile = masterUploads[item.key];
             const state = pendingFile ? "pending" : activeFile ? "active" : "empty";
+            const inputId = `master-input-${item.key}`;
             return (
-              <label className={`md-card ${state}`} key={item.key}>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={(event) =>
-                    setMasterUploads((current) => ({
-                      ...current,
-                      [item.key]: event.target.files?.[0] ?? null,
-                    }))
-                  }
-                />
+              <div className={`md-card ${state}`} key={item.key}>
                 <div className="md-card-top">
                   <FileSpreadsheet size={20} />
                   <strong>{item.label}</strong>
@@ -1384,13 +1375,25 @@ function MasterDataPage({
                       </span>
                     </>
                   ) : (
-                    <span className="md-empty-hint">คลิกเพื่ออัปโหลด .xlsx</span>
+                    <span className="md-empty-hint">ยังไม่มีไฟล์</span>
                   )}
                 </div>
-                <div className="md-card-action">
-                  {state === "pending" ? "คลิกเพื่อเปลี่ยนไฟล์" : state === "active" ? "คลิกเพื่ออัปเดต" : "เลือกไฟล์"}
-                </div>
-              </label>
+                <label className="md-card-action" htmlFor={inputId}>
+                  <UploadCloud size={13} />
+                  {state === "pending" ? "เปลี่ยนไฟล์" : state === "active" ? "อัปเดตไฟล์" : "เลือกไฟล์"}
+                  <input
+                    id={inputId}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={(event) =>
+                      setMasterUploads((current) => ({
+                        ...current,
+                        [item.key]: event.target.files?.[0] ?? null,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
             );
           })}
         </div>
