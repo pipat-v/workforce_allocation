@@ -904,6 +904,160 @@ button {
   min-width: 190px;
 }
 
+/* Master Data Page */
+.md-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.md-upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.md-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.md-header h3 {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.md-header p {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.md-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.md-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  background: #fbfcfd;
+  position: relative;
+}
+
+.md-card input { display: none; }
+
+.md-card:hover {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px #dbeafe;
+}
+
+.md-card.active {
+  border-color: #10b981;
+  background: #f0fdf4;
+}
+
+.md-card.active:hover {
+  border-color: #059669;
+  box-shadow: 0 0 0 3px #d1fae5;
+}
+
+.md-card.pending {
+  border-color: var(--blue);
+  background: #eff6ff;
+}
+
+.md-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.md-card-top strong {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.md-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.md-badge.active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.md-badge.pending {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.md-badge.empty {
+  background: #f1f5f9;
+  color: var(--muted);
+}
+
+.md-card-body {
+  flex: 1;
+  min-height: 36px;
+}
+
+.md-filename {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-filename.pending {
+  color: var(--blue);
+}
+
+.md-filedate {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.md-empty-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.md-card-action {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.md-card.pending .md-card-action {
+  color: var(--blue);
+  border-color: #bfdbfe;
+}
+
+.md-card.active .md-card-action {
+  border-color: #bbf7d0;
+}
+
 .dayoff-editor-panel {
   display: grid;
   gap: 14px;
@@ -1482,6 +1636,7 @@ button.stacked-row {
   .dashboard-grid,
   .workspace-grid,
   .master-upload-grid,
+  .md-card-grid,
   .report-grid,
   .report-toolbar,
   .report-kpis,

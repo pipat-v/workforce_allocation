@@ -697,6 +697,7 @@ export default function Home() {
             activeMasterMap={activeMasterMap}
             canSaveMasters={canSaveMasters}
             isSavingMasters={isSavingMasters}
+            masterUploads={masterUploads}
             saveDayoffShiftRows={saveDayoffShiftRows}
             saveMasterFiles={saveMasterFiles}
             setMasterUploads={setMasterUploads}
@@ -1314,6 +1315,7 @@ function MasterDataPage({
   activeMasterMap,
   canSaveMasters,
   isSavingMasters,
+  masterUploads,
   saveDayoffShiftRows,
   saveMasterFiles,
   setMasterUploads,
@@ -1321,28 +1323,37 @@ function MasterDataPage({
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   canSaveMasters: boolean;
   isSavingMasters: boolean;
+  masterUploads: MasterUploadState;
   saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
   saveMasterFiles: () => Promise<void>;
   setMasterUploads: Dispatch<SetStateAction<MasterUploadState>>;
 }) {
   return (
-    <section className="workspace-grid master-page">
-      <section className="panel master-management">
-        <div className="panel-title-row">
+    <section className="md-page">
+      <section className="panel md-upload-section">
+        <div className="md-header">
           <div>
             <h3>Master Data</h3>
-            <p>อัปโหลดไฟล์หลัก 4 ไฟล์ครั้งเดียว แล้วระบบจะใช้ชุดล่าสุดกับ daily run อัตโนมัติ</p>
+            <p>อัปโหลดไฟล์หลัก 4 ไฟล์ ระบบจะใช้ชุดล่าสุดกับ daily run อัตโนมัติ</p>
           </div>
+          <button
+            className="primary-button"
+            disabled={!canSaveMasters || isSavingMasters}
+            onClick={saveMasterFiles}
+            type="button"
+          >
+            <UploadCloud size={17} />
+            {isSavingMasters ? "Saving..." : "Save Master Files"}
+          </button>
         </div>
 
-        <div className="master-upload-grid">
+        <div className="md-card-grid">
           {masterFileTypes.map((item) => {
             const activeFile = activeMasterMap[item.key];
+            const pendingFile = masterUploads[item.key];
+            const state = pendingFile ? "pending" : activeFile ? "active" : "empty";
             return (
-              <label className="master-upload-card" key={item.key}>
-                <FileSpreadsheet size={28} />
-                <strong>{item.label}</strong>
-                <span>{activeFile?.original_filename ?? "ยังไม่มีไฟล์ active"}</span>
+              <label className={`md-card ${state}`} key={item.key}>
                 <input
                   type="file"
                   accept=".xlsx,.xls"
@@ -1353,25 +1364,36 @@ function MasterDataPage({
                     }))
                   }
                 />
+                <div className="md-card-top">
+                  <FileSpreadsheet size={20} />
+                  <strong>{item.label}</strong>
+                  {state === "active" && <span className="md-badge active">Active</span>}
+                  {state === "pending" && <span className="md-badge pending">New</span>}
+                  {state === "empty" && <span className="md-badge empty">ไม่มีไฟล์</span>}
+                </div>
+                <div className="md-card-body">
+                  {pendingFile ? (
+                    <span className="md-filename pending">{pendingFile.name}</span>
+                  ) : activeFile ? (
+                    <>
+                      <span className="md-filename">{activeFile.original_filename}</span>
+                      <span className="md-filedate">
+                        {new Date(activeFile.created_at).toLocaleDateString("th-TH", {
+                          day: "numeric", month: "short", year: "numeric",
+                        })}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="md-empty-hint">คลิกเพื่ออัปโหลด .xlsx</span>
+                  )}
+                </div>
+                <div className="md-card-action">
+                  {state === "pending" ? "คลิกเพื่อเปลี่ยนไฟล์" : state === "active" ? "คลิกเพื่ออัปเดต" : "เลือกไฟล์"}
+                </div>
               </label>
             );
           })}
         </div>
-
-        <button
-          className="primary-button save-master-button"
-          disabled={!canSaveMasters || isSavingMasters}
-          onClick={saveMasterFiles}
-          type="button"
-        >
-          <UploadCloud size={18} />
-          {isSavingMasters ? "Saving" : "Save Master Files"}
-        </button>
-      </section>
-
-      <section className="panel files-panel">
-        <h3>Active Master Files</h3>
-        <LatestMasterFiles activeMasterMap={activeMasterMap} />
       </section>
 
       <DayoffShiftEditor
