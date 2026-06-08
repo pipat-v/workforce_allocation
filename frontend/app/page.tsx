@@ -2195,13 +2195,15 @@ function ReportDashboard({
   return (
     <section className="report-page">
       <div className="report-toolbar">
-        <div className="filter-card">
-          <label>date</label>
-          <strong>{data.targetDate}</strong>
-        </div>
-        <div className="filter-card wide">
-          <label>dept</label>
-          <strong>{data.deptRows[0]?.dept ?? "Select all"}</strong>
+        <div className="report-toolbar-info">
+          <div className="rpt-info-item">
+            <span>วันที่ข้อมูล</span>
+            <strong>{data.targetDate}</strong>
+          </div>
+          <div className="rpt-info-item">
+            <span>หน่วยงานที่เลือก</span>
+            <strong>{selectedDeptLabel}</strong>
+          </div>
         </div>
         <button
           className="primary-button report-refresh"
@@ -2210,16 +2212,16 @@ function ReportDashboard({
           type="button"
         >
           <BarChart3 size={17} />
-          {isLoadingReport ? "Loading" : "Load Uploaded Data"}
+          {isLoadingReport ? "กำลังโหลด..." : "Load Uploaded Data"}
         </button>
       </div>
 
       <section className="report-kpis">
-        <ReportMetric value={scopedTotal} label={`จำนวนพนักงานทั้งหมด (${selectedDeptLabel})`} />
+        <ReportMetric value={scopedTotal} label="พนักงานทั้งหมด" sublabel={selectedDeptLabel} />
         <ReportMetric value={scopedPresent} label="Present" tone="green" />
         <ReportMetric value={scopedLate} label="Late" tone="amber" />
         <ReportMetric value={scopedAbsent} label="Absent" tone="red" />
-        <ReportMetric value={`${lateRate} %`} label="Late Rate %" />
+        <ReportMetric value={`${lateRate}%`} label="Late Rate" tone="amber" isRate />
       </section>
 
       <section className="report-grid">
@@ -2284,9 +2286,9 @@ function ReportDashboard({
                 {sortedLateRows.map((row) => (
                   <tr key={`preview-${row.empId}-${row.scanIn}`}>
                     <td>{row.name}</td>
-                    <td>{row.dept}</td>
+                    <td><span className="dept-chip">{row.dept}</span></td>
                     <td>{row.scanIn}</td>
-                    <td>{row.minutesLate} นาที</td>
+                    <td><span className="late-minutes-badge">{row.minutesLate}</span></td>
                   </tr>
                 ))}
                 {sortedLateRows.length === 0 ? (
@@ -2368,25 +2370,25 @@ function ReportDashboard({
           <thead>
             <tr>
               <th><SortButton columnKey="dept" setSort={setSort} sort={sort}>หน่วยงาน</SortButton></th>
-              <th><SortButton columnKey="name" setSort={setSort} sort={sort}>name</SortButton></th>
-              <th><SortButton columnKey="shift" setSort={setSort} sort={sort}>shift</SortButton></th>
-              <th><SortButton columnKey="shiftStart" setSort={setSort} sort={sort}>shift_start</SortButton></th>
-              <th><SortButton columnKey="scanIn" setSort={setSort} sort={sort}>scan_in</SortButton></th>
-              <th><SortButton columnKey="status" setSort={setSort} sort={sort}>Status</SortButton></th>
-              <th><SortButton columnKey="minutesLate" setSort={setSort} sort={sort}>Minutes Late</SortButton></th>
-              <th><SortButton columnKey="monthlyLate" setSort={setSort} sort={sort}>Late This Month</SortButton></th>
+              <th><SortButton columnKey="name" setSort={setSort} sort={sort}>ชื่อ-สกุล</SortButton></th>
+              <th><SortButton columnKey="shift" setSort={setSort} sort={sort}>กะ</SortButton></th>
+              <th><SortButton columnKey="shiftStart" setSort={setSort} sort={sort}>เวลาเข้า</SortButton></th>
+              <th><SortButton columnKey="scanIn" setSort={setSort} sort={sort}>สแกนเข้า</SortButton></th>
+              <th><SortButton columnKey="status" setSort={setSort} sort={sort}>สถานะ</SortButton></th>
+              <th><SortButton columnKey="minutesLate" setSort={setSort} sort={sort}>สาย (นาที)</SortButton></th>
+              <th><SortButton columnKey="monthlyLate" setSort={setSort} sort={sort}>สายเดือนนี้</SortButton></th>
             </tr>
           </thead>
           <tbody>
             {sortedLateRows.map((row) => (
               <tr key={`${row.empId}-${row.scanIn}`}>
-                <td>{row.dept}</td>
+                <td><span className="dept-chip">{row.dept}</span></td>
                 <td>{row.name}</td>
                 <td>{row.shift}</td>
                 <td>{row.shiftStart}</td>
                 <td>{row.scanIn}</td>
-                <td>{row.status}</td>
-                <td>{row.minutesLate}</td>
+                <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td>
+                <td><span className="late-minutes-badge">{row.minutesLate}</span></td>
                 <td>{data.monthlyLateCounts[row.empId] ?? 1}</td>
               </tr>
             ))}
@@ -2406,15 +2408,20 @@ function ReportMetric({
   label,
   tone,
   value,
+  sublabel,
+  isRate,
 }: {
   label: string;
   tone?: "green" | "amber" | "red";
   value: number | string;
+  sublabel?: string;
+  isRate?: boolean;
 }) {
   return (
-    <div className={`report-metric ${tone ?? ""}`}>
-      <strong>{value}</strong>
-      <span>{label}</span>
+    <div className={`report-metric${tone ? ` ${tone}` : ""}${isRate ? " is-rate" : ""}`}>
+      <strong className="report-metric-value">{value}</strong>
+      <span className="report-metric-label">{label}</span>
+      {sublabel && <span className="report-metric-sub">{sublabel}</span>}
     </div>
   );
 }
