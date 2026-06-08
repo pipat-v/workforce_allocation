@@ -2434,9 +2434,11 @@ function KpiCard({
         </div>
         <p>{note}</p>
         {progress ? (
-          <div className="progress-line">
-            <i style={{ width: `${progress}%` }} />
-            <em>{progress}.20%</em>
+          <div className="progress-wrap">
+            <div className="progress-line">
+              <i style={{ width: `${progress}%` }} />
+            </div>
+            <em>{progress}%</em>
           </div>
         ) : null}
       </div>
