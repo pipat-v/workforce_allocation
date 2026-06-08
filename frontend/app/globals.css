@@ -611,6 +611,38 @@ button {
   min-height: 210px;
 }
 
+.latest-run-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface2, #f8fafc);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 20px;
+}
+
+.latest-run-card strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.latest-run-card span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.latest-run-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
 .upload-row {
   display: grid;
   gap: 7px;

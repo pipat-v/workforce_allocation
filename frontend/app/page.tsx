@@ -86,7 +86,6 @@ const masterFileTypes = [
 type TabId =
   | "dashboard"
   | "timestamp"
-  | "run"
   | "results"
   | "timestamp_dept"
   | "master"
@@ -97,7 +96,6 @@ type TabId =
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: HomeIcon },
   { id: "timestamp", label: "Upload Timestamp", icon: UploadCloud },
-  { id: "run", label: "Run Allocation", icon: ClipboardCheck },
   { id: "results", label: "ผลลัพธ์การจัดสรร", icon: BriefcaseBusiness },
   { id: "timestamp_dept", label: "Timestamp With Dept", icon: Database },
   { id: "master", label: "Master Data", icon: FileSpreadsheet },
@@ -712,18 +710,8 @@ export default function Home() {
             downloadTimestampFile={downloadTimestampFile}
             hasAllActiveMasters={hasAllActiveMasters}
             isCreatingRun={isCreatingRun}
-            runs={runs}
-            setTimestampFile={setTimestampFile}
-            timestampFile={timestampFile}
-          />
-        ) : null}
-
-        {activeTab === "run" ? (
-          <RunAllocationPage
-            createDailyRun={createDailyRun}
-            hasAllActiveMasters={hasAllActiveMasters}
-            isCreatingRun={isCreatingRun}
             latestRun={latestRun}
+            runs={runs}
             setTimestampFile={setTimestampFile}
             timestampFile={timestampFile}
           />
@@ -778,7 +766,7 @@ export default function Home() {
           />
         ) : null}
 
-        {!["dashboard", "master", "timestamp", "run", "results", "timestamp_dept", "report"].includes(activeTab) ? (
+        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report"].includes(activeTab) ? (
           <section className="panel empty-page">
             <h3>{activeNav?.label}</h3>
             <p>แท็บนี้จะเชื่อมข้อมูลจริงในขั้นถัดไป</p>
@@ -1568,6 +1556,7 @@ function TimestampPage({
   downloadTimestampFile,
   hasAllActiveMasters,
   isCreatingRun,
+  latestRun,
   runs,
   setTimestampFile,
   timestampFile,
@@ -1577,6 +1566,7 @@ function TimestampPage({
   downloadTimestampFile: (run: AllocationRun) => Promise<void>;
   hasAllActiveMasters: boolean;
   isCreatingRun: boolean;
+  latestRun?: AllocationRun;
   runs: AllocationRun[];
   setTimestampFile: (file: File | null) => void;
   timestampFile: File | null;
@@ -1611,6 +1601,17 @@ function TimestampPage({
       </section>
 
       <section className="panel files-panel">
+        {latestRun ? (
+          <div className="latest-run-card">
+            <div>
+              <p className="latest-run-label">Latest Run</p>
+              <strong>{latestRun.original_filename ?? latestRun.scan_file_path?.split("/").pop() ?? "-"}</strong>
+              <span>{new Date(latestRun.created_at).toLocaleString("th-TH")}</span>
+            </div>
+            <span className={`status-pill ${latestRun.status.toLowerCase()}`}>{latestRun.status}</span>
+          </div>
+        ) : null}
+
         <h3>ประวัติการอัปโหลด</h3>
         <div className="file-stack">
           {runs.length === 0 ? (
@@ -1663,65 +1664,6 @@ function TimestampPage({
   );
 }
 
-function RunAllocationPage({
-  createDailyRun,
-  hasAllActiveMasters,
-  isCreatingRun,
-  latestRun,
-  setTimestampFile,
-  timestampFile,
-}: {
-  createDailyRun: () => Promise<void>;
-  hasAllActiveMasters: boolean;
-  isCreatingRun: boolean;
-  latestRun?: AllocationRun;
-  setTimestampFile: (file: File | null) => void;
-  timestampFile: File | null;
-}) {
-  return (
-    <section className="workspace-grid">
-      <section className="panel run-panel">
-        <h3>Run Allocation</h3>
-        <p>เลือก timestamp ล่าสุดเพื่อสร้าง run จาก master data ชุด active</p>
-        <label className="master-upload-card single">
-          <ClipboardCheck size={30} />
-          <strong>{timestampFile?.name ?? "เลือก Timestamp สำหรับ run ใหม่"}</strong>
-          <span>ระบบจะผูก master files ล่าสุดเข้ากับ run นี้</span>
-          <input
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            onChange={(event) => setTimestampFile(event.target.files?.[0] ?? null)}
-          />
-        </label>
-        <button
-          className="primary-button save-master-button"
-          disabled={!timestampFile || !hasAllActiveMasters || isCreatingRun}
-          onClick={createDailyRun}
-          type="button"
-        >
-          <ClipboardCheck size={18} />
-          {isCreatingRun ? "Creating" : "Create Allocation Run"}
-        </button>
-        {!hasAllActiveMasters ? (
-          <p className="inline-warning">ต้องมี master files ครบ 4 ไฟล์ก่อน</p>
-        ) : null}
-      </section>
-
-      <section className="panel files-panel">
-        <h3>Latest Run</h3>
-        {latestRun ? (
-          <div className="run-summary">
-            <strong>{latestRun.status}</strong>
-            <span>{new Date(latestRun.created_at).toLocaleString("th-TH")}</span>
-            <span>{latestRun.scan_file_path ?? "-"}</span>
-          </div>
-        ) : (
-          <p className="empty-copy">ยังไม่มี run</p>
-        )}
-      </section>
-    </section>
-  );
-}
 
 const pageSize = 10;
 
