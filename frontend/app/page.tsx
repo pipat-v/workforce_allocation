@@ -671,6 +671,7 @@ export default function Home() {
             createDailyRun={createDailyRun}
             hasAllActiveMasters={hasAllActiveMasters}
             isCreatingRun={isCreatingRun}
+            runs={runs}
             setTimestampFile={setTimestampFile}
             timestampFile={timestampFile}
           />
@@ -1524,12 +1525,14 @@ function TimestampPage({
   createDailyRun,
   hasAllActiveMasters,
   isCreatingRun,
+  runs,
   setTimestampFile,
   timestampFile,
 }: {
   createDailyRun: () => Promise<void>;
   hasAllActiveMasters: boolean;
   isCreatingRun: boolean;
+  runs: AllocationRun[];
   setTimestampFile: (file: File | null) => void;
   timestampFile: File | null;
 }) {
@@ -1560,6 +1563,30 @@ function TimestampPage({
         {!hasAllActiveMasters ? (
           <p className="inline-warning">ต้องมี master files ครบ 4 ไฟล์ก่อนสร้าง daily run</p>
         ) : null}
+      </section>
+
+      <section className="panel files-panel">
+        <h3>ประวัติการอัปโหลด</h3>
+        <div className="file-stack">
+          {runs.length === 0 ? (
+            <p className="empty-copy">ยังไม่มีประวัติการอัปโหลด</p>
+          ) : null}
+          {runs.map((run) => {
+            const filename = run.scan_file_path
+              ? run.scan_file_path.split("/").pop() ?? run.scan_file_path
+              : "-";
+            return (
+              <div className="file-card" key={run.id}>
+                <FileSpreadsheet size={24} />
+                <div>
+                  <strong>{filename}</strong>
+                  <span>{new Date(run.created_at).toLocaleString("th-TH")}</span>
+                </div>
+                <span className={`status-pill ${run.status.toLowerCase()}`}>{run.status}</span>
+              </div>
+            );
+          })}
+        </div>
       </section>
     </section>
   );
