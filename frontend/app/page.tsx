@@ -16,6 +16,7 @@ import {
   Settings,
   UploadCloud,
   UsersRound,
+  X,
 } from "lucide-react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import * as XLSX from "xlsx";
@@ -27,6 +28,8 @@ type AllocationRun = {
   status: string;
   scan_file_path: string | null;
   solver_status: string | null;
+  original_filename: string | null;
+  record_count: number | null;
   created_at: string;
 };
 
@@ -246,7 +249,7 @@ export default function Home() {
   async function loadRuns() {
     const { data, error: loadError } = await supabase
       .from("allocation_runs")
-      .select("id,target_date,status,scan_file_path,solver_status,created_at")
+      .select("id,target_date,status,scan_file_path,solver_status,original_filename,record_count,created_at")
       .order("created_at", { ascending: false })
       .limit(20);
 
@@ -379,6 +382,30 @@ export default function Home() {
     await loadActiveMasters();
   }
 
+  async function downloadTimestampFile(run: AllocationRun) {
+    if (!run.scan_file_path) return;
+    const { data, error: urlError } = await supabase.storage
+      .from("workforce-inputs")
+      .createSignedUrl(run.scan_file_path, 60);
+    if (urlError || !data) {
+      setError(urlError?.message ?? "ดาวน์โหลดไม่สำเร็จ");
+      return;
+    }
+    window.open(data.signedUrl, "_blank");
+  }
+
+  async function deleteRun(run: AllocationRun) {
+    const { error: deleteError } = await supabase
+      .from("allocation_runs")
+      .delete()
+      .eq("id", run.id);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+    await loadRuns();
+  }
+
   async function createDailyRun() {
     setError("");
     setMessage("");
@@ -394,6 +421,16 @@ export default function Home() {
       setError("กรุณา upload master files ให้ครบก่อนสร้าง daily run");
       setIsCreatingRun(false);
       return;
+    }
+
+    let recordCount: number | null = null;
+    try {
+      const buffer = await timestampFile.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      recordCount = XLSX.utils.sheet_to_json(firstSheet).length;
+    } catch {
+      // ignore count error
     }
 
     const runId = crypto.randomUUID();
@@ -413,6 +450,8 @@ export default function Home() {
       owner_id: null,
       status: "uploaded",
       scan_file_path: scanPath,
+      original_filename: timestampFile.name,
+      record_count: recordCount,
       master_file_path: activeMasterMap.employee_master?.file_path,
       manpower_file_path: activeMasterMap.manpower_plan?.file_path,
       skill_file_path: activeMasterMap.skill_matrix?.file_path,
@@ -669,6 +708,8 @@ export default function Home() {
         {activeTab === "timestamp" ? (
           <TimestampPage
             createDailyRun={createDailyRun}
+            deleteRun={deleteRun}
+            downloadTimestampFile={downloadTimestampFile}
             hasAllActiveMasters={hasAllActiveMasters}
             isCreatingRun={isCreatingRun}
             runs={runs}
@@ -1523,6 +1564,8 @@ function DayoffShiftEditor({
 
 function TimestampPage({
   createDailyRun,
+  deleteRun,
+  downloadTimestampFile,
   hasAllActiveMasters,
   isCreatingRun,
   runs,
@@ -1530,6 +1573,8 @@ function TimestampPage({
   timestampFile,
 }: {
   createDailyRun: () => Promise<void>;
+  deleteRun: (run: AllocationRun) => Promise<void>;
+  downloadTimestampFile: (run: AllocationRun) => Promise<void>;
   hasAllActiveMasters: boolean;
   isCreatingRun: boolean;
   runs: AllocationRun[];
@@ -1572,17 +1617,43 @@ function TimestampPage({
             <p className="empty-copy">ยังไม่มีประวัติการอัปโหลด</p>
           ) : null}
           {runs.map((run) => {
-            const filename = run.scan_file_path
-              ? run.scan_file_path.split("/").pop() ?? run.scan_file_path
-              : "-";
+            const filename = run.original_filename
+              ?? run.scan_file_path?.split("/").pop()
+              ?? "-";
+            const dateText = new Date(run.created_at).toLocaleString("th-TH", {
+              day: "numeric",
+              month: "numeric",
+              year: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            });
+            const meta = [
+              run.record_count != null ? `${run.record_count.toLocaleString()} รายการ` : null,
+              dateText,
+            ].filter(Boolean).join(" · ");
             return (
               <div className="file-card" key={run.id}>
-                <FileSpreadsheet size={24} />
-                <div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <strong>{filename}</strong>
-                  <span>{new Date(run.created_at).toLocaleString("th-TH")}</span>
+                  <span>{meta}</span>
                 </div>
-                <span className={`status-pill ${run.status.toLowerCase()}`}>{run.status}</span>
+                <button
+                  className="icon-button"
+                  onClick={() => void downloadTimestampFile(run)}
+                  title="ดาวน์โหลด"
+                  type="button"
+                >
+                  <Download size={16} />
+                </button>
+                <button
+                  className="icon-button danger"
+                  onClick={() => void deleteRun(run)}
+                  title="ลบ"
+                  type="button"
+                >
+                  <X size={16} />
+                </button>
               </div>
             );
           })}
