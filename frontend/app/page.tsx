@@ -1369,8 +1369,9 @@ function MasterDataPage({
                     <>
                       <span className="md-filename">{activeFile.original_filename}</span>
                       <span className="md-filedate">
-                        {new Date(activeFile.created_at).toLocaleDateString("th-TH", {
+                        {new Date(activeFile.created_at).toLocaleString("th-TH", {
                           day: "numeric", month: "short", year: "numeric",
+                          hour: "2-digit", minute: "2-digit", hour12: false,
                         })}
                       </span>
                     </>
