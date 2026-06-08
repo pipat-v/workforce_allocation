@@ -1219,12 +1219,21 @@ function DashboardPanels({
   const present = reportData?.present ?? 0;
   const late = reportData?.late ?? 0;
   const absent = reportData?.absent ?? 0;
-  const presentPercent = total ? ((present / total) * 100).toFixed(1) : "0.0";
-  const latePercent = total ? ((late / total) * 100).toFixed(1) : "0.0";
-  const absentPercent = total ? ((absent / total) * 100).toFixed(1) : "0.0";
-  const topDeptRows = reportData?.deptRows?.slice(0, 5) ?? deptRows;
+  const presentPct = total ? (present / total) * 100 : 0;
+  const latePct = total ? (late / total) * 100 : 0;
+  const absentPct = total ? (absent / total) * 100 : 0;
+  const topDeptRows = reportData?.deptRows?.slice(0, 5) ?? [];
   const dashboardLateRows = reportData?.lateRows ?? [];
-  const maxDeptTotal = Math.max(...topDeptRows.map((row) => "total" in row ? row.total : row.value), 1);
+  const maxDeptTotal = Math.max(...topDeptRows.map((row) => row.total), 1);
+  const donutStyle = total
+    ? {
+        background: `conic-gradient(
+          #10b981 0 ${presentPct}%,
+          #f59e0b ${presentPct}% ${presentPct + latePct}%,
+          #ef4444 ${presentPct + latePct}% 100%
+        )`,
+      }
+    : { background: "#e2e8f0" };
 
   return (
     <>
@@ -1241,37 +1250,35 @@ function DashboardPanels({
                   <th>ชื่อ</th>
                   <th>หน่วยงาน</th>
                   <th>เข้างาน</th>
-                  <th>สาย</th>
+                  <th>สาย (นาที)</th>
                 </tr>
               </thead>
               <tbody>
                 {dashboardLateRows.slice(0, 6).map((row) => (
                   <tr key={`dashboard-late-${row.empId}-${row.scanIn}`}>
                     <td>{row.name}</td>
-                    <td>{row.dept}</td>
+                    <td><span className="dept-chip">{row.dept}</span></td>
                     <td>{row.scanIn}</td>
-                    <td>{row.minutesLate} นาที</td>
+                    <td><span className="late-minutes-badge">{row.minutesLate}</span></td>
                   </tr>
                 ))}
                 {dashboardLateRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={4}>ยังไม่มีข้อมูลคนมาสาย</td>
-                  </tr>
+                  <tr><td colSpan={4}>ยังไม่มีข้อมูลคนมาสาย</td></tr>
                 ) : null}
               </tbody>
             </table>
           </div>
           <div className="compact-attendance-summary">
-            <div className="donut compact">
+            <div className="donut compact" style={donutStyle}>
               <div>
                 <strong>{totalActivePeople}</strong>
                 <span>พนักงาน</span>
               </div>
             </div>
             <div className="legend compact">
-              <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPercent}%`} />
-              <LegendRow color="amber" label="Late" value={String(late)} percent={`${latePercent}%`} />
-              <LegendRow color="red" label="Absent" value={String(absent)} percent={`${absentPercent}%`} />
+              <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
+              <LegendRow color="amber" label="Late" value={String(late)} percent={`${latePct.toFixed(1)}%`} />
+              <LegendRow color="red" label="Absent" value={String(absent)} percent={`${absentPct.toFixed(1)}%`} />
             </div>
           </div>
           <p className="panel-note">หมายเหตุ : ขาดงาน คือ พนักงานที่ไม่พบการสแกนเข้างาน</p>
@@ -1279,30 +1286,32 @@ function DashboardPanels({
 
         <section className="panel dept-panel">
           <div className="panel-title-row">
-            <h3>การจัดสรรตามหน่วยงาน (Top 5)</h3>
-            <button className="ghost-button" type="button">ทั้งหมด <ChevronDown size={14} /></button>
+            <h3>พนักงานตามหน่วยงาน (Top 5)</h3>
           </div>
           <div className="dept-bars">
-            {topDeptRows.map((row) => {
-              const value = "total" in row ? row.total : row.value;
-              return (
-                <div className="dept-row" key={row.dept}>
-                  <span>{row.dept}</span>
-                  <div className="bar-track">
-                    <div className="bar-fill" style={{ width: `${(value / maxDeptTotal) * 100}%` }} />
+            {topDeptRows.length === 0 ? (
+              <p className="empty-copy">ยังไม่มีข้อมูล</p>
+            ) : null}
+            {topDeptRows.map((row, index) => (
+              <div className="dept-row" key={row.dept}>
+                <span className="dept-rank">{index + 1}</span>
+                <div className="dept-row-content">
+                  <div className="dept-row-label">
+                    <span>{row.dept}</span>
+                    <strong>{row.total}</strong>
                   </div>
-                  <strong>{value}</strong>
+                  <div className="bar-track">
+                    <div className="bar-fill" style={{ width: `${(row.total / maxDeptTotal) * 100}%` }} />
+                  </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
-          <button className="link-button" type="button">ดูทั้งหมด</button>
         </section>
 
         <section className="panel files-panel">
           <h3>ไฟล์ล่าสุด</h3>
           <LatestMasterFiles activeMasterMap={activeMasterMap} />
-          <button className="link-button" type="button">ดูทั้งหมด</button>
         </section>
       </section>
 
@@ -2428,7 +2437,7 @@ function KpiCard({
   progress?: number;
 }) {
   return (
-    <article className="kpi-card">
+    <article className={`kpi-card kpi-${tone}`}>
       <div className={`kpi-icon ${tone}`}>{icon}</div>
       <div className="kpi-body">
         <span>{label}</span>
