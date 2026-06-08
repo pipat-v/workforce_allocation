@@ -1192,20 +1192,26 @@ button {
   gap: 14px;
 }
 
+/* ── Header card: toolbar + KPIs in one panel ── */
+.report-header-card {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 .report-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  background: #ffffff;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 14px 18px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
 }
 
 .report-toolbar-info {
   display: flex;
-  gap: 24px;
+  gap: 28px;
   flex-wrap: wrap;
 }
 
@@ -1219,7 +1225,7 @@ button {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: #9ca3af;
 }
 
@@ -1231,14 +1237,16 @@ button {
 
 .report-refresh {
   flex-shrink: 0;
-  height: 40px;
-  padding: 0 18px;
+  height: 36px;
+  padding: 0 16px;
+  font-size: 13px;
 }
 
+/* ── KPI row inside header card ── */
 .report-kpis {
   display: grid;
-  grid-template-columns: 1.6fr repeat(4, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
 }
 
 .report-metric {
@@ -1246,60 +1254,178 @@ button {
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 4px;
-  padding: 16px 20px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  border-left: 4px solid var(--line);
+  gap: 3px;
+  padding: 14px 20px;
+  border-right: 1px solid var(--line);
   background: #ffffff;
-  min-height: 84px;
 }
 
-.report-metric.green { border-left-color: #10b981; }
-.report-metric.amber { border-left-color: #f59e0b; }
-.report-metric.red   { border-left-color: #ef4444; }
-.report-metric.is-rate { border-left-color: #8b5cf6; }
+.report-metric:last-child {
+  border-right: 0;
+}
+
+.report-metric.green { background: #f0fdf4; }
+.report-metric.amber { background: #fffbeb; }
+.report-metric.red   { background: #fef2f2; }
+.report-metric.is-rate { background: #faf5ff; }
 
 .report-metric-value {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 800;
   line-height: 1;
   color: #1f2937;
 }
 
 .report-metric.green .report-metric-value { color: #059669; }
-.report-metric.amber .report-metric-value,
-.report-metric.is-rate .report-metric-value { color: #d97706; }
+.report-metric.amber .report-metric-value { color: #d97706; }
+.report-metric.is-rate .report-metric-value { color: #7c3aed; }
 .report-metric.red .report-metric-value { color: #dc2626; }
 
 .report-metric-label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .report-metric-sub {
   font-size: 11px;
   color: #9ca3af;
-  margin-top: 2px;
+  margin-top: 1px;
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* ── Main grid: dept bars | overview ── */
 .report-grid {
   display: grid;
-  grid-template-columns: 1.15fr 1.1fr 0.9fr;
+  grid-template-columns: 1.5fr 1fr;
   gap: 12px;
 }
 
 .report-card {
-  min-height: 290px;
+  display: flex;
+  flex-direction: column;
 }
 
-.report-card h3 {
-  text-align: center;
+/* ── Stacked bar legend ── */
+.stack-legend {
+  display: flex;
+  gap: 14px;
+  margin: 10px 0 4px;
+}
+
+.stack-legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.stack-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.stack-legend .present { background: #10b981; }
+.stack-legend .late { background: #f59e0b; }
+.stack-legend .absent { background: #dc2626; }
+
+/* ── Overview card (right column) ── */
+.report-overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.report-overview-card h3 {
+  font-size: 16px;
+  margin: 0 0 16px;
+}
+
+.overview-donut-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.late-dept-breakdown {
+  padding-top: 14px;
+  flex: 1;
+}
+
+.late-dept-breakdown h4 {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+  margin: 0 0 10px;
+}
+
+.late-dept-row {
+  display: grid;
+  grid-template-columns: 8px 1fr minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.late-dept-row i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.late-dept-name {
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.late-dept-bar {
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.late-dept-bar > div {
+  height: 100%;
+  border-radius: 3px;
+  opacity: 0.75;
+}
+
+.late-dept-count {
+  text-align: right;
+  font-weight: 700;
+  color: #374151;
+}
+
+/* ── Table section header ── */
+.report-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.report-table-header h3 {
+  margin: 0;
+  font-size: 16px;
 }
 
 .stacked-bars {
@@ -1704,13 +1830,16 @@ button.stacked-row {
   .kpi-grid,
   .dashboard-grid,
   .workspace-grid,
-  .report-grid,
   .table-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .report-grid {
+    grid-template-columns: 1fr;
+  }
+
   .report-kpis {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .files-panel,
@@ -1753,6 +1882,11 @@ button.stacked-row {
   .report-kpis,
   .table-filters {
     grid-template-columns: 1fr;
+  }
+
+  .report-table-header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .donut-area {

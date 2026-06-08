@@ -2166,15 +2166,6 @@ function ReportDashboard({
     .sort((a, b) => b.count - a.count);
   const lateDeptTotal = Math.max(lateDeptRows.reduce((sum, row) => sum + row.count, 0), 1);
   const pieColors = ["#2563eb", "#0f172a", "#10b981", "#f59e0b", "#dc2626", "#7c3aed"];
-  let pieCursor = 0;
-  const lateDeptPie = lateDeptRows.length
-    ? `conic-gradient(${lateDeptRows.map((row, index) => {
-        const start = pieCursor;
-        const end = pieCursor + (row.count / lateDeptTotal) * 100;
-        pieCursor = end;
-        return `${pieColors[index % pieColors.length]} ${start}% ${end}%`;
-      }).join(", ")})`
-    : "conic-gradient(#e6e8ea 0 100%)";
   const selectedDeptLabel = selectedDept === "all" ? "ทั้งโรงงาน" : selectedDept;
   const normalizedQuery = query.trim().toLowerCase();
   const filteredLateRows = data.lateRows.filter((row) => {
@@ -2194,35 +2185,36 @@ function ReportDashboard({
 
   return (
     <section className="report-page">
-      <div className="report-toolbar">
-        <div className="report-toolbar-info">
-          <div className="rpt-info-item">
-            <span>วันที่ข้อมูล</span>
-            <strong>{data.targetDate}</strong>
+      <div className="panel report-header-card">
+        <div className="report-toolbar">
+          <div className="report-toolbar-info">
+            <div className="rpt-info-item">
+              <span>วันที่ข้อมูล</span>
+              <strong>{data.targetDate}</strong>
+            </div>
+            <div className="rpt-info-item">
+              <span>หน่วยงานที่เลือก</span>
+              <strong>{selectedDeptLabel}</strong>
+            </div>
           </div>
-          <div className="rpt-info-item">
-            <span>หน่วยงานที่เลือก</span>
-            <strong>{selectedDeptLabel}</strong>
-          </div>
+          <button
+            className="primary-button report-refresh"
+            disabled={isLoadingReport}
+            onClick={loadReportDashboard}
+            type="button"
+          >
+            <BarChart3 size={17} />
+            {isLoadingReport ? "กำลังโหลด..." : "โหลดข้อมูล"}
+          </button>
         </div>
-        <button
-          className="primary-button report-refresh"
-          disabled={isLoadingReport}
-          onClick={loadReportDashboard}
-          type="button"
-        >
-          <BarChart3 size={17} />
-          {isLoadingReport ? "กำลังโหลด..." : "Load Uploaded Data"}
-        </button>
+        <div className="report-kpis">
+          <ReportMetric value={scopedTotal} label="พนักงานทั้งหมด" sublabel={selectedDeptLabel} />
+          <ReportMetric value={scopedPresent} label="Present" tone="green" />
+          <ReportMetric value={scopedLate} label="Late" tone="amber" />
+          <ReportMetric value={scopedAbsent} label="Absent" tone="red" />
+          <ReportMetric value={`${lateRate}%`} label="Late Rate" isRate />
+        </div>
       </div>
-
-      <section className="report-kpis">
-        <ReportMetric value={scopedTotal} label="พนักงานทั้งหมด" sublabel={selectedDeptLabel} />
-        <ReportMetric value={scopedPresent} label="Present" tone="green" />
-        <ReportMetric value={scopedLate} label="Late" tone="amber" />
-        <ReportMetric value={scopedAbsent} label="Absent" tone="red" />
-        <ReportMetric value={`${lateRate}%`} label="Late Rate" tone="amber" isRate />
-      </section>
 
       <section className="report-grid">
         <div className="panel report-card">
@@ -2233,6 +2225,11 @@ function ReportDashboard({
                 ดูทั้งหมด
               </button>
             ) : null}
+          </div>
+          <div className="stack-legend">
+            <span><i className="present" />Present</span>
+            <span><i className="late" />Late</span>
+            <span><i className="absent" />Absent</span>
           </div>
           <div className="stacked-bars">
             {data.deptRows.map((row) => (
@@ -2267,77 +2264,47 @@ function ReportDashboard({
           </div>
         </div>
 
-        <div className="panel report-card late-people-card">
-          <div className="panel-title-row">
-            <h3>คนที่มาสาย{selectedDept === "all" ? "" : ` - ${selectedDept}`}</h3>
-            <span className="table-count">{sortedLateRows.length} คน</span>
-          </div>
-          <div className="late-preview-table">
-            <table className="table compact-table">
-              <thead>
-                <tr>
-                  <th>ชื่อ</th>
-                  <th>หน่วยงาน</th>
-                  <th>เข้างาน</th>
-                  <th>สาย</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedLateRows.map((row) => (
-                  <tr key={`preview-${row.empId}-${row.scanIn}`}>
-                    <td>{row.name}</td>
-                    <td><span className="dept-chip">{row.dept}</span></td>
-                    <td>{row.scanIn}</td>
-                    <td><span className="late-minutes-badge">{row.minutesLate}</span></td>
-                  </tr>
-                ))}
-                {sortedLateRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={4}>ยังไม่มีข้อมูลคนมาสาย</td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-          <div className="compact-attendance-summary">
+        <div className="panel report-overview-card">
+          <h3>ภาพรวมการเข้างาน{selectedDept !== "all" ? ` · ${selectedDept}` : ""}</h3>
+          <div className="overview-donut-row">
             <div
-              className="report-donut compact"
+              className="report-donut"
               style={{
                 background: `conic-gradient(#10b981 0 ${presentPercent}%, #f59e0b ${presentPercent}% ${presentPercent + latePercent}%, #dc2626 ${presentPercent + latePercent}% 100%)`,
               }}
             >
               <div>
                 <strong>{scopedTotal}</strong>
-                <span>ทั้งหมด</span>
+                <span>คน</span>
               </div>
             </div>
-            <div className="report-legend compact">
+            <div className="report-legend">
               <LegendRow color="green" label="Present" value={String(scopedPresent)} percent={`${presentPercent.toFixed(1)}%`} />
               <LegendRow color="amber" label="Late" value={String(scopedLate)} percent={`${latePercent.toFixed(1)}%`} />
               <LegendRow color="red" label="Absent" value={String(scopedAbsent)} percent={`${absentPercent.toFixed(1)}%`} />
             </div>
           </div>
-        </div>
-
-        <div className="panel report-card">
-          <h3>สัดส่วนหน่วยงานที่มีคนมาสาย</h3>
-          <div className="mini-pie">
-            <div style={{ background: lateDeptPie }} />
-          </div>
-          <div className="mini-pie-legend">
+          <div className="late-dept-breakdown">
+            <h4>หน่วยงานที่มาสาย</h4>
             {lateDeptRows.slice(0, 6).map((row, index) => (
-              <span key={row.dept}>
+              <div className="late-dept-row" key={row.dept}>
                 <i style={{ background: pieColors[index % pieColors.length] }} />
-                {row.dept}: {row.count}
-              </span>
+                <span className="late-dept-name">{row.dept}</span>
+                <div className="late-dept-bar">
+                  <div style={{ width: `${(row.count / lateDeptTotal) * 100}%`, background: pieColors[index % pieColors.length] }} />
+                </div>
+                <span className="late-dept-count">{row.count}</span>
+              </div>
             ))}
-            {lateDeptRows.length === 0 ? <span>ยังไม่มีข้อมูลคนมาสาย</span> : null}
+            {lateDeptRows.length === 0 ? <p className="empty-copy">ยังไม่มีข้อมูลคนมาสาย</p> : null}
           </div>
         </div>
       </section>
 
       <section className="panel report-table-panel">
-        <div className="table-filters report-table-filters">
+        <div className="report-table-header">
+          <h3>รายละเอียดคนมาสาย{selectedDept !== "all" ? ` · ${selectedDept}` : ""}</h3>
+          <div className="table-filters report-table-filters">
           <input
             aria-label="ค้นหาคนมาสาย"
             placeholder="ค้นหา ชื่อ รหัส หน่วยงาน"
@@ -2365,6 +2332,7 @@ function ReportDashboard({
           >
             Clear
           </button>
+          </div>
         </div>
         <table className="table">
           <thead>
