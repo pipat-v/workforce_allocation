@@ -1057,9 +1057,9 @@ button {
 }
 
 .warn-btn.warned {
-  background: #dcfce7;
-  border-color: #16a34a;
-  color: #15803d;
+  background: #fef3c7;
+  border-color: #d97706;
+  color: #92400e;
 }
 
 .warn-btn.warned:hover:not(:disabled) {
@@ -1074,7 +1074,7 @@ button {
 }
 
 .row-warned td {
-  background: #f0fdf4;
+  background: #fffbeb;
 }
 
 .warn-count-badge {
@@ -1082,8 +1082,8 @@ button {
   align-items: center;
   padding: 2px 8px;
   border-radius: 12px;
-  background: #dcfce7;
-  color: #15803d;
+  background: #fef3c7;
+  color: #92400e;
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
