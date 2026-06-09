@@ -790,6 +790,31 @@ export default function Home() {
                 ))}
               </select>
             ) : null}
+            {activeTab === "report" && allDeptOptions.length > 0 ? (
+              <select
+                aria-label="กรองหน่วยงาน"
+                className="dept-filter-select"
+                value={selectedReportDept}
+                onChange={(e) => setSelectedReportDept(e.target.value)}
+              >
+                <option value="all">ทุกหน่วยงาน</option>
+                {allDeptOptions.map((dept) => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
+            ) : null}
+            {activeTab === "report" ? (
+              <button
+                className="primary-button"
+                style={{ height: 36, fontSize: 13 }}
+                disabled={isLoadingReport}
+                onClick={loadReportDashboard}
+                type="button"
+              >
+                <BarChart3 size={15} />
+                {isLoadingReport ? "กำลังโหลด..." : "โหลดข้อมูล"}
+              </button>
+            ) : null}
           </div>
           {(message || error) ? (
             <div className={`toast ${error ? "error" : ""}`}>
@@ -921,8 +946,6 @@ export default function Home() {
         {activeTab === "report" ? (
           <ReportDashboard
             deptFilter={reportLateDept}
-            isLoadingReport={isLoadingReport}
-            loadReportDashboard={loadReportDashboard}
             query={reportLateQuery}
             reportData={reportData}
             selectedDept={selectedReportDept}
@@ -2547,8 +2570,6 @@ function TablePagination({
 
 function ReportDashboard({
   deptFilter,
-  isLoadingReport,
-  loadReportDashboard,
   query,
   reportData,
   selectedDept,
@@ -2558,8 +2579,6 @@ function ReportDashboard({
   warnCountMap,
 }: {
   deptFilter: string;
-  isLoadingReport: boolean;
-  loadReportDashboard: () => Promise<void>;
   query: string;
   reportData: ReportData | null;
   selectedDept: string;
@@ -2628,34 +2647,6 @@ function ReportDashboard({
 
   return (
     <section className="report-page">
-      <div className="report-topstrip">
-        <div className="report-topstrip-left">
-          <CalendarDays size={16} />
-          <span>ข้อมูลวันที่ <strong>{data.targetDate}</strong></span>
-          {data.deptRows.length > 0 ? (
-            <select
-              className="dept-filter-select"
-              value={selectedDept}
-              onChange={(e) => { setSelectedDept(e.target.value); setDeptFilter("all"); }}
-            >
-              <option value="all">ทุกหน่วยงาน</option>
-              {data.deptRows.map((r) => (
-                <option key={r.dept} value={r.dept}>{r.dept}</option>
-              ))}
-            </select>
-          ) : null}
-        </div>
-        <button
-          className="primary-button report-refresh"
-          disabled={isLoadingReport}
-          onClick={loadReportDashboard}
-          type="button"
-        >
-          <BarChart3 size={16} />
-          {isLoadingReport ? "กำลังโหลด..." : "โหลดข้อมูล"}
-        </button>
-      </div>
-
       <section className="kpi-grid">
         <KpiCard
           icon={<UsersRound size={34} />}
