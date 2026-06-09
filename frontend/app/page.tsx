@@ -150,7 +150,6 @@ export default function Home() {
   const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [isSavingMasters, setIsSavingMasters] = useState(false);
   const [isCreatingRun, setIsCreatingRun] = useState(false);
-  const [timestampDeptPage, setTimestampDeptPage] = useState(1);
   const [resultsQuery, setResultsQuery] = useState("");
   const [resultsDept, setResultsDept] = useState("all");
   const [resultsStatus, setResultsStatus] = useState("all");
@@ -160,8 +159,6 @@ export default function Home() {
   const [reportLateQuery, setReportLateQuery] = useState("");
   const [reportLateDept, setReportLateDept] = useState("all");
   const [selectedReportDept, setSelectedReportDept] = useState("all");
-  const [timestampSort, setTimestampSort] = useState<SortState<AttendanceSortKey>>(null);
-  const [reportLateSort, setReportLateSort] = useState<SortState<AttendanceSortKey>>(null);
   const [masterFileHistory, setMasterFileHistory] = useState<MasterFile[]>([]);
   const [dashboardDeptFilter, setDashboardDeptFilter] = useState("all");
 
@@ -810,15 +807,11 @@ export default function Home() {
         {activeTab === "timestamp_dept" ? (
           <TimestampWithDeptPage
             deptFilter={timestampDept}
-            page={timestampDeptPage}
             query={timestampQuery}
             reportData={reportData}
             setDeptFilter={setTimestampDept}
-            setPage={setTimestampDeptPage}
             setQuery={setTimestampQuery}
-            setSort={setTimestampSort}
             setStatusFilter={setTimestampStatus}
-            sort={timestampSort}
             statusFilter={timestampStatus}
           />
         ) : null}
@@ -834,8 +827,6 @@ export default function Home() {
             setDeptFilter={setReportLateDept}
             setQuery={setReportLateQuery}
             setSelectedDept={setSelectedReportDept}
-            setSort={setReportLateSort}
-            sort={reportLateSort}
           />
         ) : null}
 
@@ -1396,6 +1387,9 @@ function DashboardPanels({
   totalActivePeople: number;
 }) {
   const [detailStatusFilter, setDetailStatusFilter] = useState("all");
+  const [detailSortState, setDetailSortState] = useState<SortState<AttendanceSortKey>>(null);
+  const detailSort = detailSortState;
+  const setDetailSort: AttendanceSortSetter = (s) => setDetailSortState(s);
 
   const total = reportData?.totalEmployees ?? 0;
   const present = reportData?.present ?? 0;
@@ -1420,13 +1414,14 @@ function DashboardPanels({
 
   const allRecords = reportData?.records ?? [];
   const statusOrder: Record<string, number> = { Absent: 0, Late: 1, Present: 2 };
-  const detailRows = allRecords
-    .filter((r) => detailStatusFilter === "all" || r.status === detailStatusFilter)
-    .sort((a, b) => {
-      const sd = (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
-      if (sd !== 0) return sd;
-      return b.minutesLate - a.minutesLate;
-    });
+  const baseDetailRows = allRecords.filter((r) => detailStatusFilter === "all" || r.status === detailStatusFilter);
+  const detailRows = detailSort
+    ? sortAttendanceRows(baseDetailRows, detailSort, monthlyLateCounts)
+    : [...baseDetailRows].sort((a, b) => {
+        const sd = (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
+        if (sd !== 0) return sd;
+        return b.minutesLate - a.minutesLate;
+      });
 
   const lateAbsentCount = allRecords.filter((r) => r.status === "Late" || r.status === "Absent").length;
 
@@ -1526,14 +1521,14 @@ function DashboardPanels({
             <thead>
               <tr>
                 <th>No.</th>
-                <th>ชื่อ-สกุล</th>
-                <th>หน่วยงาน</th>
-                <th>กะ</th>
-                <th>เวลาเข้างาน</th>
-                <th>Scan In</th>
-                <th>สถานะ</th>
-                <th>สาย</th>
-                <th>สายเดือนนี้</th>
+                <th><SortButton columnKey="name" setSort={setDetailSort} sort={detailSort}>ชื่อ-สกุล</SortButton></th>
+                <th><SortButton columnKey="dept" setSort={setDetailSort} sort={detailSort}>หน่วยงาน</SortButton></th>
+                <th><SortButton columnKey="shift" setSort={setDetailSort} sort={detailSort}>กะ</SortButton></th>
+                <th><SortButton columnKey="shiftStart" setSort={setDetailSort} sort={detailSort}>เวลาเข้างาน</SortButton></th>
+                <th><SortButton columnKey="scanIn" setSort={setDetailSort} sort={detailSort}>Scan In</SortButton></th>
+                <th><SortButton columnKey="status" setSort={setDetailSort} sort={detailSort}>สถานะ</SortButton></th>
+                <th><SortButton columnKey="minutesLate" setSort={setDetailSort} sort={detailSort}>สาย</SortButton></th>
+                <th><SortButton columnKey="monthlyLate" setSort={setDetailSort} sort={detailSort}>สายเดือนนี้</SortButton></th>
                 <th>เสี่ยง</th>
               </tr>
             </thead>
@@ -2046,29 +2041,26 @@ const pageSize = 10;
 
 function TimestampWithDeptPage({
   deptFilter,
-  page,
   query,
   reportData,
   setDeptFilter,
-  setPage,
   setQuery,
-  setSort,
   setStatusFilter,
-  sort,
   statusFilter,
 }: {
   deptFilter: string;
-  page: number;
   query: string;
   reportData: ReportData | null;
   setDeptFilter: (value: string) => void;
-  setPage: (page: number) => void;
   setQuery: (value: string) => void;
-  setSort: AttendanceSortSetter;
   setStatusFilter: (value: string) => void;
-  sort: SortState<AttendanceSortKey>;
   statusFilter: string;
 }) {
+  const [page, setPage] = useState(1);
+  const [sortState, setSortState] = useState<SortState<AttendanceSortKey>>(null);
+  const sort = sortState;
+  const setSort: AttendanceSortSetter = (s) => setSortState(s);
+
   const sourceRows = reportData?.timestampRows ?? [];
   const deptOptions = Array.from(new Set(sourceRows.map((record) => record.dept))).sort();
   const normalizedQuery = query.trim().toLowerCase();
@@ -2415,8 +2407,6 @@ function ReportDashboard({
   setDeptFilter,
   setQuery,
   setSelectedDept,
-  setSort,
-  sort,
 }: {
   deptFilter: string;
   isLoadingReport: boolean;
@@ -2427,9 +2417,10 @@ function ReportDashboard({
   setDeptFilter: (value: string) => void;
   setQuery: (value: string) => void;
   setSelectedDept: (value: string) => void;
-  setSort: AttendanceSortSetter;
-  sort: SortState<AttendanceSortKey>;
 }) {
+  const [sortState, setSortState] = useState<SortState<AttendanceSortKey>>(null);
+  const sort = sortState;
+  const setSort: AttendanceSortSetter = (s) => setSortState(s);
   const data = reportData ?? {
     targetDate: "-",
     totalEmployees: 0,
