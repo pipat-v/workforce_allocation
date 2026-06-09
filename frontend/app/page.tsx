@@ -2527,7 +2527,8 @@ function ReportDashboard({
     if (!data.targetMonthKey) return;
     const [year, month] = data.targetMonthKey.split("-");
     const startDate = `${year}-${month}-01`;
-    const endDate = `${year}-${String(Number(month))}-31`;
+    const lastDay = new Date(Number(year), Number(month), 0).getDate();
+    const endDate = `${year}-${month}-${String(lastDay).padStart(2, "0")}`;
     supabase
       .from("employee_warnings")
       .select("emp_id, warn_date")
