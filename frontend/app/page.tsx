@@ -150,7 +150,6 @@ export default function Home() {
   const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [isSavingMasters, setIsSavingMasters] = useState(false);
   const [isCreatingRun, setIsCreatingRun] = useState(false);
-  const [resultsPage, setResultsPage] = useState(1);
   const [timestampDeptPage, setTimestampDeptPage] = useState(1);
   const [resultsQuery, setResultsQuery] = useState("");
   const [resultsDept, setResultsDept] = useState("all");
@@ -799,10 +798,8 @@ export default function Home() {
         {activeTab === "results" ? (
           <ResultsPanel
             deptFilter={resultsDept}
-            page={resultsPage}
             query={resultsQuery}
             reportData={reportData}
-            setPage={setResultsPage}
             setDeptFilter={setResultsDept}
             setQuery={setResultsQuery}
             setSort={setResultsSort}
@@ -2224,11 +2221,9 @@ function LatestMasterFiles({
 
 function ResultsPanel({
   deptFilter = "all",
-  page = 1,
   query = "",
   reportData,
   setDeptFilter,
-  setPage,
   setQuery,
   setSort,
   setStatusFilter,
@@ -2237,11 +2232,9 @@ function ResultsPanel({
   statusFilter = "all",
 }: {
   deptFilter?: string;
-  page?: number;
   query?: string;
   reportData: ReportData | null;
   setDeptFilter?: (value: string) => void;
-  setPage?: (page: number) => void;
   setQuery?: (value: string) => void;
   setSort?: AttendanceSortSetter;
   setStatusFilter?: (value: string) => void;
@@ -2249,6 +2242,7 @@ function ResultsPanel({
   sort?: SortState<AttendanceSortKey>;
   statusFilter?: string;
 }) {
+  const [page, setPage] = useState(1);
   const sourceRows = reportData?.records.filter((record) => record.status !== "Absent") ?? [];
   const deptOptions = Array.from(new Set(sourceRows.map((record) => record.dept))).sort();
   const normalizedQuery = query.trim().toLowerCase();
@@ -2272,7 +2266,7 @@ function ResultsPanel({
 
   function updateFilter(callback: () => void) {
     callback();
-    setPage?.(1);
+    setPage(1);
   }
 
   return (
