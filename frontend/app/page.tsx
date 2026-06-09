@@ -166,6 +166,10 @@ export default function Home() {
   const [selectedReportDept, setSelectedReportDept] = useState("all");
   const [masterFileHistory, setMasterFileHistory] = useState<MasterFile[]>([]);
   const [dashboardDeptFilter, setDashboardDeptFilter] = useState("all");
+  const [warnedIds, setWarnedIds] = useState<Set<string>>(new Set());
+  const [warnPending, setWarnPending] = useState<Set<string>>(new Set());
+
+  const isoTargetDate = reportData?.isoTargetDate ?? "";
 
   const activeMasterMap = useMemo(
     () =>
@@ -244,6 +248,17 @@ export default function Home() {
 
     void loadReportDashboard();
   }, [reportSourceKey, loadedReportKey, isLoadingReport]);
+
+  useEffect(() => {
+    if (!isoTargetDate) return;
+    supabase
+      .from("employee_warnings")
+      .select("emp_id")
+      .eq("warn_date", isoTargetDate)
+      .then(({ data }) => {
+        if (data) setWarnedIds(new Set(data.map((r: { emp_id: string }) => r.emp_id)));
+      });
+  }, [isoTargetDate]);
 
   async function loadDashboard() {
     await Promise.all([loadRuns(), loadActiveMasters()]);
@@ -422,6 +437,8 @@ export default function Home() {
   }
 
   async function deleteRun(run: AllocationRun) {
+    const label = run.original_filename ?? run.scan_file_path?.split("/").pop() ?? run.id;
+    if (!window.confirm(`ต้องการลบไฟล์ "${label}" ใช่ไหม?\nการลบไม่สามารถย้อนกลับได้`)) return;
     const { error: deleteError } = await supabase
       .from("allocation_runs")
       .delete()
@@ -434,6 +451,8 @@ export default function Home() {
   }
 
   async function deleteMasterFile(file: MasterFile) {
+    const label = file.original_filename ?? file.file_type;
+    if (!window.confirm(`ต้องการลบ "${label}" ใช่ไหม?\nการลบไม่สามารถย้อนกลับได้`)) return;
     setError("");
     const { error: storageError } = await supabase.storage
       .from("workforce-inputs")
@@ -591,6 +610,20 @@ export default function Home() {
     } finally {
       setIsLoadingReport(false);
     }
+  }
+
+  async function toggleWarning(empId: string) {
+    if (!isoTargetDate || warnPending.has(empId)) return;
+    setWarnPending((s) => new Set(s).add(empId));
+    const isWarned = warnedIds.has(empId);
+    if (isWarned) {
+      await supabase.from("employee_warnings").delete().eq("emp_id", empId).eq("warn_date", isoTargetDate);
+      setWarnedIds((s) => { const n = new Set(s); n.delete(empId); return n; });
+    } else {
+      await supabase.from("employee_warnings").upsert({ emp_id: empId, warn_date: isoTargetDate }, { onConflict: "emp_id,warn_date" });
+      setWarnedIds((s) => new Set(s).add(empId));
+    }
+    setWarnPending((s) => { const n = new Set(s); n.delete(empId); return n; });
   }
 
   async function saveTimestampWithDeptRows(runId: string, report: ReportData) {
@@ -762,8 +795,12 @@ export default function Home() {
               activeMasterMap={activeMasterMap}
               assignedPeople={presentPeople}
               dashboardDeptFilter={dashboardDeptFilter}
+              isoTargetDate={isoTargetDate}
               reportData={dashboardReport}
+              toggleWarning={toggleWarning}
               totalActivePeople={totalActivePeople}
+              warnedIds={warnedIds}
+              warnPending={warnPending}
             />
           </>
         ) : null}
@@ -1115,23 +1152,54 @@ function getThaiWeekdayCode(date: Date) {
   return ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"][date.getDay()];
 }
 
-const buddhistHolyDays2026 = new Set([
-  "2026-01-03", "2026-01-11", "2026-01-18", "2026-01-26",
-  "2026-02-02", "2026-02-10", "2026-02-16", "2026-02-24",
-  "2026-03-03", "2026-03-11", "2026-03-18", "2026-03-26",
-  "2026-04-02", "2026-04-10", "2026-04-16", "2026-04-24",
-  "2026-05-01", "2026-05-09", "2026-05-16", "2026-05-24", "2026-05-31",
-  "2026-06-08", "2026-06-14", "2026-06-22", "2026-06-29",
-  "2026-07-07", "2026-07-14", "2026-07-22", "2026-07-29", "2026-07-30",
-  "2026-08-06", "2026-08-13", "2026-08-21", "2026-08-28",
-  "2026-09-05", "2026-09-11", "2026-09-19", "2026-09-26",
-  "2026-10-04", "2026-10-11", "2026-10-19", "2026-10-26",
-  "2026-11-03", "2026-11-09", "2026-11-17", "2026-11-24",
-  "2026-12-02", "2026-12-09", "2026-12-17", "2026-12-24",
-]);
+const buddhistHolyDaysByYear: Record<string, Set<string>> = {
+  "2025": new Set([
+    "2025-01-05", "2025-01-13", "2025-01-20", "2025-01-29",
+    "2025-02-05", "2025-02-12", "2025-02-20", "2025-02-27",
+    "2025-03-06", "2025-03-14", "2025-03-22", "2025-03-29",
+    "2025-04-05", "2025-04-13", "2025-04-21", "2025-04-28",
+    "2025-05-04", "2025-05-12", "2025-05-20", "2025-05-27",
+    "2025-06-03", "2025-06-11", "2025-06-18", "2025-06-25",
+    "2025-07-04", "2025-07-10", "2025-07-18", "2025-07-24",
+    "2025-08-02", "2025-08-09", "2025-08-17", "2025-08-23",
+    "2025-09-01", "2025-09-07", "2025-09-15", "2025-09-22",
+    "2025-10-01", "2025-10-07", "2025-10-14", "2025-10-21", "2025-10-29",
+    "2025-11-05", "2025-11-12", "2025-11-20", "2025-11-27",
+    "2025-12-05", "2025-12-11", "2025-12-19", "2025-12-26",
+  ]),
+  "2026": new Set([
+    "2026-01-03", "2026-01-11", "2026-01-18", "2026-01-26",
+    "2026-02-02", "2026-02-10", "2026-02-16", "2026-02-24",
+    "2026-03-03", "2026-03-11", "2026-03-18", "2026-03-26",
+    "2026-04-02", "2026-04-10", "2026-04-16", "2026-04-24",
+    "2026-05-01", "2026-05-09", "2026-05-16", "2026-05-24", "2026-05-31",
+    "2026-06-08", "2026-06-14", "2026-06-22", "2026-06-29",
+    "2026-07-07", "2026-07-14", "2026-07-22", "2026-07-29", "2026-07-30",
+    "2026-08-06", "2026-08-13", "2026-08-21", "2026-08-28",
+    "2026-09-05", "2026-09-11", "2026-09-19", "2026-09-26",
+    "2026-10-04", "2026-10-11", "2026-10-19", "2026-10-26",
+    "2026-11-03", "2026-11-09", "2026-11-17", "2026-11-24",
+    "2026-12-02", "2026-12-09", "2026-12-17", "2026-12-24",
+  ]),
+  "2027": new Set([
+    "2027-01-01", "2027-01-08", "2027-01-15", "2027-01-22", "2027-01-30",
+    "2027-02-06", "2027-02-13", "2027-02-21", "2027-02-28",
+    "2027-03-07", "2027-03-14", "2027-03-22", "2027-03-29",
+    "2027-04-06", "2027-04-13", "2027-04-21", "2027-04-28",
+    "2027-05-06", "2027-05-12", "2027-05-20", "2027-05-27",
+    "2027-06-03", "2027-06-11", "2027-06-18", "2027-06-26",
+    "2027-07-02", "2027-07-10", "2027-07-17", "2027-07-25",
+    "2027-08-01", "2027-08-09", "2027-08-15", "2027-08-23", "2027-08-30",
+    "2027-09-07", "2027-09-14", "2027-09-22", "2027-09-29",
+    "2027-10-06", "2027-10-13", "2027-10-21", "2027-10-28",
+    "2027-11-05", "2027-11-11", "2027-11-19", "2027-11-26",
+    "2027-12-05", "2027-12-10", "2027-12-19", "2027-12-25",
+  ]),
+};
 
 function isBuddhistHolyDay(date: Date) {
-  return buddhistHolyDays2026.has(toDateKey(date));
+  const yearKey = String(date.getFullYear());
+  return buddhistHolyDaysByYear[yearKey]?.has(toDateKey(date)) ?? false;
 }
 
 function toDateKey(date: Date) {
@@ -1146,8 +1214,7 @@ function cleanEmpId(value: unknown) {
   return String(value ?? "")
     .replace(/\u00a0/g, "")
     .replace(/\s+/g, "")
-    .replace(/\.0$/, "")
-    .replace(/[^0-9]/g, "");
+    .replace(/\.0$/, "");
 }
 
 function getAttendanceSortValue(
@@ -1366,47 +1433,26 @@ function DashboardPanels({
   activeMasterMap,
   assignedPeople,
   dashboardDeptFilter,
+  isoTargetDate,
   reportData,
+  toggleWarning,
   totalActivePeople,
+  warnedIds,
+  warnPending,
 }: {
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   assignedPeople: number;
   dashboardDeptFilter: string;
+  isoTargetDate: string;
   reportData: ReportData | null;
+  toggleWarning: (empId: string) => Promise<void>;
   totalActivePeople: number;
+  warnedIds: Set<string>;
+  warnPending: Set<string>;
 }) {
   const [detailStatusFilter, setDetailStatusFilter] = useState("all");
   const [detailSort, setDetailSort_] = useState<SortState>(null);
   const setDetailSort = setDetailSort_ as (sort: SortState) => void;
-
-  const isoTargetDate = reportData?.isoTargetDate ?? "";
-  const [warnedIds, setWarnedIds] = useState<Set<string>>(new Set());
-  const [warnPending, setWarnPending] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!isoTargetDate) return;
-    supabase
-      .from("employee_warnings")
-      .select("emp_id")
-      .eq("warn_date", isoTargetDate)
-      .then(({ data }) => {
-        if (data) setWarnedIds(new Set(data.map((r: { emp_id: string }) => r.emp_id)));
-      });
-  }, [isoTargetDate]);
-
-  async function toggleWarning(empId: string) {
-    if (!isoTargetDate || warnPending.has(empId)) return;
-    setWarnPending((s) => new Set(s).add(empId));
-    const isWarned = warnedIds.has(empId);
-    if (isWarned) {
-      await supabase.from("employee_warnings").delete().eq("emp_id", empId).eq("warn_date", isoTargetDate);
-      setWarnedIds((s) => { const n = new Set(s); n.delete(empId); return n; });
-    } else {
-      await supabase.from("employee_warnings").upsert({ emp_id: empId, warn_date: isoTargetDate }, { onConflict: "emp_id,warn_date" });
-      setWarnedIds((s) => new Set(s).add(empId));
-    }
-    setWarnPending((s) => { const n = new Set(s); n.delete(empId); return n; });
-  }
 
   const total = reportData?.totalEmployees ?? 0;
   const present = reportData?.present ?? 0;
@@ -2405,12 +2451,21 @@ function TablePagination({
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const start = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
   const end = Math.min(page * pageSize, totalRows);
-  const pages = Array.from({ length: Math.min(totalPages, 5) }, (_, index) => index + 1);
+
+  const windowSize = 5;
+  const halfWindow = Math.floor(windowSize / 2);
+  let winStart = Math.max(1, page - halfWindow);
+  const winEnd = Math.min(totalPages, winStart + windowSize - 1);
+  if (winEnd - winStart + 1 < windowSize) {
+    winStart = Math.max(1, winEnd - windowSize + 1);
+  }
+  const pages = Array.from({ length: winEnd - winStart + 1 }, (_, i) => winStart + i);
 
   return (
     <div className="pagination">
       <span>{start}-{end} จาก {totalRows} รายการ</span>
       <button disabled={!setPage || page <= 1} onClick={() => setPage?.(page - 1)} type="button">‹</button>
+      {winStart > 1 ? <span>…</span> : null}
       {pages.map((item) => (
         <button
           className={item === page ? "active" : ""}
@@ -2422,7 +2477,7 @@ function TablePagination({
           {item}
         </button>
       ))}
-      {totalPages > 5 ? <span>...</span> : null}
+      {winEnd < totalPages ? <span>…</span> : null}
       <button disabled={!setPage || page >= totalPages} onClick={() => setPage?.(page + 1)} type="button">›</button>
     </div>
   );
