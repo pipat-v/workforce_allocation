@@ -1033,6 +1033,66 @@ button {
   background: #fff5f5;
 }
 
+.warn-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.warn-btn:hover:not(:disabled) {
+  background: #fef9c3;
+  border-color: #ca8a04;
+  color: #92400e;
+}
+
+.warn-btn.warned {
+  background: #dcfce7;
+  border-color: #16a34a;
+  color: #15803d;
+}
+
+.warn-btn.warned:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.warn-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.row-warned td {
+  background: #f0fdf4;
+}
+
+.warn-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.no-warn {
+  color: #d1d5db;
+  font-size: 13px;
+}
+
 .risk-badge {
   display: inline-block;
   margin-left: 6px;

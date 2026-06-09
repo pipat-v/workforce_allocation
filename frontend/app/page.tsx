@@ -70,6 +70,7 @@ type AttendanceRecord = {
 
 type ReportData = {
   targetDate: string;
+  isoTargetDate: string;
   targetMonthKey: string;
   totalEmployees: number;
   present: number;
@@ -937,14 +938,13 @@ function buildReportData(
     scanByEmp.set(empId, current);
   }
 
-  const targetDate =
-    Array.from(scanByEmp.values())
-      .flatMap((entry) => entry.times)
-      .sort((a, b) => b.getTime() - a.getTime())[0]
-      ?.toLocaleDateString("th-TH") ?? "-";
   const latestTimestamp = Array.from(scanByEmp.values())
     .flatMap((entry) => entry.times)
     .sort((a, b) => b.getTime() - a.getTime())[0];
+  const targetDate = latestTimestamp?.toLocaleDateString("th-TH") ?? "-";
+  const isoTargetDate = latestTimestamp
+    ? `${latestTimestamp.getFullYear()}-${String(latestTimestamp.getMonth() + 1).padStart(2, "0")}-${String(latestTimestamp.getDate()).padStart(2, "0")}`
+    : "";
   const targetMonthKey = latestTimestamp
     ? `${latestTimestamp.getFullYear()}-${String(latestTimestamp.getMonth() + 1).padStart(2, "0")}`
     : "";
@@ -1006,6 +1006,7 @@ function buildReportData(
 
   return {
     targetDate,
+    isoTargetDate,
     targetMonthKey,
     totalEmployees: records.length,
     present: records.filter((record) => record.status === "Present").length,
@@ -1378,6 +1379,35 @@ function DashboardPanels({
   const [detailSort, setDetailSort_] = useState<SortState>(null);
   const setDetailSort = setDetailSort_ as (sort: SortState) => void;
 
+  const isoTargetDate = reportData?.isoTargetDate ?? "";
+  const [warnedIds, setWarnedIds] = useState<Set<string>>(new Set());
+  const [warnPending, setWarnPending] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!isoTargetDate) return;
+    supabase
+      .from("employee_warnings")
+      .select("emp_id")
+      .eq("warn_date", isoTargetDate)
+      .then(({ data }) => {
+        if (data) setWarnedIds(new Set(data.map((r: { emp_id: string }) => r.emp_id)));
+      });
+  }, [isoTargetDate]);
+
+  async function toggleWarning(empId: string) {
+    if (!isoTargetDate || warnPending.has(empId)) return;
+    setWarnPending((s) => new Set(s).add(empId));
+    const isWarned = warnedIds.has(empId);
+    if (isWarned) {
+      await supabase.from("employee_warnings").delete().eq("emp_id", empId).eq("warn_date", isoTargetDate);
+      setWarnedIds((s) => { const n = new Set(s); n.delete(empId); return n; });
+    } else {
+      await supabase.from("employee_warnings").upsert({ emp_id: empId, warn_date: isoTargetDate }, { onConflict: "emp_id,warn_date" });
+      setWarnedIds((s) => new Set(s).add(empId));
+    }
+    setWarnPending((s) => { const n = new Set(s); n.delete(empId); return n; });
+  }
+
   const total = reportData?.totalEmployees ?? 0;
   const present = reportData?.present ?? 0;
   const late = reportData?.late ?? 0;
@@ -1428,19 +1458,35 @@ function DashboardPanels({
                   <th>หน่วยงาน</th>
                   <th>เข้างาน</th>
                   <th>สาย</th>
+                  <th>เตือน</th>
                 </tr>
               </thead>
               <tbody>
-                {dashboardLateRows.map((row) => (
-                  <tr key={`dashboard-late-${row.empId}-${row.scanIn}`}>
+                {dashboardLateRows.map((row) => {
+                  const warned = warnedIds.has(row.empId);
+                  const pending = warnPending.has(row.empId);
+                  return (
+                  <tr key={`dashboard-late-${row.empId}-${row.scanIn}`} className={warned ? "row-warned" : ""}>
                     <td>{row.name}</td>
                     <td><span className="dept-chip">{row.dept}</span></td>
                     <td>{row.scanIn}</td>
                     <td><span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span></td>
+                    <td>
+                      <button
+                        className={`warn-btn${warned ? " warned" : ""}`}
+                        disabled={pending || !isoTargetDate}
+                        onClick={() => void toggleWarning(row.empId)}
+                        title={warned ? "ยกเลิกการเตือน" : "บันทึกว่าเตือนแล้ว"}
+                        type="button"
+                      >
+                        {warned ? "✓ เตือนแล้ว" : "เตือน"}
+                      </button>
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {dashboardLateRows.length === 0 ? (
-                  <tr><td colSpan={4}>ยังไม่มีข้อมูลคนมาสาย</td></tr>
+                  <tr><td colSpan={5}>ยังไม่มีข้อมูลคนมาสาย</td></tr>
                 ) : null}
               </tbody>
             </table>
@@ -2406,6 +2452,8 @@ function ReportDashboard({
   const [sort, setSort_] = useState<SortState>(null);
   const setSort = setSort_ as (sort: SortState) => void;
   const [tableStatusFilter, setTableStatusFilter] = useState<"all" | "Late" | "Absent">("all");
+  const [warnCountMap, setWarnCountMap] = useState<Record<string, number>>({});
+
   const data = reportData ?? {
     targetDate: "-",
     totalEmployees: 0,
@@ -2417,8 +2465,29 @@ function ReportDashboard({
     records: [],
     timestampRows: [],
     monthlyLateCounts: {},
+    isoTargetDate: "",
     targetMonthKey: "",
   };
+  useEffect(() => {
+    if (!data.targetMonthKey) return;
+    const [year, month] = data.targetMonthKey.split("-");
+    const startDate = `${year}-${month}-01`;
+    const endDate = `${year}-${String(Number(month))}-31`;
+    supabase
+      .from("employee_warnings")
+      .select("emp_id, warn_date")
+      .gte("warn_date", startDate)
+      .lte("warn_date", endDate)
+      .then(({ data: rows }) => {
+        if (!rows) return;
+        const map: Record<string, number> = {};
+        for (const r of rows as Array<{ emp_id: string; warn_date: string }>) {
+          map[r.emp_id] = (map[r.emp_id] ?? 0) + 1;
+        }
+        setWarnCountMap(map);
+      });
+  }, [data.targetMonthKey]);
+
   const scopedRecords = selectedDept === "all"
     ? data.records
     : data.records.filter((row) => row.dept === selectedDept);
@@ -2649,12 +2718,14 @@ function ReportDashboard({
                 <th><SortButton columnKey="minutesLate" setSort={setSort} sort={sort}>สาย</SortButton></th>
                 <th><SortButton columnKey="monthlyLate" setSort={setSort} sort={sort}>สายเดือนนี้</SortButton></th>
                 <th>เสี่ยง</th>
+                <th>เตือนแล้ว</th>
               </tr>
             </thead>
             <tbody key={tableStatusFilter}>
               {sortedTableRows.map((row, index) => {
                 const monthly = data.monthlyLateCounts[row.empId] ?? 0;
                 const isRisk = monthly >= 3;
+                const warnCount = warnCountMap[row.empId] ?? 0;
                 return (
                   <tr key={`${row.empId}-${row.scanIn}-rpt`} className={isRisk ? "row-risk" : ""}>
                     <td>{index + 1}</td>
@@ -2671,11 +2742,16 @@ function ReportDashboard({
                       </span>
                     </td>
                     <td>{isRisk ? <span className="risk-badge">เสี่ยง</span> : null}</td>
+                    <td>
+                      {warnCount > 0
+                        ? <span className="warn-count-badge">✓ {warnCount} ครั้ง</span>
+                        : <span className="no-warn">-</span>}
+                    </td>
                   </tr>
                 );
               })}
               {sortedTableRows.length === 0 ? (
-                <tr><td colSpan={10}>{reportData ? "ไม่มีข้อมูลตามเงื่อนไขที่เลือก" : "กด โหลดข้อมูล เพื่อสร้างรายงาน"}</td></tr>
+                <tr><td colSpan={11}>{reportData ? "ไม่มีข้อมูลตามเงื่อนไขที่เลือก" : "กด โหลดข้อมูล เพื่อสร้างรายงาน"}</td></tr>
               ) : null}
             </tbody>
           </table>
