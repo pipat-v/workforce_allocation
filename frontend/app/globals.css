@@ -1585,6 +1585,139 @@ button {
   gap: 16px;
 }
 
+/* ── Heatmap panel ── */
+.heatmap-panel {
+  margin-bottom: 16px;
+}
+
+.heatmap-panel .panel-title-row {
+  margin-bottom: 12px;
+}
+
+.heatmap-legend {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: #64748b;
+  align-items: center;
+}
+
+.heatmap-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.heatmap-dot.good { background: #22c55e; }
+.heatmap-dot.warn { background: #f59e0b; }
+.heatmap-dot.bad  { background: #dc2626; }
+
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 6px;
+}
+
+.heatmap-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 4px 2px;
+  cursor: default;
+  transition: transform 0.1s;
+}
+
+.heatmap-cell:hover { transform: scale(1.06); }
+
+.heatmap-day {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.heatmap-rate {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.heatmap-cell.good    { background: #dcfce7; color: #15803d; border-color: #86efac; }
+.heatmap-cell.warn    { background: #fef9c3; color: #92400e; border-color: #fde68a; }
+.heatmap-cell.bad     { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.heatmap-cell.no-data { background: #f1f5f9; color: #94a3b8; border-color: #e2e8f0; }
+
+/* ── Dept rank + present-rate badge ── */
+.dept-rank {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  width: 22px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.dept-present-rate {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.dept-present-rate.good { color: #15803d; background: #dcfce7; }
+.dept-present-rate.warn { color: #92400e; background: #fef9c3; }
+.dept-present-rate.bad  { color: #dc2626; background: #fee2e2; }
+
+/* ── Trend badges (month-over-month) ── */
+.trend-up   { font-size: 11px; font-weight: 700; color: #dc2626; margin-left: 4px; }
+.trend-down { font-size: 11px; font-weight: 700; color: #16a34a; margin-left: 4px; }
+.trend-same { font-size: 11px; color: #94a3b8; margin-left: 4px; }
+
+/* ── Warn history expandable ── */
+.warn-history-details {
+  position: relative;
+  display: inline-block;
+}
+
+.warn-history-details summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.warn-history-details summary::-webkit-details-marker { display: none; }
+
+.warn-history-dates {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 140px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.warn-date-chip {
+  font-size: 11px;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
 /* ── Report topstrip: date + dept filter + refresh button ── */
 .report-topstrip {
   display: flex;

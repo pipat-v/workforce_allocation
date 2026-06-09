@@ -68,6 +68,14 @@ type AttendanceRecord = {
   minutesLate: number;
 };
 
+type DailyStat = {
+  isoDate: string;
+  present: number;
+  late: number;
+  absent: number;
+  total: number;
+};
+
 type ReportData = {
   targetDate: string;
   isoTargetDate: string;
@@ -150,6 +158,10 @@ export default function Home() {
   const [warnedIds, setWarnedIds] = useState<Set<string>>(new Set());
   const [warnPending, setWarnPending] = useState<Set<string>>(new Set());
   const [warnCountMap, setWarnCountMap] = useState<Record<string, number>>({});
+  const [warnDates, setWarnDates] = useState<Record<string, string[]>>({});
+  const [monthlyLateMinutes, setMonthlyLateMinutes] = useState<Record<string, number>>({});
+  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
+  const [prevMonthLateCounts, setPrevMonthLateCounts] = useState<Record<string, number>>({});
 
   const isoTargetDate = reportData?.isoTargetDate ?? "";
 
@@ -582,6 +594,14 @@ export default function Home() {
         new Set(runs.map((run) => run.scan_file_path).filter(Boolean) as string[]),
       );
       const monthlyLateCounts: Record<string, number> = {};
+      const lateMinutesAcc: Record<string, number> = {};
+      const prevMonthLateAcc: Record<string, number> = {};
+      const dailyStatsAcc: Record<string, DailyStat> = {};
+      const [tY, tM] = latestReport.targetMonthKey.split("-").map(Number);
+      const prevMonthKey = tM === 1
+        ? `${tY - 1}-12`
+        : `${tY}-${String(tM - 1).padStart(2, "0")}`;
+
       const monthlyScanRows = await Promise.all(
         scanPaths.map(async (path) => {
           try {
@@ -594,13 +614,31 @@ export default function Home() {
 
       for (const rows of monthlyScanRows) {
         const dayReport = buildReportData(employeeRows, rows, manpowerRows, dayoffShiftRows);
-        if (dayReport.targetMonthKey !== latestReport.targetMonthKey) continue;
 
-        for (const lateRow of dayReport.lateRows) {
-          monthlyLateCounts[lateRow.empId] = (monthlyLateCounts[lateRow.empId] ?? 0) + 1;
+        if (dayReport.targetMonthKey === latestReport.targetMonthKey) {
+          for (const lateRow of dayReport.lateRows) {
+            monthlyLateCounts[lateRow.empId] = (monthlyLateCounts[lateRow.empId] ?? 0) + 1;
+            lateMinutesAcc[lateRow.empId] = (lateMinutesAcc[lateRow.empId] ?? 0) + lateRow.minutesLate;
+          }
+          if (dayReport.isoTargetDate && !dailyStatsAcc[dayReport.isoTargetDate]) {
+            dailyStatsAcc[dayReport.isoTargetDate] = {
+              isoDate: dayReport.isoTargetDate,
+              present: dayReport.present,
+              late: dayReport.late,
+              absent: dayReport.absent,
+              total: dayReport.totalEmployees,
+            };
+          }
+        } else if (dayReport.targetMonthKey === prevMonthKey) {
+          for (const lateRow of dayReport.lateRows) {
+            prevMonthLateAcc[lateRow.empId] = (prevMonthLateAcc[lateRow.empId] ?? 0) + 1;
+          }
         }
       }
 
+      setMonthlyLateMinutes(lateMinutesAcc);
+      setPrevMonthLateCounts(prevMonthLateAcc);
+      setDailyStats(Object.values(dailyStatsAcc).sort((a, b) => a.isoDate.localeCompare(b.isoDate)));
       setReportData({
         ...latestReport,
         monthlyLateCounts,
@@ -636,10 +674,13 @@ export default function Home() {
     }
     if (!rows) return;
     const map: Record<string, number> = {};
+    const dates: Record<string, string[]> = {};
     for (const r of rows as Array<{ emp_id: string; warn_date: string }>) {
       map[r.emp_id] = (map[r.emp_id] ?? 0) + 1;
+      dates[r.emp_id] = [...(dates[r.emp_id] ?? []), r.warn_date].sort();
     }
     setWarnCountMap(map);
+    setWarnDates(dates);
   }
 
   async function toggleWarning(empId: string) {
@@ -945,7 +986,10 @@ export default function Home() {
 
         {activeTab === "report" ? (
           <ReportDashboard
+            dailyStats={dailyStats}
             deptFilter={reportLateDept}
+            monthlyLateMinutes={monthlyLateMinutes}
+            prevMonthLateCounts={prevMonthLateCounts}
             query={reportLateQuery}
             reportData={reportData}
             selectedDept={selectedReportDept}
@@ -953,6 +997,7 @@ export default function Home() {
             setQuery={setReportLateQuery}
             setSelectedDept={setSelectedReportDept}
             warnCountMap={warnCountMap}
+            warnDates={warnDates}
           />
         ) : null}
 
@@ -2569,7 +2614,10 @@ function TablePagination({
 }
 
 function ReportDashboard({
+  dailyStats,
   deptFilter,
+  monthlyLateMinutes,
+  prevMonthLateCounts,
   query,
   reportData,
   selectedDept,
@@ -2577,8 +2625,12 @@ function ReportDashboard({
   setQuery,
   setSelectedDept,
   warnCountMap,
+  warnDates,
 }: {
+  dailyStats: DailyStat[];
   deptFilter: string;
+  monthlyLateMinutes: Record<string, number>;
+  prevMonthLateCounts: Record<string, number>;
   query: string;
   reportData: ReportData | null;
   selectedDept: string;
@@ -2586,6 +2638,7 @@ function ReportDashboard({
   setQuery: (value: string) => void;
   setSelectedDept: (value: string) => void;
   warnCountMap: Record<string, number>;
+  warnDates: Record<string, string[]>;
 }) {
   const [sort, setSort_] = useState<SortState>(null);
   const setSort = setSort_ as (sort: SortState) => void;
@@ -2690,6 +2743,8 @@ function ReportDashboard({
         />
       </section>
 
+      <HeatmapPanel dailyStats={dailyStats} targetMonthKey={data.targetMonthKey} />
+
       <section className="report-grid">
         <div className="panel report-card">
           <div className="panel-title-row">
@@ -2706,31 +2761,37 @@ function ReportDashboard({
             <span><i className="absent" />Absent</span>
           </div>
           <div className="stacked-bars">
-            {data.deptRows.map((row) => (
-              <button
-                className={`stacked-row dept-click ${selectedDept === row.dept ? "active" : ""}`}
-                key={row.dept}
-                onClick={() => {
-                  setSelectedDept(row.dept);
-                  setDeptFilter("all");
-                }}
-                type="button"
-              >
-                <span className="stacked-dept-name">{row.dept}</span>
-                <div className="stacked-track">
-                  <i className="present" style={{ width: `${(row.present / maxDeptTotal) * 100}%` }} />
-                  <i className="late" style={{ width: `${(row.late / maxDeptTotal) * 100}%` }} />
-                  <i className="absent" style={{ width: `${(row.absent / maxDeptTotal) * 100}%` }} />
-                </div>
-                <div className="stacked-row-end">
-                  <strong>{row.total}</strong>
-                  <span className="stacked-mini-badges">
-                    {row.late > 0 ? <span className="mini-badge late">{row.late}L</span> : null}
-                    {row.absent > 0 ? <span className="mini-badge absent">{row.absent}A</span> : null}
-                  </span>
-                </div>
-              </button>
-            ))}
+            {data.deptRows.map((row, index) => {
+              const deptRate = row.total > 0 ? Math.round(((row.present + row.late) / row.total) * 100) : 0;
+              const rateTone = deptRate >= 95 ? "good" : deptRate >= 85 ? "warn" : "bad";
+              return (
+                <button
+                  className={`stacked-row dept-click ${selectedDept === row.dept ? "active" : ""}`}
+                  key={row.dept}
+                  onClick={() => {
+                    setSelectedDept(row.dept);
+                    setDeptFilter("all");
+                  }}
+                  type="button"
+                >
+                  <span className="dept-rank">#{index + 1}</span>
+                  <span className="stacked-dept-name">{row.dept}</span>
+                  <div className="stacked-track">
+                    <i className="present" style={{ width: `${(row.present / maxDeptTotal) * 100}%` }} />
+                    <i className="late" style={{ width: `${(row.late / maxDeptTotal) * 100}%` }} />
+                    <i className="absent" style={{ width: `${(row.absent / maxDeptTotal) * 100}%` }} />
+                  </div>
+                  <div className="stacked-row-end">
+                    <span className={`dept-present-rate ${rateTone}`}>{deptRate}%</span>
+                    <strong>{row.total}</strong>
+                    <span className="stacked-mini-badges">
+                      {row.late > 0 ? <span className="mini-badge late">{row.late}L</span> : null}
+                      {row.absent > 0 ? <span className="mini-badge absent">{row.absent}A</span> : null}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
             {data.deptRows.length === 0 ? <p className="empty-copy">ยังไม่มีข้อมูล report</p> : null}
           </div>
         </div>
@@ -2847,6 +2908,7 @@ function ReportDashboard({
                 <th><SortButton columnKey="status" setSort={setSort} sort={sort}>สถานะ</SortButton></th>
                 <th><SortButton columnKey="minutesLate" setSort={setSort} sort={sort}>สาย</SortButton></th>
                 <th><SortButton columnKey="monthlyLate" setSort={setSort} sort={sort}>สายเดือนนี้</SortButton></th>
+                <th>เฉลี่ย/เดือน</th>
                 <th>เสี่ยง</th>
                 <th><SortButton columnKey="warnCount" setSort={setSort} sort={sort}>เตือนแล้ว</SortButton></th>
               </tr>
@@ -2870,18 +2932,31 @@ function ReportDashboard({
                       <span className={monthly >= 3 ? "monthly-late-high" : ""}>
                         {monthly > 0 ? monthly : "-"}
                       </span>
+                      <TrendBadge curr={monthly} prev={prevMonthLateCounts[row.empId] ?? 0} />
+                    </td>
+                    <td>
+                      {monthly > 0 && monthlyLateMinutes[row.empId]
+                        ? <span className="late-minutes-badge">{formatLateTime(Math.round(monthlyLateMinutes[row.empId] / monthly))}</span>
+                        : "-"}
                     </td>
                     <td>{isRisk ? <span className="risk-badge">เสี่ยง</span> : null}</td>
                     <td>
-                      {warnCount > 0
-                        ? <span className="warn-count-badge">✓ {warnCount} ครั้ง</span>
-                        : <span className="no-warn">-</span>}
+                      {warnCount > 0 ? (
+                        <details className="warn-history-details">
+                          <summary className="warn-count-badge">✓ {warnCount} ครั้ง</summary>
+                          <div className="warn-history-dates">
+                            {(warnDates[row.empId] ?? []).map((d) => (
+                              <span key={d} className="warn-date-chip">{formatDateTH(d)}</span>
+                            ))}
+                          </div>
+                        </details>
+                      ) : <span className="no-warn">-</span>}
                     </td>
                   </tr>
                 );
               })}
               {sortedTableRows.length === 0 ? (
-                <tr><td colSpan={11}>{reportData ? "ไม่มีข้อมูลตามเงื่อนไขที่เลือก" : "กด โหลดข้อมูล เพื่อสร้างรายงาน"}</td></tr>
+                <tr><td colSpan={12}>{reportData ? "ไม่มีข้อมูลตามเงื่อนไขที่เลือก" : "กด โหลดข้อมูล เพื่อสร้างรายงาน"}</td></tr>
               ) : null}
             </tbody>
           </table>
@@ -2975,4 +3050,58 @@ function LegendRow({
       <em>{percent}</em>
     </div>
   );
+}
+
+function TrendBadge({ curr, prev }: { curr: number; prev: number }) {
+  if (curr === 0 && prev === 0) return null;
+  if (curr > prev) return <span className="trend-up" title={`+${curr - prev} จากเดือนก่อน`}>↑{curr - prev}</span>;
+  if (curr < prev) return <span className="trend-down" title={`-${prev - curr} จากเดือนก่อน`}>↓{prev - curr}</span>;
+  return <span className="trend-same" title="เท่ากับเดือนก่อน">→</span>;
+}
+
+function HeatmapPanel({ dailyStats, targetMonthKey }: { dailyStats: DailyStat[]; targetMonthKey: string }) {
+  if (!targetMonthKey || dailyStats.length === 0) return null;
+  const [yearNum, monthNum] = targetMonthKey.split("-").map(Number);
+  const daysInMonth = new Date(yearNum, monthNum, 0).getDate();
+  const byDate = Object.fromEntries(dailyStats.map((s) => [s.isoDate, s]));
+  const thaiMonths = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+  return (
+    <div className="panel heatmap-panel">
+      <div className="panel-title-row">
+        <h3>สถิติรายวัน — {thaiMonths[monthNum]} {yearNum + 543}</h3>
+        <div className="heatmap-legend">
+          <span><i className="heatmap-dot good" />≥95%</span>
+          <span><i className="heatmap-dot warn" />85–94%</span>
+          <span><i className="heatmap-dot bad" />&lt;85%</span>
+        </div>
+      </div>
+      <div className="heatmap-grid">
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const iso = `${yearNum}-${String(monthNum).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+          const stat = byDate[iso];
+          const rate = stat && stat.total > 0 ? ((stat.present + stat.late) / stat.total) * 100 : null;
+          const tone = rate === null ? "no-data" : rate >= 95 ? "good" : rate >= 85 ? "warn" : "bad";
+          const tip = stat
+            ? `${day}/${monthNum}: ${rate!.toFixed(0)}%  P:${stat.present} L:${stat.late} A:${stat.absent}`
+            : `${day}/${monthNum}: ไม่มีข้อมูล`;
+          return (
+            <div key={iso} className={`heatmap-cell ${tone}`} title={tip}>
+              <span className="heatmap-day">{day}</span>
+              {rate !== null && <span className="heatmap-rate">{rate.toFixed(0)}%</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function formatDateTH(isoDate: string) {
+  const parts = isoDate.split("-");
+  const m = Number(parts[1]);
+  const d = Number(parts[2]);
+  const thaiMonths = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  return `${d} ${thaiMonths[m]}`;
 }
