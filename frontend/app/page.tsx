@@ -1316,11 +1316,9 @@ function DonutKpiCard({
 
   return (
     <article className="kpi-card kpi-donut">
-      <div className="pie-chart-wrap">
-        <div className="donut compact" style={donutStyle} />
-        <span className="pie-total">{totalActive} คน</span>
-      </div>
+      <div className="donut compact" style={donutStyle} />
       <div className="legend compact">
+        <div className="pie-total">{totalActive} <span>คน</span></div>
         <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
         <LegendRow color="amber" label="Late" value={String(late)} percent={`${latePct.toFixed(1)}%`} />
         <LegendRow color="red" label="Absent" value={String(absent)} percent={`${absentPct.toFixed(1)}%`} />

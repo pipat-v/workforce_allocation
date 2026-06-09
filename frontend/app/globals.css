@@ -456,18 +456,19 @@ button {
   display: none;
 }
 
-.pie-chart-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-}
-
 .pie-total {
-  font-size: 13px;
+  font-size: 20px;
   font-weight: 700;
   color: #1e293b;
-  white-space: nowrap;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.pie-total span {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-left: 2px;
 }
 
 .legend {
