@@ -1924,6 +1924,7 @@ function MasterDataPage({
 
       <DayoffShiftEditor
         activeFile={activeMasterMap.dayoff_shift}
+        employeeMasterFile={activeMasterMap.employee_master}
         saveDayoffShiftRows={saveDayoffShiftRows}
       />
     </section>
@@ -1932,9 +1933,11 @@ function MasterDataPage({
 
 function DayoffShiftEditor({
   activeFile,
+  employeeMasterFile,
   saveDayoffShiftRows,
 }: {
   activeFile?: MasterFile;
+  employeeMasterFile?: MasterFile;
   saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
 }) {
   const [rows, setRows] = useState<DayoffShiftEditorRow[]>([]);
@@ -1983,10 +1986,30 @@ function DayoffShiftEditor({
 
     let isMounted = true;
     setIsLoading(true);
-    downloadSheetRows(activeFile.file_path)
-      .then((sourceRows) => {
+
+    const dayoffPromise = downloadSheetRows(activeFile.file_path);
+    const empPromise = employeeMasterFile?.file_path
+      ? downloadSheetRows(employeeMasterFile.file_path)
+      : Promise.resolve([] as Record<string, unknown>[]);
+
+    Promise.all([dayoffPromise, empPromise])
+      .then(([dayoffRows, empRows]) => {
         if (!isMounted) return;
-        const parsed = sourceRows.map(toDayoffShiftEditorRow);
+        const deptMap = new Map<string, string>();
+        for (const row of empRows) {
+          const empId = cleanEmpId(
+            row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"],
+          );
+          const dept = String(
+            row["หน่วยงาน"] ?? row["Name (Section)"] ?? row["Department"] ?? "",
+          ).trim();
+          if (empId && dept) deptMap.set(empId, dept);
+        }
+        const parsed = dayoffRows.map((row, i) => {
+          const r = toDayoffShiftEditorRow(row, i);
+          if (!r.dept && deptMap.has(r.empId)) r.dept = deptMap.get(r.empId)!;
+          return r;
+        });
         setRows(parsed);
         setOriginalRows(parsed);
         setSelectedIds(new Set());
@@ -2002,7 +2025,7 @@ function DayoffShiftEditor({
       });
 
     return () => { isMounted = false; };
-  }, [activeFile?.file_path]);
+  }, [activeFile?.file_path, employeeMasterFile?.file_path]);
 
   function updateRow(id: string, field: "dayoff" | "shift", value: string) {
     setRows((current) =>
