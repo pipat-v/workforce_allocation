@@ -176,6 +176,20 @@ button {
   font-size: 13px;
 }
 
+.date-picker-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-time {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  letter-spacing: 0.01em;
+}
+
 .date-picker strong,
 .admin-chip strong {
   display: block;

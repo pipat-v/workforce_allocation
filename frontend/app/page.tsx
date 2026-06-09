@@ -217,6 +217,17 @@ export default function Home() {
     month: "long",
     year: "numeric",
   });
+  const [workTime, setWorkTime] = useState(() =>
+    new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
+  );
+
+  useEffect(() => {
+    const tick = () =>
+      setWorkTime(new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }));
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   const activeNav = navItems.find((item) => item.id === activeTab);
 
   useEffect(() => {
@@ -744,7 +755,10 @@ export default function Home() {
             <div className="date-picker">
               <CalendarDays size={19} />
               <div>
-                <span>วันที่ทำงาน</span>
+                <div className="date-picker-label-row">
+                  <span>วันที่ทำงาน</span>
+                  <span className="work-time">{workTime} น.</span>
+                </div>
                 <strong>{workDate}</strong>
               </div>
               <ChevronDown size={17} />
