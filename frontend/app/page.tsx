@@ -111,29 +111,10 @@ const navItems = [
   { id: "setting", label: "Setting", icon: Settings },
 ];
 
-const deptRows = [
-  { dept: "ฝ่ายตัดแต่ง", value: 312, percent: 100 },
-  { dept: "ฝ่ายผลิต", value: 201, percent: 64 },
-  { dept: "ฝ่ายบรรจุ", value: 158, percent: 51 },
-  { dept: "ฝ่ายซ่อมบำรุง", value: 95, percent: 30 },
-  { dept: "ฝ่ายคลังสินค้า", value: 86, percent: 28 },
-];
-
 type MasterFileKey = (typeof masterFileTypes)[number]["key"];
 type MasterUploadState = Record<MasterFileKey, File | null>;
 type SortDirection = "asc" | "desc";
 type SortState = { key: string; direction: SortDirection } | null;
-type AttendanceSortKey =
-  | "empId"
-  | "name"
-  | "dept"
-  | "position"
-  | "shift"
-  | "shiftStart"
-  | "scanIn"
-  | "status"
-  | "minutesLate"
-  | "monthlyLate";
 
 const publicWorkspace = "public";
 
@@ -298,7 +279,7 @@ export default function Home() {
       .from("allocation_runs")
       .select("id,target_date,status,scan_file_path,solver_status,original_filename,record_count,created_at")
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(100);
 
     if (loadError) {
       setError(loadError.message);
@@ -444,6 +425,15 @@ export default function Home() {
   async function deleteRun(run: AllocationRun) {
     const label = run.original_filename ?? run.scan_file_path?.split("/").pop() ?? run.id;
     if (!window.confirm(`ต้องการลบไฟล์ "${label}" ใช่ไหม?\nการลบไม่สามารถย้อนกลับได้`)) return;
+    if (run.scan_file_path) {
+      const { error: storageError } = await supabase.storage
+        .from("workforce-inputs")
+        .remove([run.scan_file_path]);
+      if (storageError) {
+        setError(storageError.message);
+        return;
+      }
+    }
     const { error: deleteError } = await supabase
       .from("allocation_runs")
       .delete()
@@ -788,7 +778,17 @@ export default function Home() {
             ) : null}
           </div>
           {(message || error) ? (
-            <div className={`toast ${error ? "error" : ""}`}>{error || message}</div>
+            <div className={`toast ${error ? "error" : ""}`}>
+              <span>{error || message}</span>
+              <button
+                className="toast-close"
+                onClick={() => { setError(""); setMessage(""); }}
+                type="button"
+                aria-label="ปิด"
+              >
+                <X size={14} />
+              </button>
+            </div>
           ) : null}
         </section>
 
@@ -1097,12 +1097,10 @@ function buildReportData(
     late: records.filter((record) => record.status === "Late").length,
     absent: records.filter((record) => record.status === "Absent").length,
     deptRows: Array.from(deptMap.values())
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 12),
+      .sort((a, b) => b.total - a.total),
     lateRows: records
       .filter((record) => record.status === "Late")
-      .sort((a, b) => b.minutesLate - a.minutesLate)
-      .slice(0, 80),
+      .sort((a, b) => b.minutesLate - a.minutesLate),
     records,
     timestampRows: records,
     monthlyLateCounts: {},

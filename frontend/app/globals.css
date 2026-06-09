@@ -237,16 +237,48 @@ button {
 }
 
 .toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 8px 10px 8px 12px;
   background: #ecfdf5;
   color: #047857;
   font-size: 14px;
 }
 
+.toast span {
+  flex: 1;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.toast-close:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .toast.error,
 .inline-warning {
   color: var(--red);
+}
+
+.toast.error {
+  background: #fef2f2;
 }
 
 .kpi-grid {
