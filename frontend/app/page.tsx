@@ -1540,6 +1540,7 @@ function DashboardPanels({
                 <th>สถานะ</th>
                 <th>สาย</th>
                 <th>สายเดือนนี้</th>
+                <th>เสี่ยง</th>
               </tr>
             </thead>
             <tbody>
@@ -1549,10 +1550,7 @@ function DashboardPanels({
                 return (
                   <tr key={`${row.empId}-detail`} className={isRisk ? "row-risk" : ""}>
                     <td>{index + 1}</td>
-                    <td>
-                      {row.name}
-                      {isRisk ? <span className="risk-badge">เสี่ยง</span> : null}
-                    </td>
+                    <td>{row.name}</td>
                     <td>{row.dept}</td>
                     <td>{row.shift}</td>
                     <td>{row.shiftStart}</td>
@@ -1564,11 +1562,12 @@ function DashboardPanels({
                         {monthlyLate > 0 ? monthlyLate : "-"}
                       </span>
                     </td>
+                    <td>{isRisk ? <span className="risk-badge">เสี่ยง</span> : null}</td>
                   </tr>
                 );
               })}
               {detailRows.length === 0 ? (
-                <tr><td colSpan={9}>ยังไม่มีข้อมูล</td></tr>
+                <tr><td colSpan={10}>ยังไม่มีข้อมูล</td></tr>
               ) : null}
             </tbody>
           </table>
