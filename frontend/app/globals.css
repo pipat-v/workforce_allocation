@@ -205,6 +205,7 @@ button {
   display: flex;
   align-items: center;
   gap: 14px;
+  flex: 1;
 }
 
 .dashboard-head h2 {
@@ -213,6 +214,7 @@ button {
 }
 
 .dashboard-head .dept-filter-select {
+  flex: 1;
   height: 36px;
   padding: 0 28px 0 12px;
   border: 1.5px solid var(--line);
@@ -225,7 +227,6 @@ button {
   color: var(--text);
   cursor: pointer;
   transition: border-color 0.15s;
-  min-width: 160px;
 }
 
 .dashboard-head .dept-filter-select:hover,
