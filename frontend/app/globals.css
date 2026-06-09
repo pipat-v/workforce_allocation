@@ -1552,14 +1552,55 @@ button {
 }
 
 .dayoff-editor-filters {
-  grid-template-columns: minmax(260px, 1fr) auto;
+  grid-template-columns: minmax(220px, 1fr) 200px auto;
   align-items: center;
 }
 
-.dayoff-editor-filters span {
+.dayoff-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
   font-size: 13px;
   white-space: nowrap;
+}
+
+.modified-badge {
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 99px;
+}
+
+/* Bulk action bar */
+.dayoff-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.bulk-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d4ed8;
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+.dayoff-bulk-bar select {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+  background: #ffffff;
 }
 
 .dayoff-editor-table {
@@ -1575,6 +1616,28 @@ button {
   border-radius: 6px;
   padding: 6px 8px;
   background: #ffffff;
+}
+
+/* Row states */
+.dayoff-editor-table tr.row-modified td {
+  background: #fffbeb;
+}
+
+.dayoff-editor-table tr.row-selected td {
+  background: #eff6ff;
+}
+
+.dayoff-editor-table tr.row-modified.row-selected td {
+  background: #e0f2fe;
+}
+
+.dept-cell {
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .empty-page {

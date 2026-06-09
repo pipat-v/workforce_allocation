@@ -51,6 +51,7 @@ type DayoffShiftEditorRow = {
   id: string;
   empId: string;
   name: string;
+  dept: string;
   dayoff: string;
   shift: string;
   raw: Record<string, unknown>;
@@ -1246,6 +1247,7 @@ function toDayoffShiftEditorRow(row: Record<string, unknown>, index: number): Da
     id: `${empId || "row"}-${index}`,
     empId,
     name: `${firstName} ${lastName}`.trim() || fallbackName || empId,
+    dept: findRowCol(row, "หน่วยงาน", "Org. Unit Description", "Name (Section)", "แผนก", "Department"),
     dayoff: findRowCol(row, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"),
     shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
     raw: row,
@@ -1936,26 +1938,46 @@ function DayoffShiftEditor({
   saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
 }) {
   const [rows, setRows] = useState<DayoffShiftEditorRow[]>([]);
+  const [originalRows, setOriginalRows] = useState<DayoffShiftEditorRow[]>([]);
   const [query, setQuery] = useState("");
+  const [selectedDept, setSelectedDept] = useState("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDayoff, setBulkDayoff] = useState("");
+  const [bulkShift, setBulkShift] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
   const dayoffOptions = ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา", "พระ"];
   const shiftOptions = Array.from(new Set([
-    "กะ1",
-    "กะ2",
-    "กะ3",
-    ...rows.map((row) => row.shift).filter(Boolean),
+    "กะ1", "กะ2", "กะ3",
+    ...rows.map((r) => r.shift).filter(Boolean),
   ]));
+  const deptOptions = Array.from(new Set(rows.map((r) => r.dept).filter(Boolean))).sort();
+
   const normalizedQuery = query.trim().toLowerCase();
   const filteredRows = rows.filter((row) => {
+    if (selectedDept !== "all" && row.dept !== selectedDept) return false;
     if (!normalizedQuery) return true;
-    return [row.empId, row.name, row.dayoff, row.shift]
-      .some((value) => value.toLowerCase().includes(normalizedQuery));
+    return [row.empId, row.name, row.dept, row.dayoff, row.shift]
+      .some((v) => v.toLowerCase().includes(normalizedQuery));
   });
+
+  const modifiedIds = new Set(
+    rows
+      .filter((row) => {
+        const orig = originalRows.find((r) => r.id === row.id);
+        return orig && (orig.dayoff !== row.dayoff || orig.shift !== row.shift);
+      })
+      .map((r) => r.id),
+  );
+
+  const allFilteredSelected = filteredRows.length > 0 && filteredRows.every((r) => selectedIds.has(r.id));
 
   useEffect(() => {
     if (!activeFile?.file_path) {
       setRows([]);
+      setOriginalRows([]);
+      setSelectedIds(new Set());
       return;
     }
 
@@ -1964,43 +1986,89 @@ function DayoffShiftEditor({
     downloadSheetRows(activeFile.file_path)
       .then((sourceRows) => {
         if (!isMounted) return;
-        setRows(sourceRows.map(toDayoffShiftEditorRow));
+        const parsed = sourceRows.map(toDayoffShiftEditorRow);
+        setRows(parsed);
+        setOriginalRows(parsed);
+        setSelectedIds(new Set());
       })
       .catch(() => {
         if (!isMounted) return;
         setRows([]);
+        setOriginalRows([]);
       })
       .finally(() => {
         if (!isMounted) return;
         setIsLoading(false);
       });
 
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [activeFile?.file_path]);
 
   function updateRow(id: string, field: "dayoff" | "shift", value: string) {
     setRows((current) =>
-      current.map((row) => (
+      current.map((row) =>
         row.id === id
           ? {
               ...row,
               [field]: value,
-              raw: {
-                ...row.raw,
-                [field === "dayoff" ? "วันหยุด\nประจำสัปดาห์" : "อยู่กะไหน"]: value,
-              },
+              raw: { ...row.raw, [field === "dayoff" ? "วันหยุด\nประจำสัปดาห์" : "อยู่กะไหน"]: value },
             }
-          : row
-      )),
+          : row,
+      ),
     );
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (allFilteredSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredRows.forEach((r) => next.delete(r.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredRows.forEach((r) => next.add(r.id));
+        return next;
+      });
+    }
+  }
+
+  function applyBulk() {
+    if (!bulkDayoff && !bulkShift) return;
+    setRows((current) =>
+      current.map((row) => {
+        if (!selectedIds.has(row.id)) return row;
+        return {
+          ...row,
+          dayoff: bulkDayoff || row.dayoff,
+          shift: bulkShift || row.shift,
+          raw: {
+            ...row.raw,
+            ...(bulkDayoff ? { "วันหยุด\nประจำสัปดาห์": bulkDayoff } : {}),
+            ...(bulkShift ? { "อยู่กะไหน": bulkShift } : {}),
+          },
+        };
+      }),
+    );
+    setSelectedIds(new Set());
+    setBulkDayoff("");
+    setBulkShift("");
   }
 
   async function handleSave() {
     setIsSaving(true);
     try {
       await saveDayoffShiftRows(rows);
+      setOriginalRows(rows);
     } finally {
       setIsSaving(false);
     }
@@ -2020,74 +2088,119 @@ function DayoffShiftEditor({
           type="button"
         >
           <UploadCloud size={17} />
-          {isSaving ? "Saving" : "Save Changes"}
+          {isSaving ? "Saving..." : `Save${modifiedIds.size > 0 ? ` (${modifiedIds.size} แก้ไข)` : ""}`}
         </button>
       </div>
 
       <div className="table-filters dayoff-editor-filters">
         <input
           aria-label="ค้นหา dayoff shift"
-          placeholder="ค้นหา รหัส ชื่อ วันหยุด กะ"
+          placeholder="ค้นหา รหัส ชื่อ แผนก วันหยุด กะ"
           type="search"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(e) => setQuery(e.target.value)}
         />
-        <span>{filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} คน</span>
+        <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
+          <option value="all">ทุกแผนก</option>
+          {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <span className="dayoff-count">
+          {filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} คน
+          {modifiedIds.size > 0 && <span className="modified-badge">{modifiedIds.size} แก้ไข</span>}
+        </span>
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="dayoff-bulk-bar">
+          <span className="bulk-count">{selectedIds.size} คนที่เลือก</span>
+          <select value={bulkDayoff} onChange={(e) => setBulkDayoff(e.target.value)}>
+            <option value="">เปลี่ยน Dayoff...</option>
+            {dayoffOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select value={bulkShift} onChange={(e) => setBulkShift(e.target.value)}>
+            <option value="">เปลี่ยน Shift...</option>
+            {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <button
+            className="primary-button"
+            disabled={!bulkDayoff && !bulkShift}
+            onClick={applyBulk}
+            style={{ height: 32, fontSize: 12, padding: "0 14px" }}
+            type="button"
+          >
+            Apply
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => setSelectedIds(new Set())}
+            style={{ height: 32, fontSize: 12, padding: "0 14px" }}
+            type="button"
+          >
+            ยกเลิก
+          </button>
+        </div>
+      )}
 
       <div className="dayoff-editor-table">
         <table className="table">
           <thead>
             <tr>
+              <th style={{ width: 36 }}>
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleSelectAll}
+                  title="เลือกทั้งหมดในมุมมองนี้"
+                />
+              </th>
               <th>Emp ID</th>
               <th>ชื่อ</th>
+              <th>แผนก</th>
               <th>Dayoff</th>
               <th>Shift</th>
             </tr>
           </thead>
           <tbody>
             {filteredRows.map((row) => (
-              <tr key={row.id}>
+              <tr
+                key={row.id}
+                className={[
+                  selectedIds.has(row.id) ? "row-selected" : "",
+                  modifiedIds.has(row.id) ? "row-modified" : "",
+                ].filter(Boolean).join(" ")}
+              >
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(row.id)}
+                    onChange={() => toggleSelect(row.id)}
+                  />
+                </td>
                 <td>{row.empId}</td>
                 <td>{row.name}</td>
+                <td className="dept-cell">{row.dept || "—"}</td>
                 <td>
-                  <select
-                    value={row.dayoff}
-                    onChange={(event) => updateRow(row.id, "dayoff", event.target.value)}
-                  >
+                  <select value={row.dayoff} onChange={(e) => updateRow(row.id, "dayoff", e.target.value)}>
                     <option value="">-</option>
-                    {dayoffOptions.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
+                    {dayoffOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </td>
                 <td>
-                  <select
-                    value={row.shift}
-                    onChange={(event) => updateRow(row.id, "shift", event.target.value)}
-                  >
+                  <select value={row.shift} onChange={(e) => updateRow(row.id, "shift", e.target.value)}>
                     <option value="">-</option>
-                    {shiftOptions.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
+                    {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </td>
               </tr>
             ))}
             {!activeFile ? (
-              <tr>
-                <td colSpan={4}>อัปโหลด Dayoff & Shift master ก่อน จึงจะแก้ไขในหน้านี้ได้</td>
-              </tr>
+              <tr><td colSpan={6}>อัปโหลด Dayoff & Shift master ก่อน จึงจะแก้ไขในหน้านี้ได้</td></tr>
             ) : null}
             {activeFile && isLoading ? (
-              <tr>
-                <td colSpan={4}>Loading Dayoff & Shift...</td>
-              </tr>
+              <tr><td colSpan={6}>Loading Dayoff & Shift...</td></tr>
             ) : null}
             {activeFile && !isLoading && filteredRows.length === 0 ? (
-              <tr>
-                <td colSpan={4}>ไม่พบข้อมูลที่ค้นหา</td>
-              </tr>
+              <tr><td colSpan={6}>ไม่พบข้อมูลที่ค้นหา</td></tr>
             ) : null}
           </tbody>
         </table>
