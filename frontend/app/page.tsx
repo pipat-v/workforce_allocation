@@ -2,11 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   BarChart3,
   BriefcaseBusiness,
   CalendarDays,
+  CheckCircle2,
   ChevronDown,
   ClipboardCheck,
+  Clock,
   Database,
   Download,
   FileSpreadsheet,
@@ -14,7 +17,9 @@ import {
   LayoutGrid,
   LogOut,
   Settings,
+  TrendingUp,
   UploadCloud,
+  UserX,
   UsersRound,
   X,
 } from "lucide-react";
@@ -2458,14 +2463,11 @@ function ReportDashboard({
     <section className="report-page">
       <div className="panel report-header-card">
         <div className="report-toolbar">
-          <div className="report-toolbar-info">
-            <div className="rpt-info-item">
-              <span>วันที่ข้อมูล</span>
-              <strong>{data.targetDate}</strong>
-            </div>
-            <div className="rpt-info-item">
-              <span>หน่วยงานที่เลือก</span>
-              <strong>{selectedDeptLabel}</strong>
+          <div className="report-page-title">
+            <BarChart3 size={20} className="report-page-title-icon" />
+            <div>
+              <h2>รายงานสรุปการเข้างาน</h2>
+              <p>ข้อมูลวันที่ {data.targetDate} · {selectedDeptLabel}</p>
             </div>
           </div>
           <button
@@ -2474,17 +2476,17 @@ function ReportDashboard({
             onClick={loadReportDashboard}
             type="button"
           >
-            <BarChart3 size={17} />
+            <BarChart3 size={16} />
             {isLoadingReport ? "กำลังโหลด..." : "โหลดข้อมูล"}
           </button>
         </div>
         <div className="report-kpis">
-          <ReportMetric value={scopedTotal} label="พนักงานทั้งหมด" sublabel={selectedDeptLabel} />
-          <ReportMetric value={scopedPresent} label="มาทำงาน" tone="green" sublabel={`${presentPercent.toFixed(1)}%`} />
-          <ReportMetric value={scopedLate} label="มาสาย" tone="amber" sublabel={`${latePercent.toFixed(1)}%`} />
-          <ReportMetric value={scopedAbsent} label="ขาดงาน" tone="red" sublabel={`${absentPercent.toFixed(1)}%`} />
-          <ReportMetric value={`${lateRate}%`} label="อัตราสาย" isRate sublabel="จากคนที่มาทำงาน" />
-          <ReportMetric value={riskCount} label="เสี่ยง" tone="purple" sublabel="สายรายเดือน ≥ 3 ครั้ง" />
+          <ReportMetric icon={<UsersRound size={16} />} value={scopedTotal} label="พนักงานทั้งหมด" sublabel={selectedDeptLabel} />
+          <ReportMetric icon={<CheckCircle2 size={16} />} value={scopedPresent} label="มาทำงาน" tone="green" sublabel={`${presentPercent.toFixed(1)}% ของทั้งหมด`} />
+          <ReportMetric icon={<Clock size={16} />} value={scopedLate} label="มาสาย" tone="amber" sublabel={`${latePercent.toFixed(1)}% ของทั้งหมด`} />
+          <ReportMetric icon={<UserX size={16} />} value={scopedAbsent} label="ขาดงาน" tone="red" sublabel={`${absentPercent.toFixed(1)}% ของทั้งหมด`} />
+          <ReportMetric icon={<TrendingUp size={16} />} value={`${lateRate}%`} label="อัตราสาย" isRate sublabel="จากคนที่มาทำงาน" />
+          <ReportMetric icon={<AlertTriangle size={16} />} value={riskCount} label="พนักงานเสี่ยง" tone="purple" sublabel="สายรายเดือน ≥ 3 ครั้ง" />
         </div>
       </div>
 
@@ -2572,58 +2574,64 @@ function ReportDashboard({
 
       <section className="panel report-table-panel">
         <div className="report-table-header">
-          <div className="report-table-title-row">
-            <h3>รายละเอียด Late &amp; Absent{selectedDept !== "all" ? ` · ${selectedDept}` : ""}</h3>
-            <span className="table-count">{sortedTableRows.length} คน</span>
-          </div>
-          <div className="report-table-controls">
-            <div className="status-tabs">
-              {(["all", "Late", "Absent"] as const).map((s) => (
-                <button
-                  key={s}
-                  className={`status-tab${tableStatusFilter === s ? " active" : ""}`}
-                  onClick={() => setTableStatusFilter(s)}
-                  type="button"
-                >
-                  {s === "all" ? `ทั้งหมด (${tableSourceRows.length})` : s === "Late" ? `Late (${scopedLate})` : `Absent (${scopedAbsent})`}
-                </button>
-              ))}
+          <div className="report-table-header-top">
+            <div className="report-table-title-row">
+              <h3>รายละเอียด Late &amp; Absent</h3>
+              {selectedDept !== "all" && <span className="dept-filter-chip">{selectedDept}</span>}
+              <span className="table-count-badge">{sortedTableRows.length} คน</span>
             </div>
-            <div className="table-filters report-table-filters">
-              <input
-                aria-label="ค้นหา"
-                placeholder="ค้นหา ชื่อ รหัส หน่วยงาน"
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              <select
-                aria-label="หน่วยงาน"
-                value={deptFilter}
-                onChange={(event) => setDeptFilter(event.target.value)}
-              >
-                <option value="all">ทุกหน่วยงาน</option>
-                {tableDeptOptions.map((dept) => (
-                  <option key={dept} value={dept}>{dept}</option>
+            <div className="report-table-actions">
+              <div className="status-tabs">
+                {(["all", "Late", "Absent"] as const).map((s) => (
+                  <button
+                    key={s}
+                    className={`status-tab${tableStatusFilter === s ? " active" : ""}${s === "Late" ? " amber" : s === "Absent" ? " red" : ""}`}
+                    onClick={() => setTableStatusFilter(s)}
+                    type="button"
+                  >
+                    {s === "all" ? `ทั้งหมด` : s}
+                    <span className="tab-count">{s === "all" ? tableSourceRows.length : s === "Late" ? scopedLate : scopedAbsent}</span>
+                  </button>
                 ))}
-              </select>
-              <button
-                className="ghost-button"
-                onClick={() => { setQuery(""); setDeptFilter("all"); }}
-                type="button"
-              >
-                Clear
-              </button>
+              </div>
               <button
                 className="primary-button small"
                 disabled={filteredTableRows.length === 0}
                 onClick={() => exportLateAbsentToExcel(filteredTableRows, data.monthlyLateCounts, selectedDeptLabel)}
                 type="button"
               >
-                <Download size={14} />
+                <Download size={13} />
                 Export
               </button>
             </div>
+          </div>
+          <div className="report-table-filters-row">
+            <input
+              aria-label="ค้นหา"
+              placeholder="ค้นหา ชื่อ / รหัสพนักงาน / หน่วยงาน"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <select
+              aria-label="หน่วยงาน"
+              value={deptFilter}
+              onChange={(event) => setDeptFilter(event.target.value)}
+            >
+              <option value="all">ทุกหน่วยงาน</option>
+              {tableDeptOptions.map((dept) => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
+            {(query || deptFilter !== "all") && (
+              <button
+                className="ghost-button"
+                onClick={() => { setQuery(""); setDeptFilter("all"); }}
+                type="button"
+              >
+                <X size={13} /> ล้าง
+              </button>
+            )}
           </div>
         </div>
         <div className="table-scroll">
@@ -2682,15 +2690,18 @@ function ReportMetric({
   value,
   sublabel,
   isRate,
+  icon,
 }: {
   label: string;
   tone?: "green" | "amber" | "red" | "purple";
   value: number | string;
   sublabel?: string;
   isRate?: boolean;
+  icon?: ReactNode;
 }) {
   return (
     <div className={`report-metric${tone ? ` ${tone}` : ""}${isRate ? " is-rate" : ""}`}>
+      {icon && <div className="report-metric-icon">{icon}</div>}
       <strong className="report-metric-value">{value}</strong>
       <span className="report-metric-label">{label}</span>
       {sublabel && <span className="report-metric-sub">{sublabel}</span>}
