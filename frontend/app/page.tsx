@@ -747,6 +747,13 @@ export default function Home() {
                 unit="คน"
                 note="ไม่พบการสแกนเข้างาน"
               />
+              <DonutKpiCard
+                present={presentPeople}
+                late={latePeople}
+                absent={absentPeople}
+                total={totalEmployees}
+                totalActive={totalActivePeople}
+              />
             </section>
 
             <DashboardPanels
@@ -1295,6 +1302,49 @@ function getSafeFileExtension(filename: string) {
   return match ? `.${match[1]}` : "";
 }
 
+function DonutKpiCard({
+  present,
+  late,
+  absent,
+  total,
+  totalActive,
+}: {
+  present: number;
+  late: number;
+  absent: number;
+  total: number;
+  totalActive: number;
+}) {
+  const presentPct = total ? (present / total) * 100 : 0;
+  const latePct = total ? (late / total) * 100 : 0;
+  const absentPct = total ? (absent / total) * 100 : 0;
+  const donutStyle = total
+    ? {
+        background: `conic-gradient(
+          #10b981 0 ${presentPct}%,
+          #f59e0b ${presentPct}% ${presentPct + latePct}%,
+          #ef4444 ${presentPct + latePct}% 100%
+        )`,
+      }
+    : { background: "#e2e8f0" };
+
+  return (
+    <article className="kpi-card kpi-donut">
+      <div className="donut compact" style={donutStyle}>
+        <div>
+          <strong>{totalActive}</strong>
+          <span>คน</span>
+        </div>
+      </div>
+      <div className="legend compact">
+        <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
+        <LegendRow color="amber" label="Late" value={String(late)} percent={`${latePct.toFixed(1)}%`} />
+        <LegendRow color="red" label="Absent" value={String(absent)} percent={`${absentPct.toFixed(1)}%`} />
+      </div>
+    </article>
+  );
+}
+
 function exportLateAbsentToExcel(
   rows: AttendanceRecord[],
   monthlyLateCounts: Record<string, number>,
@@ -1408,20 +1458,6 @@ function DashboardPanels({
               </tbody>
             </table>
           </div>
-          <div className="compact-attendance-summary">
-            <div className="donut compact" style={donutStyle}>
-              <div>
-                <strong>{totalActivePeople}</strong>
-                <span>พนักงาน</span>
-              </div>
-            </div>
-            <div className="legend compact">
-              <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
-              <LegendRow color="amber" label="Late" value={String(late)} percent={`${latePct.toFixed(1)}%`} />
-              <LegendRow color="red" label="Absent" value={String(absent)} percent={`${absentPct.toFixed(1)}%`} />
-            </div>
-          </div>
-          <p className="panel-note">หมายเหตุ : ขาดงาน คือ พนักงานที่ไม่พบการสแกนเข้างาน</p>
         </section>
 
         <section className="panel dept-panel">

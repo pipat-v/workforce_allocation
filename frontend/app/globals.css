@@ -221,8 +221,16 @@ button {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  grid-template-columns: repeat(4, minmax(160px, 1fr)) minmax(220px, 1fr);
   gap: 16px;
+}
+
+.kpi-card.kpi-donut {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
 }
 
 .kpi-card,
