@@ -2781,8 +2781,8 @@ function ReportDashboard({
                     <i className="late" style={{ width: `${(row.late / maxDeptTotal) * 100}%` }} />
                     <i className="absent" style={{ width: `${(row.absent / maxDeptTotal) * 100}%` }} />
                   </div>
+                  <span className={`dept-present-rate ${rateTone}`}>{deptRate}%</span>
                   <div className="stacked-row-end">
-                    <span className={`dept-present-rate ${rateTone}`}>{deptRate}%</span>
                     <strong>{row.total}</strong>
                     <span className="stacked-mini-badges">
                       {row.late > 0 ? <span className="mini-badge late">{row.late}L</span> : null}
