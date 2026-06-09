@@ -680,6 +680,20 @@ export default function Home() {
               </div>
               <ChevronDown size={17} />
             </div>
+            <div className="admin-chip">
+              <div className="avatar">A</div>
+              <div>
+                <strong>Admin</strong>
+                <span>Administrator</span>
+              </div>
+              <ChevronDown size={17} />
+            </div>
+          </div>
+        </header>
+
+        <section className="dashboard-head">
+          <div className="dashboard-head-left">
+            <h2>{activeNav?.label ?? "Dashboard"}</h2>
             {activeTab === "dashboard" && allDeptOptions.length > 0 ? (
               <select
                 aria-label="กรองหน่วยงาน"
@@ -693,19 +707,7 @@ export default function Home() {
                 ))}
               </select>
             ) : null}
-            <div className="admin-chip">
-              <div className="avatar">A</div>
-              <div>
-                <strong>Admin</strong>
-                <span>Administrator</span>
-              </div>
-              <ChevronDown size={17} />
-            </div>
           </div>
-        </header>
-
-        <section className="dashboard-head">
-          <h2>{activeNav?.label ?? "Dashboard"}</h2>
           {(message || error) ? (
             <div className={`toast ${error ? "error" : ""}`}>{error || message}</div>
           ) : null}

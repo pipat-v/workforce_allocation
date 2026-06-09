@@ -201,9 +201,37 @@ button {
   margin: 14px 2px 12px;
 }
 
+.dashboard-head-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .dashboard-head h2 {
   margin: 0;
   font-size: 26px;
+}
+
+.dashboard-head .dept-filter-select {
+  height: 36px;
+  padding: 0 28px 0 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
+  -webkit-appearance: none;
+  appearance: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s;
+  min-width: 160px;
+}
+
+.dashboard-head .dept-filter-select:hover,
+.dashboard-head .dept-filter-select:focus {
+  border-color: var(--blue);
+  outline: none;
 }
 
 .toast {
