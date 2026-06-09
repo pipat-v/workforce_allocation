@@ -2400,6 +2400,7 @@ function ReportDashboard({
 }) {
   const [sort, setSort_] = useState<SortState>(null);
   const setSort = setSort_ as (sort: SortState) => void;
+  const [tableStatusFilter, setTableStatusFilter] = useState<"all" | "Late" | "Absent">("all");
   const data = reportData ?? {
     targetDate: "-",
     totalEmployees: 0,
@@ -2424,11 +2425,11 @@ function ReportDashboard({
   const lateRate = scopedCameToWork
     ? ((scopedLate / scopedCameToWork) * 100).toFixed(1)
     : "0.0";
+  const riskCount = Object.values(data.monthlyLateCounts).filter((c) => c >= 3).length;
   const maxDeptTotal = Math.max(...data.deptRows.map((row) => row.total), 1);
   const presentPercent = scopedTotal ? (scopedPresent / scopedTotal) * 100 : 0;
   const latePercent = scopedTotal ? (scopedLate / scopedTotal) * 100 : 0;
   const absentPercent = scopedTotal ? (scopedAbsent / scopedTotal) * 100 : 0;
-  const lateDeptOptions = Array.from(new Set(data.lateRows.map((row) => row.dept))).sort();
   const lateDeptRows = Array.from(
     data.lateRows.reduce((map, row) => {
       map.set(row.dept, (map.get(row.dept) ?? 0) + 1);
@@ -2441,20 +2442,17 @@ function ReportDashboard({
   const pieColors = ["#2563eb", "#0f172a", "#10b981", "#f59e0b", "#dc2626", "#7c3aed"];
   const selectedDeptLabel = selectedDept === "all" ? "ทั้งโรงงาน" : selectedDept;
   const normalizedQuery = query.trim().toLowerCase();
-  const filteredLateRows = data.lateRows.filter((row) => {
+  const tableSourceRows = scopedRecords.filter((r) => r.status === "Late" || r.status === "Absent");
+  const tableDeptOptions = Array.from(new Set(tableSourceRows.map((r) => r.dept))).sort();
+  const filteredTableRows = tableSourceRows.filter((row) => {
     const matchesQuery = !normalizedQuery || [
-      row.empId,
-      row.name,
-      row.dept,
-      row.position,
-      row.scanIn,
-      row.status,
-    ].some((value) => String(value).toLowerCase().includes(normalizedQuery));
-    const effectiveDept = deptFilter !== "all" ? deptFilter : selectedDept;
-    const matchesDept = effectiveDept === "all" || row.dept === effectiveDept;
-    return matchesQuery && matchesDept;
+      row.empId, row.name, row.dept, row.position, row.scanIn, row.status,
+    ].some((v) => String(v).toLowerCase().includes(normalizedQuery));
+    const matchesDept = deptFilter === "all" || row.dept === deptFilter;
+    const matchesStatus = tableStatusFilter === "all" || row.status === tableStatusFilter;
+    return matchesQuery && matchesDept && matchesStatus;
   });
-  const sortedLateRows = sortAttendanceRows(filteredLateRows, sort, data.monthlyLateCounts);
+  const sortedTableRows = sortAttendanceRows(filteredTableRows, sort, data.monthlyLateCounts);
 
   return (
     <section className="report-page">
@@ -2482,10 +2480,11 @@ function ReportDashboard({
         </div>
         <div className="report-kpis">
           <ReportMetric value={scopedTotal} label="พนักงานทั้งหมด" sublabel={selectedDeptLabel} />
-          <ReportMetric value={scopedPresent} label="Present" tone="green" />
-          <ReportMetric value={scopedLate} label="Late" tone="amber" />
-          <ReportMetric value={scopedAbsent} label="Absent" tone="red" />
-          <ReportMetric value={`${lateRate}%`} label="Late Rate" isRate />
+          <ReportMetric value={scopedPresent} label="มาทำงาน" tone="green" sublabel={`${presentPercent.toFixed(1)}%`} />
+          <ReportMetric value={scopedLate} label="มาสาย" tone="amber" sublabel={`${latePercent.toFixed(1)}%`} />
+          <ReportMetric value={scopedAbsent} label="ขาดงาน" tone="red" sublabel={`${absentPercent.toFixed(1)}%`} />
+          <ReportMetric value={`${lateRate}%`} label="อัตราสาย" isRate sublabel="จากคนที่มาทำงาน" />
+          <ReportMetric value={riskCount} label="เสี่ยง" tone="purple" sublabel="สายรายเดือน ≥ 3 ครั้ง" />
         </div>
       </div>
 
@@ -2515,22 +2514,19 @@ function ReportDashboard({
                 }}
                 type="button"
               >
-                <span>{row.dept}</span>
+                <span className="stacked-dept-name">{row.dept}</span>
                 <div className="stacked-track">
-                  <i
-                    className="present"
-                    style={{ width: `${(row.present / maxDeptTotal) * 100}%` }}
-                  />
-                  <i
-                    className="late"
-                    style={{ width: `${(row.late / maxDeptTotal) * 100}%` }}
-                  />
-                  <i
-                    className="absent"
-                    style={{ width: `${(row.absent / maxDeptTotal) * 100}%` }}
-                  />
+                  <i className="present" style={{ width: `${(row.present / maxDeptTotal) * 100}%` }} />
+                  <i className="late" style={{ width: `${(row.late / maxDeptTotal) * 100}%` }} />
+                  <i className="absent" style={{ width: `${(row.absent / maxDeptTotal) * 100}%` }} />
                 </div>
-                <strong>{row.total}</strong>
+                <div className="stacked-row-end">
+                  <strong>{row.total}</strong>
+                  <span className="stacked-mini-badges">
+                    {row.late > 0 ? <span className="mini-badge late">{row.late}L</span> : null}
+                    {row.absent > 0 ? <span className="mini-badge absent">{row.absent}A</span> : null}
+                  </span>
+                </div>
               </button>
             ))}
             {data.deptRows.length === 0 ? <p className="empty-copy">ยังไม่มีข้อมูล report</p> : null}
@@ -2576,70 +2572,105 @@ function ReportDashboard({
 
       <section className="panel report-table-panel">
         <div className="report-table-header">
-          <h3>รายละเอียดคนมาสาย{selectedDept !== "all" ? ` · ${selectedDept}` : ""}</h3>
-          <div className="table-filters report-table-filters">
-          <input
-            aria-label="ค้นหาคนมาสาย"
-            placeholder="ค้นหา ชื่อ รหัส หน่วยงาน"
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <select
-            aria-label="หน่วยงาน"
-            value={deptFilter}
-            onChange={(event) => setDeptFilter(event.target.value)}
-          >
-            <option value="all">ทุกหน่วยงาน</option>
-            {lateDeptOptions.map((dept) => (
-              <option key={dept} value={dept}>{dept}</option>
-            ))}
-          </select>
-          <button
-            className="ghost-button"
-            onClick={() => {
-              setQuery("");
-              setDeptFilter("all");
-            }}
-            type="button"
-          >
-            Clear
-          </button>
+          <div className="report-table-title-row">
+            <h3>รายละเอียด Late &amp; Absent{selectedDept !== "all" ? ` · ${selectedDept}` : ""}</h3>
+            <span className="table-count">{sortedTableRows.length} คน</span>
+          </div>
+          <div className="report-table-controls">
+            <div className="status-tabs">
+              {(["all", "Late", "Absent"] as const).map((s) => (
+                <button
+                  key={s}
+                  className={`status-tab${tableStatusFilter === s ? " active" : ""}`}
+                  onClick={() => setTableStatusFilter(s)}
+                  type="button"
+                >
+                  {s === "all" ? `ทั้งหมด (${tableSourceRows.length})` : s === "Late" ? `Late (${scopedLate})` : `Absent (${scopedAbsent})`}
+                </button>
+              ))}
+            </div>
+            <div className="table-filters report-table-filters">
+              <input
+                aria-label="ค้นหา"
+                placeholder="ค้นหา ชื่อ รหัส หน่วยงาน"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <select
+                aria-label="หน่วยงาน"
+                value={deptFilter}
+                onChange={(event) => setDeptFilter(event.target.value)}
+              >
+                <option value="all">ทุกหน่วยงาน</option>
+                {tableDeptOptions.map((dept) => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
+              <button
+                className="ghost-button"
+                onClick={() => { setQuery(""); setDeptFilter("all"); }}
+                type="button"
+              >
+                Clear
+              </button>
+              <button
+                className="primary-button small"
+                disabled={filteredTableRows.length === 0}
+                onClick={() => exportLateAbsentToExcel(filteredTableRows, data.monthlyLateCounts, selectedDeptLabel)}
+                type="button"
+              >
+                <Download size={14} />
+                Export
+              </button>
+            </div>
           </div>
         </div>
-        <table className="table">
-          <thead>
-            <tr>
-              <th><SortButton columnKey="dept" setSort={setSort} sort={sort}>หน่วยงาน</SortButton></th>
-              <th><SortButton columnKey="name" setSort={setSort} sort={sort}>ชื่อ-สกุล</SortButton></th>
-              <th><SortButton columnKey="shift" setSort={setSort} sort={sort}>กะ</SortButton></th>
-              <th><SortButton columnKey="shiftStart" setSort={setSort} sort={sort}>เวลาเข้า</SortButton></th>
-              <th><SortButton columnKey="scanIn" setSort={setSort} sort={sort}>สแกนเข้า</SortButton></th>
-              <th><SortButton columnKey="status" setSort={setSort} sort={sort}>สถานะ</SortButton></th>
-              <th><SortButton columnKey="minutesLate" setSort={setSort} sort={sort}>สาย (นาที)</SortButton></th>
-              <th><SortButton columnKey="monthlyLate" setSort={setSort} sort={sort}>สายเดือนนี้</SortButton></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedLateRows.map((row) => (
-              <tr key={`${row.empId}-${row.scanIn}`}>
-                <td><span className="dept-chip">{row.dept}</span></td>
-                <td>{row.name}</td>
-                <td>{row.shift}</td>
-                <td>{row.shiftStart}</td>
-                <td>{row.scanIn}</td>
-                <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td>
-                <td><span className="late-minutes-badge">{row.minutesLate}</span></td>
-                <td>{data.monthlyLateCounts[row.empId] ?? 1}</td>
-              </tr>
-            ))}
-            {sortedLateRows.length === 0 ? (
+        <div className="table-scroll">
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={8}>กด Load Uploaded Data เพื่อสร้างรายงานจากไฟล์ที่อัปโหลด</td>
+                <th>No.</th>
+                <th><SortButton columnKey="dept" setSort={setSort} sort={sort}>หน่วยงาน</SortButton></th>
+                <th><SortButton columnKey="name" setSort={setSort} sort={sort}>ชื่อ-สกุล</SortButton></th>
+                <th><SortButton columnKey="shift" setSort={setSort} sort={sort}>กะ</SortButton></th>
+                <th><SortButton columnKey="shiftStart" setSort={setSort} sort={sort}>เวลาเข้างาน</SortButton></th>
+                <th><SortButton columnKey="scanIn" setSort={setSort} sort={sort}>Scan In</SortButton></th>
+                <th><SortButton columnKey="status" setSort={setSort} sort={sort}>สถานะ</SortButton></th>
+                <th><SortButton columnKey="minutesLate" setSort={setSort} sort={sort}>สาย</SortButton></th>
+                <th><SortButton columnKey="monthlyLate" setSort={setSort} sort={sort}>สายเดือนนี้</SortButton></th>
+                <th>เสี่ยง</th>
               </tr>
-            ) : null}
-          </tbody>
-        </table>
+            </thead>
+            <tbody key={tableStatusFilter}>
+              {sortedTableRows.map((row, index) => {
+                const monthly = data.monthlyLateCounts[row.empId] ?? 0;
+                const isRisk = monthly >= 3;
+                return (
+                  <tr key={`${row.empId}-${row.scanIn}-rpt`} className={isRisk ? "row-risk" : ""}>
+                    <td>{index + 1}</td>
+                    <td><span className="dept-chip">{row.dept}</span></td>
+                    <td>{row.name}</td>
+                    <td>{row.shift}</td>
+                    <td>{row.shiftStart}</td>
+                    <td>{row.scanIn ?? "-"}</td>
+                    <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td>
+                    <td>{row.status !== "Absent" ? <span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span> : "-"}</td>
+                    <td>
+                      <span className={monthly >= 3 ? "monthly-late-high" : ""}>
+                        {monthly > 0 ? monthly : "-"}
+                      </span>
+                    </td>
+                    <td>{isRisk ? <span className="risk-badge">เสี่ยง</span> : null}</td>
+                  </tr>
+                );
+              })}
+              {sortedTableRows.length === 0 ? (
+                <tr><td colSpan={10}>{reportData ? "ไม่มีข้อมูลตามเงื่อนไขที่เลือก" : "กด โหลดข้อมูล เพื่อสร้างรายงาน"}</td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </section>
     </section>
   );
@@ -2653,7 +2684,7 @@ function ReportMetric({
   isRate,
 }: {
   label: string;
-  tone?: "green" | "amber" | "red";
+  tone?: "green" | "amber" | "red" | "purple";
   value: number | string;
   sublabel?: string;
   isRate?: boolean;
