@@ -573,6 +573,27 @@ button {
   flex-direction: column;
   gap: 14px;
   margin-top: 16px;
+  max-height: 330px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.dept-bars::-webkit-scrollbar {
+  width: 5px;
+}
+
+.dept-bars::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.dept-bars::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.dept-bars::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .dept-row {
