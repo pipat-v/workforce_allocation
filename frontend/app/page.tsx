@@ -160,7 +160,6 @@ export default function Home() {
   const [reportLateQuery, setReportLateQuery] = useState("");
   const [reportLateDept, setReportLateDept] = useState("all");
   const [selectedReportDept, setSelectedReportDept] = useState("all");
-  const [resultsSort, setResultsSort] = useState<SortState<AttendanceSortKey>>(null);
   const [timestampSort, setTimestampSort] = useState<SortState<AttendanceSortKey>>(null);
   const [reportLateSort, setReportLateSort] = useState<SortState<AttendanceSortKey>>(null);
   const [masterFileHistory, setMasterFileHistory] = useState<MasterFile[]>([]);
@@ -802,10 +801,8 @@ export default function Home() {
             reportData={reportData}
             setDeptFilter={setResultsDept}
             setQuery={setResultsQuery}
-            setSort={setResultsSort}
             setStatusFilter={setResultsStatus}
             standalone
-            sort={resultsSort}
             statusFilter={resultsStatus}
           />
         ) : null}
@@ -1191,7 +1188,7 @@ function sortAttendanceRows(
 }
 
 function toggleSort<T extends string>(
-  current: SortState<T>,
+  current: SortState<string>,
   key: T,
   setSort: (sort: SortState<T>) => void,
 ) {
@@ -1215,7 +1212,7 @@ function SortButton<T extends string>({
   children: ReactNode;
   columnKey: T;
   setSort?: (sort: SortState<T>) => void;
-  sort?: SortState<T>;
+  sort?: SortState<string>;
 }) {
   const active = sort?.key === columnKey;
   return (
@@ -2225,10 +2222,8 @@ function ResultsPanel({
   reportData,
   setDeptFilter,
   setQuery,
-  setSort,
   setStatusFilter,
   standalone = false,
-  sort,
   statusFilter = "all",
 }: {
   deptFilter?: string;
@@ -2236,13 +2231,14 @@ function ResultsPanel({
   reportData: ReportData | null;
   setDeptFilter?: (value: string) => void;
   setQuery?: (value: string) => void;
-  setSort?: AttendanceSortSetter;
   setStatusFilter?: (value: string) => void;
   standalone?: boolean;
-  sort?: SortState<AttendanceSortKey>;
   statusFilter?: string;
 }) {
   const [page, setPage] = useState(1);
+  const [sortState, setSortState] = useState<SortState<AttendanceSortKey>>(null);
+  const sort = sortState;
+  const setSort: AttendanceSortSetter = (newSort) => setSortState(newSort);
   const sourceRows = reportData?.records.filter((record) => record.status !== "Absent") ?? [];
   const deptOptions = Array.from(new Set(sourceRows.map((record) => record.dept))).sort();
   const normalizedQuery = query.trim().toLowerCase();
@@ -2259,7 +2255,7 @@ function ResultsPanel({
     const matchesStatus = statusFilter === "all" || record.status === statusFilter;
     return matchesQuery && matchesDept && matchesStatus;
   });
-  const sortedRows = sortAttendanceRows(allRows, sort ?? null, reportData?.monthlyLateCounts ?? {});
+  const sortedRows = sortAttendanceRows(allRows, sort, reportData?.monthlyLateCounts ?? {});
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const rows = sortedRows.slice((safePage - 1) * pageSize, safePage * pageSize);
