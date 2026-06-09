@@ -988,6 +988,85 @@ button {
   gap: 16px;
 }
 
+.md-columns-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+.md-columns-bar h3 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.md-columns-bar p {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.md-columns {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.md-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.md-column-header {
+  border-top: 3px solid var(--blue);
+  padding: 18px 20px 0;
+}
+
+.md-column-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.compact-dropzone {
+  margin: 0 20px;
+  padding: 20px 12px;
+  gap: 6px;
+}
+
+.compact-dropzone strong {
+  font-size: 13px;
+  text-align: center;
+}
+
+.md-col-history {
+  padding: 0 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.md-col-history h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.md-col-history .ts-history-list {
+  border-top: 1px solid var(--line);
+}
+
 .md-upload-section {
   display: flex;
   flex-direction: column;

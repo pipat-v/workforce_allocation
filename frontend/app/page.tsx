@@ -1372,6 +1372,13 @@ function DashboardPanels({
   );
 }
 
+const masterColumnColors: Record<MasterFileKey, string> = {
+  employee_master: "#2563eb",
+  manpower_plan: "#d97706",
+  skill_matrix: "#10b981",
+  dayoff_shift: "#7c3aed",
+};
+
 function MasterDataPage({
   activeMasterMap,
   canSaveMasters,
@@ -1395,139 +1402,114 @@ function MasterDataPage({
 }) {
   return (
     <section className="md-page">
-        <section className="panel md-upload-section">
-          <div className="md-header">
-            <div>
-              <h3>Master Data</h3>
-              <p>อัปโหลดไฟล์หลัก 4 ไฟล์ ระบบจะใช้ชุดล่าสุดกับ daily run อัตโนมัติ</p>
+      <div className="md-columns-bar">
+        <div>
+          <h3>Master Data</h3>
+          <p>อัปโหลดไฟล์หลัก 4 ไฟล์ ระบบจะใช้ชุดล่าสุดกับ daily run อัตโนมัติ</p>
+        </div>
+        <button
+          className="primary-button"
+          disabled={!canSaveMasters || isSavingMasters}
+          onClick={saveMasterFiles}
+          type="button"
+        >
+          <UploadCloud size={17} />
+          {isSavingMasters ? "Saving..." : "Save Master Files"}
+        </button>
+      </div>
+
+      <div className="md-columns">
+        {masterFileTypes.map((item) => {
+          const pendingFile = masterUploads[item.key];
+          const fileHistory = masterFileHistory.filter((f) => f.file_type === item.key);
+          const inputId = `master-input-${item.key}`;
+          const color = masterColumnColors[item.key];
+
+          return (
+            <div className="md-column panel" key={item.key}>
+              <div className="md-column-header" style={{ borderTopColor: color }}>
+                <span className="md-column-title">{item.label}</span>
+              </div>
+
+              <label className={`ts-dropzone compact-dropzone ${pendingFile ? "has-file" : ""}`}>
+                <UploadCloud size={28} />
+                {pendingFile ? (
+                  <>
+                    <strong>{pendingFile.name}</strong>
+                    <span>{(pendingFile.size / 1024).toFixed(0)} KB · คลิกเพื่อเปลี่ยนไฟล์</span>
+                  </>
+                ) : (
+                  <>
+                    <strong>ลากไฟล์มาวางที่นี่ หรือ คลิกเพื่อเลือกไฟล์</strong>
+                    <span>รองรับ .xlsx, .xls, .csv</span>
+                  </>
+                )}
+                <input
+                  id={inputId}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={(event) =>
+                    setMasterUploads((current) => ({
+                      ...current,
+                      [item.key]: event.target.files?.[0] ?? null,
+                    }))
+                  }
+                />
+              </label>
+
+              <div className="md-col-history">
+                <h4>ประวัติการอัปโหลด</h4>
+                <div className="ts-history-list">
+                  {fileHistory.length === 0 ? (
+                    <p className="empty-copy" style={{ padding: "8px 0" }}>ยังไม่มีประวัติ</p>
+                  ) : null}
+                  {fileHistory.map((file) => {
+                    const dateText = new Date(file.created_at).toLocaleString("th-TH", {
+                      day: "numeric",
+                      month: "numeric",
+                      year: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                    });
+                    return (
+                      <div className="ts-history-row" key={file.id}>
+                        <div className="ts-history-info">
+                          <strong>{file.original_filename ?? "ไฟล์"}</strong>
+                          <span>
+                            {dateText}
+                            {file.is_active ? (
+                              <span className="status-pill uploaded" style={{ marginLeft: 6 }}>Active</span>
+                            ) : null}
+                          </span>
+                        </div>
+                        <div className="ts-history-actions">
+                          <button
+                            className="icon-button"
+                            onClick={() => downloadMasterFile(file.file_path, file.original_filename ?? "download.xlsx")}
+                            title="ดาวน์โหลด"
+                            type="button"
+                          >
+                            <Download size={15} />
+                          </button>
+                          <button
+                            className="icon-button danger"
+                            onClick={() => void onDeleteMasterFile(file)}
+                            title="ลบ"
+                            type="button"
+                          >
+                            <X size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-            <button
-              className="primary-button"
-              disabled={!canSaveMasters || isSavingMasters}
-              onClick={saveMasterFiles}
-              type="button"
-            >
-              <UploadCloud size={17} />
-              {isSavingMasters ? "Saving..." : "Save Master Files"}
-            </button>
-          </div>
-
-          <div className="md-list">
-            {masterFileTypes.map((item) => {
-              const activeFile = activeMasterMap[item.key];
-              const pendingFile = masterUploads[item.key];
-              const state = pendingFile ? "pending" : activeFile ? "active" : "empty";
-              const inputId = `master-input-${item.key}`;
-              const filename = pendingFile
-                ? pendingFile.name
-                : activeFile?.original_filename ?? null;
-              const dateText = activeFile
-                ? new Date(activeFile.created_at).toLocaleString("th-TH", {
-                    day: "numeric", month: "numeric", year: "2-digit",
-                    hour: "2-digit", minute: "2-digit", hour12: false,
-                  })
-                : null;
-              return (
-                <div className={`md-row ${state}`} key={item.key}>
-                  <div className="md-row-info">
-                    <span className="md-row-label">{item.label}</span>
-                    {filename ? (
-                      <strong className={`md-row-filename${state === "pending" ? " pending" : ""}`}>
-                        {filename}
-                      </strong>
-                    ) : (
-                      <strong className="md-row-filename empty">ยังไม่มีไฟล์</strong>
-                    )}
-                    {dateText && <span className="md-row-date">{dateText}</span>}
-                  </div>
-                  <div className="md-row-actions">
-                    {activeFile && (
-                      <button
-                        className="icon-button"
-                        title="ดาวน์โหลด"
-                        type="button"
-                        onClick={() => downloadMasterFile(
-                          activeFile.file_path,
-                          activeFile.original_filename ?? "download.xlsx"
-                        )}
-                      >
-                        <Download size={15} />
-                      </button>
-                    )}
-                    <label className="icon-button" htmlFor={inputId} title="อัปโหลดไฟล์ใหม่">
-                      <UploadCloud size={15} />
-                      <input
-                        id={inputId}
-                        type="file"
-                        accept=".xlsx,.xls"
-                        onChange={(event) =>
-                          setMasterUploads((current) => ({
-                            ...current,
-                            [item.key]: event.target.files?.[0] ?? null,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="panel ts-history-panel">
-          <div className="ts-history-header">
-            <h3>ประวัติการอัปโหลด</h3>
-            <span className="table-count">{masterFileHistory.length} ไฟล์</span>
-          </div>
-          <div className="ts-history-list">
-            {masterFileHistory.length === 0 ? (
-              <p className="empty-copy">ยังไม่มีประวัติการอัปโหลด</p>
-            ) : null}
-            {masterFileHistory.map((file) => {
-              const typeLabel = masterFileTypes.find((t) => t.key === file.file_type)?.label ?? file.file_type;
-              const dateText = new Date(file.created_at).toLocaleString("th-TH", {
-                day: "numeric",
-                month: "numeric",
-                year: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-              });
-              return (
-                <div className="ts-history-row" key={file.id}>
-                  <div className="ts-history-info">
-                    <strong>{file.original_filename ?? "ไฟล์"}</strong>
-                    <span>
-                      {typeLabel} · {dateText}
-                      {file.is_active ? (
-                        <span className="status-pill uploaded" style={{ marginLeft: 6 }}>Active</span>
-                      ) : null}
-                    </span>
-                  </div>
-                  <div className="ts-history-actions">
-                    <button
-                      className="icon-button"
-                      onClick={() => downloadMasterFile(file.file_path, file.original_filename ?? "download.xlsx")}
-                      title="ดาวน์โหลด"
-                      type="button"
-                    >
-                      <Download size={15} />
-                    </button>
-                    <button
-                      className="icon-button danger"
-                      onClick={() => void onDeleteMasterFile(file)}
-                      title="ลบ"
-                      type="button"
-                    >
-                      <X size={15} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+          );
+        })}
+      </div>
 
       <DayoffShiftEditor
         activeFile={activeMasterMap.dayoff_shift}
