@@ -1308,18 +1308,14 @@ function DonutKpiCard({
   return (
     <article className="kpi-card kpi-donut">
       <div className="kpi-bar-chart">
-        <div className="kpi-bar-track">
+        <span className="kpi-bar-label">{totalActive} คน</span>
+        <div className="kpi-stacked-bar">
           <div className="kpi-bar-fill present" style={{ width: `${presentPct}%` }} />
-        </div>
-        <div className="kpi-bar-track">
           <div className="kpi-bar-fill late" style={{ width: `${latePct}%` }} />
-        </div>
-        <div className="kpi-bar-track">
           <div className="kpi-bar-fill absent" style={{ width: `${absentPct}%` }} />
         </div>
       </div>
       <div className="legend compact">
-        <div className="pie-total">{totalActive} <span>คน</span></div>
         <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
         <LegendRow color="amber" label="Late" value={String(late)} percent={`${latePct.toFixed(1)}%`} />
         <LegendRow color="red" label="Absent" value={String(absent)} percent={`${absentPct.toFixed(1)}%`} />
