@@ -1395,7 +1395,6 @@ function MasterDataPage({
 }) {
   return (
     <section className="md-page">
-      <section className="workspace-grid">
         <section className="panel md-upload-section">
           <div className="md-header">
             <div>
@@ -1529,7 +1528,6 @@ function MasterDataPage({
             })}
           </div>
         </section>
-      </section>
 
       <DayoffShiftEditor
         activeFile={activeMasterMap.dayoff_shift}
