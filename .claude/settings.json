@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit -m ' *)",
+      "Bash(npx tsc *)",
+      "Read(//mnt/c/Users/User/workforce_allocation/**)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(git -C \"c:/Users/User/workforce_allocation\" add frontend/app/page.tsx frontend/app/globals.css)",
+      "Bash(git -C c:/Users/User/workforce_allocation commit -m ' *)"
+    ]
+  }
+}

@@ -1018,6 +1018,57 @@ button {
   gap: 12px;
 }
 
+.md-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.md-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.md-row:last-child { border-bottom: none; }
+
+.md-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.md-row-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 1px;
+}
+
+.md-row-filename {
+  display: block;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.md-row-filename.pending { color: var(--blue); }
+.md-row-filename.empty { color: var(--muted); font-weight: 400; }
+
+.md-row-date {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.md-row-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.md-row-actions label.icon-button input { display: none; }
+
 .md-card {
   display: flex;
   flex-direction: column;
@@ -1090,6 +1141,23 @@ button {
 
 .md-filename.pending {
   color: var(--blue);
+}
+
+.md-filename-dl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text);
+  text-align: left;
+  max-width: 100%;
+}
+.md-filename-dl:hover {
+  color: var(--blue);
+  text-decoration: underline;
 }
 
 .md-filedate {

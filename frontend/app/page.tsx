@@ -39,6 +39,7 @@ type MasterFile = {
   file_path: string;
   original_filename: string | null;
   created_at: string;
+  is_active: boolean;
 };
 
 type DayoffShiftEditorRow = {
@@ -163,6 +164,7 @@ export default function Home() {
   const [resultsSort, setResultsSort] = useState<SortState<AttendanceSortKey>>(null);
   const [timestampSort, setTimestampSort] = useState<SortState<AttendanceSortKey>>(null);
   const [reportLateSort, setReportLateSort] = useState<SortState<AttendanceSortKey>>(null);
+  const [masterFileHistory, setMasterFileHistory] = useState<MasterFile[]>([]);
 
   const activeMasterMap = useMemo(
     () =>
@@ -225,8 +227,7 @@ export default function Home() {
   async function loadActiveMasters() {
     const { data, error: loadError } = await supabase
       .from("master_data_files")
-      .select("id,file_type,file_path,original_filename,created_at")
-      .eq("is_active", true)
+      .select("id,file_type,file_path,original_filename,is_active,created_at")
       .order("created_at", { ascending: false });
 
     if (loadError) {
@@ -234,9 +235,12 @@ export default function Home() {
       return;
     }
 
+    const allFiles = (data ?? []) as MasterFile[];
+    setMasterFileHistory(allFiles);
+
     const latestByType = new Map<MasterFileKey, MasterFile>();
-    for (const item of (data ?? []) as MasterFile[]) {
-      if (!latestByType.has(item.file_type)) {
+    for (const item of allFiles) {
+      if (item.is_active && !latestByType.has(item.file_type)) {
         latestByType.set(item.file_type, item);
       }
     }
@@ -402,6 +406,26 @@ export default function Home() {
       return;
     }
     await loadRuns();
+  }
+
+  async function deleteMasterFile(file: MasterFile) {
+    setError("");
+    const { error: storageError } = await supabase.storage
+      .from("workforce-inputs")
+      .remove([file.file_path]);
+    if (storageError) {
+      setError(storageError.message);
+      return;
+    }
+    const { error: deleteError } = await supabase
+      .from("master_data_files")
+      .delete()
+      .eq("id", file.id);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+    await loadActiveMasters();
   }
 
   async function createDailyRun() {
@@ -701,7 +725,9 @@ export default function Home() {
             activeMasterMap={activeMasterMap}
             canSaveMasters={canSaveMasters}
             isSavingMasters={isSavingMasters}
+            masterFileHistory={masterFileHistory}
             masterUploads={masterUploads}
+            onDeleteMasterFile={deleteMasterFile}
             saveDayoffShiftRows={saveDayoffShiftRows}
             saveMasterFiles={saveMasterFiles}
             setMasterUploads={setMasterUploads}
@@ -780,6 +806,17 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+async function downloadMasterFile(filePath: string, filename: string) {
+  const { data, error } = await supabase.storage
+    .from("workforce-inputs")
+    .createSignedUrl(filePath, 120);
+  if (error || !data?.signedUrl) return;
+  const a = document.createElement("a");
+  a.href = data.signedUrl;
+  a.download = filename;
+  a.click();
 }
 
 async function downloadSheetRows(path: string): Promise<Record<string, unknown>[]> {
@@ -973,15 +1010,26 @@ function buildDeptShiftStart(rows: Record<string, unknown>[]) {
   return map;
 }
 
+function findRowCol(row: Record<string, unknown>, ...targets: string[]): string {
+  const norm = (s: string) => s.replace(/[\s\r\n]+/g, "").toLowerCase();
+  const normedTargets = targets.map(norm);
+  for (const [key, val] of Object.entries(row)) {
+    const k = norm(key);
+    if (normedTargets.some((t) => k === t)) return String(val ?? "").trim();
+  }
+  return "";
+}
+
 function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
   const map = new Map<string, { dayoff: string; shift: string }>();
   for (const row of rows) {
-    const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+    const empId = cleanEmpId(
+      row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]
+    );
     if (!empId) continue;
-
     map.set(empId, {
-      dayoff: String(row["วันหยุด\nประจำสัปดาห์"] ?? row["วันหยุดประจำสัปดาห์"] ?? row["dayoff"] ?? "").trim(),
-      shift: String(row["อยู่กะไหน"] ?? row["shift"] ?? row["กะ"] ?? "").trim(),
+      dayoff: findRowCol(row, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"),
+      shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
     });
   }
   return map;
@@ -996,8 +1044,8 @@ function toDayoffShiftEditorRow(row: Record<string, unknown>, index: number): Da
     id: `${empId || "row"}-${index}`,
     empId,
     name: `${firstName} ${lastName}`.trim() || fallbackName || empId,
-    dayoff: String(row["วันหยุด\nประจำสัปดาห์"] ?? row["วันหยุดประจำสัปดาห์"] ?? row["dayoff"] ?? "").trim(),
-    shift: String(row["อยู่กะไหน"] ?? row["shift"] ?? row["กะ"] ?? "").trim(),
+    dayoff: findRowCol(row, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"),
+    shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
     raw: row,
   };
 }
@@ -1328,7 +1376,9 @@ function MasterDataPage({
   activeMasterMap,
   canSaveMasters,
   isSavingMasters,
+  masterFileHistory,
   masterUploads,
+  onDeleteMasterFile,
   saveDayoffShiftRows,
   saveMasterFiles,
   setMasterUploads,
@@ -1336,81 +1386,149 @@ function MasterDataPage({
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   canSaveMasters: boolean;
   isSavingMasters: boolean;
+  masterFileHistory: MasterFile[];
   masterUploads: MasterUploadState;
+  onDeleteMasterFile: (file: MasterFile) => Promise<void>;
   saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
   saveMasterFiles: () => Promise<void>;
   setMasterUploads: Dispatch<SetStateAction<MasterUploadState>>;
 }) {
   return (
     <section className="md-page">
-      <section className="panel md-upload-section">
-        <div className="md-header">
-          <div>
-            <h3>Master Data</h3>
-            <p>อัปโหลดไฟล์หลัก 4 ไฟล์ ระบบจะใช้ชุดล่าสุดกับ daily run อัตโนมัติ</p>
+      <section className="workspace-grid">
+        <section className="panel md-upload-section">
+          <div className="md-header">
+            <div>
+              <h3>Master Data</h3>
+              <p>อัปโหลดไฟล์หลัก 4 ไฟล์ ระบบจะใช้ชุดล่าสุดกับ daily run อัตโนมัติ</p>
+            </div>
+            <button
+              className="primary-button"
+              disabled={!canSaveMasters || isSavingMasters}
+              onClick={saveMasterFiles}
+              type="button"
+            >
+              <UploadCloud size={17} />
+              {isSavingMasters ? "Saving..." : "Save Master Files"}
+            </button>
           </div>
-          <button
-            className="primary-button"
-            disabled={!canSaveMasters || isSavingMasters}
-            onClick={saveMasterFiles}
-            type="button"
-          >
-            <UploadCloud size={17} />
-            {isSavingMasters ? "Saving..." : "Save Master Files"}
-          </button>
-        </div>
 
-        <div className="md-card-grid">
-          {masterFileTypes.map((item) => {
-            const activeFile = activeMasterMap[item.key];
-            const pendingFile = masterUploads[item.key];
-            const state = pendingFile ? "pending" : activeFile ? "active" : "empty";
-            const inputId = `master-input-${item.key}`;
-            return (
-              <div className={`md-card ${state}`} key={item.key}>
-                <div className="md-card-top">
-                  <FileSpreadsheet size={20} />
-                  <strong>{item.label}</strong>
-                  {state === "active" && <span className="md-badge active">Active</span>}
-                  {state === "pending" && <span className="md-badge pending">New</span>}
-                  {state === "empty" && <span className="md-badge empty">ไม่มีไฟล์</span>}
+          <div className="md-list">
+            {masterFileTypes.map((item) => {
+              const activeFile = activeMasterMap[item.key];
+              const pendingFile = masterUploads[item.key];
+              const state = pendingFile ? "pending" : activeFile ? "active" : "empty";
+              const inputId = `master-input-${item.key}`;
+              const filename = pendingFile
+                ? pendingFile.name
+                : activeFile?.original_filename ?? null;
+              const dateText = activeFile
+                ? new Date(activeFile.created_at).toLocaleString("th-TH", {
+                    day: "numeric", month: "numeric", year: "2-digit",
+                    hour: "2-digit", minute: "2-digit", hour12: false,
+                  })
+                : null;
+              return (
+                <div className={`md-row ${state}`} key={item.key}>
+                  <div className="md-row-info">
+                    <span className="md-row-label">{item.label}</span>
+                    {filename ? (
+                      <strong className={`md-row-filename${state === "pending" ? " pending" : ""}`}>
+                        {filename}
+                      </strong>
+                    ) : (
+                      <strong className="md-row-filename empty">ยังไม่มีไฟล์</strong>
+                    )}
+                    {dateText && <span className="md-row-date">{dateText}</span>}
+                  </div>
+                  <div className="md-row-actions">
+                    {activeFile && (
+                      <button
+                        className="icon-button"
+                        title="ดาวน์โหลด"
+                        type="button"
+                        onClick={() => downloadMasterFile(
+                          activeFile.file_path,
+                          activeFile.original_filename ?? "download.xlsx"
+                        )}
+                      >
+                        <Download size={15} />
+                      </button>
+                    )}
+                    <label className="icon-button" htmlFor={inputId} title="อัปโหลดไฟล์ใหม่">
+                      <UploadCloud size={15} />
+                      <input
+                        id={inputId}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={(event) =>
+                          setMasterUploads((current) => ({
+                            ...current,
+                            [item.key]: event.target.files?.[0] ?? null,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
                 </div>
-                <div className="md-card-body">
-                  {pendingFile ? (
-                    <span className="md-filename pending">{pendingFile.name}</span>
-                  ) : activeFile ? (
-                    <>
-                      <span className="md-filename">{activeFile.original_filename}</span>
-                      <span className="md-filedate">
-                        {new Date(activeFile.created_at).toLocaleString("th-TH", {
-                          day: "numeric", month: "short", year: "numeric",
-                          hour: "2-digit", minute: "2-digit", hour12: false,
-                        })}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="md-empty-hint">ยังไม่มีไฟล์</span>
-                  )}
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="panel ts-history-panel">
+          <div className="ts-history-header">
+            <h3>ประวัติการอัปโหลด</h3>
+            <span className="table-count">{masterFileHistory.length} ไฟล์</span>
+          </div>
+          <div className="ts-history-list">
+            {masterFileHistory.length === 0 ? (
+              <p className="empty-copy">ยังไม่มีประวัติการอัปโหลด</p>
+            ) : null}
+            {masterFileHistory.map((file) => {
+              const typeLabel = masterFileTypes.find((t) => t.key === file.file_type)?.label ?? file.file_type;
+              const dateText = new Date(file.created_at).toLocaleString("th-TH", {
+                day: "numeric",
+                month: "numeric",
+                year: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              });
+              return (
+                <div className="ts-history-row" key={file.id}>
+                  <div className="ts-history-info">
+                    <strong>{file.original_filename ?? "ไฟล์"}</strong>
+                    <span>
+                      {typeLabel} · {dateText}
+                      {file.is_active ? (
+                        <span className="status-pill uploaded" style={{ marginLeft: 6 }}>Active</span>
+                      ) : null}
+                    </span>
+                  </div>
+                  <div className="ts-history-actions">
+                    <button
+                      className="icon-button"
+                      onClick={() => downloadMasterFile(file.file_path, file.original_filename ?? "download.xlsx")}
+                      title="ดาวน์โหลด"
+                      type="button"
+                    >
+                      <Download size={15} />
+                    </button>
+                    <button
+                      className="icon-button danger"
+                      onClick={() => void onDeleteMasterFile(file)}
+                      title="ลบ"
+                      type="button"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
                 </div>
-                <label className="md-card-action" htmlFor={inputId}>
-                  <UploadCloud size={13} />
-                  {state === "pending" ? "เปลี่ยนไฟล์" : state === "active" ? "อัปเดตไฟล์" : "เลือกไฟล์"}
-                  <input
-                    id={inputId}
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={(event) =>
-                      setMasterUploads((current) => ({
-                        ...current,
-                        [item.key]: event.target.files?.[0] ?? null,
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </section>
       </section>
 
       <DayoffShiftEditor
