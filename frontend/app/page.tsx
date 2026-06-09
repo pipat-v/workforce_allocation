@@ -165,6 +165,7 @@ export default function Home() {
   const [timestampSort, setTimestampSort] = useState<SortState<AttendanceSortKey>>(null);
   const [reportLateSort, setReportLateSort] = useState<SortState<AttendanceSortKey>>(null);
   const [masterFileHistory, setMasterFileHistory] = useState<MasterFile[]>([]);
+  const [dashboardDeptFilter, setDashboardDeptFilter] = useState("all");
 
   const activeMasterMap = useMemo(
     () =>
@@ -195,10 +196,34 @@ export default function Home() {
           latestRun.scan_file_path,
         ].filter(Boolean).join("|")
       : "";
-  const totalEmployees = reportData?.totalEmployees ?? 0;
-  const presentPeople = reportData?.present ?? 0;
-  const latePeople = reportData?.late ?? 0;
-  const absentPeople = reportData?.absent ?? 0;
+
+  const allDeptOptions = useMemo(
+    () => Array.from(new Set((reportData?.records ?? []).map((r) => r.dept))).sort(),
+    [reportData],
+  );
+
+  const dashboardReport = useMemo<ReportData | null>(() => {
+    if (!reportData) return null;
+    if (dashboardDeptFilter === "all") return reportData;
+    const filtered = reportData.records.filter((r) => r.dept === dashboardDeptFilter);
+    const lateFiltered = filtered.filter((r) => r.status === "Late");
+    return {
+      ...reportData,
+      records: filtered,
+      timestampRows: filtered,
+      totalEmployees: filtered.length,
+      present: filtered.filter((r) => r.status === "Present").length,
+      late: lateFiltered.length,
+      absent: filtered.filter((r) => r.status === "Absent").length,
+      lateRows: [...lateFiltered].sort((a, b) => b.minutesLate - a.minutesLate),
+      deptRows: reportData.deptRows.filter((r) => r.dept === dashboardDeptFilter),
+    };
+  }, [reportData, dashboardDeptFilter]);
+
+  const totalEmployees = dashboardReport?.totalEmployees ?? 0;
+  const presentPeople = dashboardReport?.present ?? 0;
+  const latePeople = dashboardReport?.late ?? 0;
+  const absentPeople = dashboardReport?.absent ?? 0;
   const totalActivePeople = presentPeople + latePeople;
   const presentRate = totalEmployees ? Math.round((totalActivePeople / totalEmployees) * 100) : 0;
   const workDate = new Date().toLocaleDateString("th-TH", {
@@ -655,6 +680,19 @@ export default function Home() {
               </div>
               <ChevronDown size={17} />
             </div>
+            {activeTab === "dashboard" && allDeptOptions.length > 0 ? (
+              <select
+                aria-label="กรองหน่วยงาน"
+                className="dept-filter-select"
+                value={dashboardDeptFilter}
+                onChange={(e) => setDashboardDeptFilter(e.target.value)}
+              >
+                <option value="all">ทุกหน่วยงาน</option>
+                {allDeptOptions.map((dept) => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
+            ) : null}
             <div className="admin-chip">
               <div className="avatar">A</div>
               <div>
@@ -714,7 +752,8 @@ export default function Home() {
             <DashboardPanels
               activeMasterMap={activeMasterMap}
               assignedPeople={presentPeople}
-              reportData={reportData}
+              dashboardDeptFilter={dashboardDeptFilter}
+              reportData={dashboardReport}
               totalActivePeople={totalActivePeople}
             />
           </>
@@ -1256,17 +1295,53 @@ function getSafeFileExtension(filename: string) {
   return match ? `.${match[1]}` : "";
 }
 
+function exportLateAbsentToExcel(
+  rows: AttendanceRecord[],
+  monthlyLateCounts: Record<string, number>,
+  deptLabel: string,
+) {
+  const exportRows = rows
+    .filter((r) => r.status === "Late" || r.status === "Absent")
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === "Absent" ? -1 : 1;
+      return b.minutesLate - a.minutesLate;
+    })
+    .map((r, i) => ({
+      "ลำดับ": i + 1,
+      "รหัสพนักงาน": r.empId,
+      "ชื่อ-สกุล": r.name,
+      "หน่วยงาน": r.dept,
+      "ตำแหน่ง": r.position,
+      "กะ": r.shift,
+      "เวลาเข้างาน": r.shiftStart,
+      "Scan In": r.scanIn,
+      "สถานะ": r.status,
+      "สาย (นาที)": r.minutesLate,
+      "สายสะสมเดือนนี้ (ครั้ง)": monthlyLateCounts[r.empId] ?? 0,
+    }));
+
+  const ws = XLSX.utils.json_to_sheet(exportRows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Late-Absent");
+  const filename = `late-absent_${deptLabel}_${new Date().toLocaleDateString("th-TH").replace(/\//g, "-")}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
 function DashboardPanels({
   activeMasterMap,
   assignedPeople,
+  dashboardDeptFilter,
   reportData,
   totalActivePeople,
 }: {
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   assignedPeople: number;
+  dashboardDeptFilter: string;
   reportData: ReportData | null;
   totalActivePeople: number;
 }) {
+  const [detailStatusFilter, setDetailStatusFilter] = useState("all");
+
   const total = reportData?.totalEmployees ?? 0;
   const present = reportData?.present ?? 0;
   const late = reportData?.late ?? 0;
@@ -1277,6 +1352,7 @@ function DashboardPanels({
   const topDeptRows = reportData?.deptRows?.slice(0, 5) ?? [];
   const dashboardLateRows = reportData?.lateRows ?? [];
   const maxDeptTotal = Math.max(...topDeptRows.map((row) => row.total), 1);
+  const monthlyLateCounts = reportData?.monthlyLateCounts ?? {};
   const donutStyle = total
     ? {
         background: `conic-gradient(
@@ -1286,6 +1362,18 @@ function DashboardPanels({
         )`,
       }
     : { background: "#e2e8f0" };
+
+  const allRecords = reportData?.records ?? [];
+  const statusOrder: Record<string, number> = { Absent: 0, Late: 1, Present: 2 };
+  const detailRows = allRecords
+    .filter((r) => detailStatusFilter === "all" || r.status === detailStatusFilter)
+    .sort((a, b) => {
+      const sd = (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
+      if (sd !== 0) return sd;
+      return b.minutesLate - a.minutesLate;
+    });
+
+  const lateAbsentCount = allRecords.filter((r) => r.status === "Late" || r.status === "Absent").length;
 
   return (
     <>
@@ -1365,6 +1453,87 @@ function DashboardPanels({
           <h3>ไฟล์ล่าสุด</h3>
           <LatestMasterFiles activeMasterMap={activeMasterMap} />
         </section>
+      </section>
+
+      {/* Employee detail table */}
+      <section className="panel detail-attendance-panel">
+        <div className="panel-title-row">
+          <h3>
+            สถานะพนักงานรายคน
+            {dashboardDeptFilter !== "all" ? ` · ${dashboardDeptFilter}` : ""}
+          </h3>
+          <div className="table-actions">
+            <select
+              aria-label="กรองสถานะ"
+              value={detailStatusFilter}
+              onChange={(e) => setDetailStatusFilter(e.target.value)}
+            >
+              <option value="all">ทุกสถานะ</option>
+              <option value="Absent">Absent</option>
+              <option value="Late">Late</option>
+              <option value="Present">Present</option>
+            </select>
+            <button
+              className="primary-button small"
+              disabled={lateAbsentCount === 0}
+              onClick={() => exportLateAbsentToExcel(allRecords, monthlyLateCounts, dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter)}
+              type="button"
+            >
+              <Download size={14} />
+              Export Late/Absent
+            </button>
+          </div>
+        </div>
+        <div className="table-scroll">
+          <table className="table data-table">
+            <thead>
+              <tr>
+                <th>No.</th>
+                <th>ชื่อ-สกุล</th>
+                <th>หน่วยงาน</th>
+                <th>กะ</th>
+                <th>เวลาเข้างาน</th>
+                <th>Scan In</th>
+                <th>สถานะ</th>
+                <th>สาย (นาที)</th>
+                <th>สายเดือนนี้</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detailRows.map((row, index) => {
+                const monthlyLate = monthlyLateCounts[row.empId] ?? 0;
+                const isRisk = monthlyLate >= 3;
+                return (
+                  <tr key={`${row.empId}-detail`} className={isRisk ? "row-risk" : ""}>
+                    <td>{index + 1}</td>
+                    <td>
+                      {row.name}
+                      {isRisk ? <span className="risk-badge">เสี่ยง</span> : null}
+                    </td>
+                    <td>{row.dept}</td>
+                    <td>{row.shift}</td>
+                    <td>{row.shiftStart}</td>
+                    <td>{row.scanIn}</td>
+                    <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td>
+                    <td>{row.status !== "Absent" ? row.minutesLate : "-"}</td>
+                    <td>
+                      <span className={monthlyLate >= 3 ? "monthly-late-high" : ""}>
+                        {monthlyLate > 0 ? monthlyLate : "-"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {detailRows.length === 0 ? (
+                <tr><td colSpan={9}>ยังไม่มีข้อมูล</td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+        <p className="panel-note">
+          <span className="risk-badge" style={{ marginRight: 6 }}>เสี่ยง</span>
+          = มาสายสะสม ≥ 3 ครั้งในเดือนนี้ · Export จะรวมเฉพาะ Late และ Absent
+        </p>
       </section>
 
       <ResultsPanel reportData={reportData} />

@@ -924,6 +924,45 @@ button {
   margin-top: 16px;
 }
 
+/* Dept filter select in topbar */
+.dept-filter-select {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  min-width: 160px;
+}
+
+/* Employee detail attendance panel */
+.detail-attendance-panel {
+  margin-top: 16px;
+}
+
+.row-risk td {
+  background: #fff5f5;
+}
+
+.risk-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fee2e2;
+  color: #dc2626;
+  vertical-align: middle;
+}
+
+.monthly-late-high {
+  font-weight: 700;
+  color: #dc2626;
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.7fr);
