@@ -1485,10 +1485,6 @@ function DashboardPanels({
           </div>
         </section>
 
-        <section className="panel files-panel">
-          <h3>ไฟล์ล่าสุด</h3>
-          <LatestMasterFiles activeMasterMap={activeMasterMap} />
-        </section>
       </section>
 
       {/* Employee detail table */}
