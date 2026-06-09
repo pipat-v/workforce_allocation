@@ -1514,12 +1514,12 @@ function DashboardPanels({
                 <th>เสี่ยง</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody key={detailStatusFilter}>
               {detailRows.map((row, index) => {
                 const monthlyLate = monthlyLateCounts[row.empId] ?? 0;
                 const isRisk = monthlyLate >= 3;
                 return (
-                  <tr key={`${row.empId}-detail`} className={isRisk ? "row-risk" : ""}>
+                  <tr key={`${row.empId}-${row.scanIn}-detail`} className={isRisk ? "row-risk" : ""}>
                     <td>{index + 1}</td>
                     <td>{row.name}</td>
                     <td>{row.dept}</td>
