@@ -1539,6 +1539,45 @@ button {
   gap: 16px;
 }
 
+/* ── Report topstrip: date + dept filter + refresh button ── */
+.report-topstrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.report-topstrip-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #64748b;
+  font-size: 14px;
+  flex-wrap: wrap;
+}
+
+.report-topstrip-left strong {
+  color: #1e293b;
+}
+
+.report-topstrip .dept-filter-select {
+  height: 36px;
+  padding: 0 28px 0 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.report-topstrip .dept-filter-select:hover,
+.report-topstrip .dept-filter-select:focus {
+  border-color: var(--blue);
+  outline: none;
+}
+
 /* ── Header card: toolbar + KPIs in one panel ── */
 .report-header-card {
   display: grid;
@@ -2448,6 +2487,15 @@ button.stacked-row {
 
   .report-toolbar-info {
     gap: 16px;
+  }
+
+  .report-topstrip {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .report-topstrip-left {
+    flex-wrap: wrap;
   }
 
   .kpi-grid,

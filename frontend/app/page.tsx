@@ -2583,8 +2583,6 @@ function ReportDashboard({
   const lateRate = scopedCameToWork
     ? ((scopedLate / scopedCameToWork) * 100).toFixed(1)
     : "0.0";
-  const scopedEmpIds = new Set(scopedRecords.map((r) => r.empId));
-  const riskCount = Array.from(scopedEmpIds).filter((id) => (data.monthlyLateCounts[id] ?? 0) >= 3).length;
   const maxDeptTotal = Math.max(...data.deptRows.map((row) => row.total), 1);
   const presentPercent = scopedTotal ? (scopedPresent / scopedTotal) * 100 : 0;
   const latePercent = scopedTotal ? (scopedLate / scopedTotal) * 100 : 0;
@@ -2615,34 +2613,76 @@ function ReportDashboard({
 
   return (
     <section className="report-page">
-      <div className="panel report-header-card">
-        <div className="report-toolbar">
-          <div className="report-page-title">
-            <BarChart3 size={20} className="report-page-title-icon" />
-            <div>
-              <h2>รายงานสรุปการเข้างาน</h2>
-              <p>ข้อมูลวันที่ {data.targetDate} · {selectedDeptLabel}</p>
-            </div>
-          </div>
-          <button
-            className="primary-button report-refresh"
-            disabled={isLoadingReport}
-            onClick={loadReportDashboard}
-            type="button"
-          >
-            <BarChart3 size={16} />
-            {isLoadingReport ? "กำลังโหลด..." : "โหลดข้อมูล"}
-          </button>
+      <div className="report-topstrip">
+        <div className="report-topstrip-left">
+          <CalendarDays size={16} />
+          <span>ข้อมูลวันที่ <strong>{data.targetDate}</strong></span>
+          {data.deptRows.length > 0 ? (
+            <select
+              className="dept-filter-select"
+              value={selectedDept}
+              onChange={(e) => { setSelectedDept(e.target.value); setDeptFilter("all"); }}
+            >
+              <option value="all">ทุกหน่วยงาน</option>
+              {data.deptRows.map((r) => (
+                <option key={r.dept} value={r.dept}>{r.dept}</option>
+              ))}
+            </select>
+          ) : null}
         </div>
-        <div className="report-kpis">
-          <ReportMetric icon={<UsersRound size={16} />} value={scopedTotal} label="พนักงานทั้งหมด" sublabel={selectedDeptLabel} />
-          <ReportMetric icon={<CheckCircle2 size={16} />} value={scopedPresent} label="มาทำงาน" tone="green" sublabel={`${presentPercent.toFixed(1)}% ของทั้งหมด`} />
-          <ReportMetric icon={<Clock size={16} />} value={scopedLate} label="มาสาย" tone="amber" sublabel={`${latePercent.toFixed(1)}% ของทั้งหมด`} />
-          <ReportMetric icon={<UserX size={16} />} value={scopedAbsent} label="ขาดงาน" tone="red" sublabel={`${absentPercent.toFixed(1)}% ของทั้งหมด`} />
-          <ReportMetric icon={<TrendingUp size={16} />} value={`${lateRate}%`} label="อัตราสาย" isRate sublabel="จากคนที่มาทำงาน" />
-          <ReportMetric icon={<AlertTriangle size={16} />} value={riskCount} label="พนักงานเสี่ยง" tone="purple" sublabel="สายรายเดือน ≥ 3 ครั้ง" />
-        </div>
+        <button
+          className="primary-button report-refresh"
+          disabled={isLoadingReport}
+          onClick={loadReportDashboard}
+          type="button"
+        >
+          <BarChart3 size={16} />
+          {isLoadingReport ? "กำลังโหลด..." : "โหลดข้อมูล"}
+        </button>
       </div>
+
+      <section className="kpi-grid">
+        <KpiCard
+          icon={<UsersRound size={34} />}
+          tone="green"
+          label="พนักงานทั้งหมด"
+          value={scopedTotal.toLocaleString()}
+          unit="คน"
+          note={selectedDeptLabel}
+          progress={scopedTotal ? Math.round((scopedCameToWork / scopedTotal) * 100) : 0}
+        />
+        <KpiCard
+          icon={<CheckCircle2 size={34} />}
+          tone="blue"
+          label="มาทำงาน"
+          value={scopedPresent.toLocaleString()}
+          unit="คน"
+          note={`${presentPercent.toFixed(1)}% ของทั้งหมด`}
+        />
+        <KpiCard
+          icon={<Clock size={34} />}
+          tone="amber"
+          label="มาสาย"
+          value={scopedLate.toLocaleString()}
+          unit="คน"
+          note={`อัตราสาย ${lateRate}%`}
+        />
+        <KpiCard
+          icon={<UserX size={34} />}
+          tone="purple"
+          label="ขาดงาน"
+          value={scopedAbsent.toLocaleString()}
+          unit="คน"
+          note={`${absentPercent.toFixed(1)}% ของทั้งหมด`}
+        />
+        <DonutKpiCard
+          present={scopedPresent}
+          late={scopedLate}
+          absent={scopedAbsent}
+          total={scopedTotal}
+          totalActive={scopedCameToWork}
+        />
+      </section>
 
       <section className="report-grid">
         <div className="panel report-card">
