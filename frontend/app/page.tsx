@@ -1299,6 +1299,15 @@ function minutesBetween(shiftStart: string, scanIn: Date) {
   return Math.round((scanIn.getTime() - shift.getTime()) / 60000);
 }
 
+function formatLateTime(minutes: number): string {
+  if (!minutes) return "0 นาที";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} นาที`;
+  if (m === 0) return `${h} ชม.`;
+  return `${h} ชม. ${m} นาที`;
+}
+
 function getSafeFileExtension(filename: string) {
   const match = filename.toLowerCase().match(/\.(csv|xlsx|xls)$/);
   return match ? `.${match[1]}` : "";
@@ -1442,7 +1451,7 @@ function DashboardPanels({
                   <th>ชื่อ</th>
                   <th>หน่วยงาน</th>
                   <th>เข้างาน</th>
-                  <th>สาย (นาที)</th>
+                  <th>สาย</th>
                 </tr>
               </thead>
               <tbody>
@@ -1451,7 +1460,7 @@ function DashboardPanels({
                     <td>{row.name}</td>
                     <td><span className="dept-chip">{row.dept}</span></td>
                     <td>{row.scanIn}</td>
-                    <td><span className="late-minutes-badge">{row.minutesLate}</span></td>
+                    <td><span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span></td>
                   </tr>
                 ))}
                 {dashboardLateRows.length === 0 ? (
@@ -1529,7 +1538,7 @@ function DashboardPanels({
                 <th>เวลาเข้างาน</th>
                 <th>Scan In</th>
                 <th>สถานะ</th>
-                <th>สาย (นาที)</th>
+                <th>สาย</th>
                 <th>สายเดือนนี้</th>
               </tr>
             </thead>
@@ -1549,7 +1558,7 @@ function DashboardPanels({
                     <td>{row.shiftStart}</td>
                     <td>{row.scanIn}</td>
                     <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td>
-                    <td>{row.status !== "Absent" ? row.minutesLate : "-"}</td>
+                    <td>{row.status !== "Absent" ? formatLateTime(row.minutesLate) : "-"}</td>
                     <td>
                       <span className={monthlyLate >= 3 ? "monthly-late-high" : ""}>
                         {monthlyLate > 0 ? monthlyLate : "-"}
