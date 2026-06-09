@@ -1757,8 +1757,8 @@ button.stacked-row {
 }
 
 .dashboard-late-card {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
@@ -1773,8 +1773,27 @@ button.stacked-row {
 }
 
 .late-preview-table {
+  flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+}
+
+.late-preview-table::-webkit-scrollbar {
+  width: 5px;
+}
+
+.late-preview-table::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.late-preview-table::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.late-preview-table::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .compact-table {

@@ -1415,7 +1415,7 @@ function DashboardPanels({
   return (
     <>
       <section className="dashboard-grid">
-        <section className="panel allocation-status dashboard-late-card">
+        <section className="panel dashboard-late-card">
           <div className="panel-title-row">
             <h3>คนที่มาสาย</h3>
             <span className="table-count">{dashboardLateRows.length} คน</span>
@@ -1431,7 +1431,7 @@ function DashboardPanels({
                 </tr>
               </thead>
               <tbody>
-                {dashboardLateRows.slice(0, 6).map((row) => (
+                {dashboardLateRows.map((row) => (
                   <tr key={`dashboard-late-${row.empId}-${row.scanIn}`}>
                     <td>{row.name}</td>
                     <td><span className="dept-chip">{row.dept}</span></td>
