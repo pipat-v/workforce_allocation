@@ -116,7 +116,7 @@ const deptRows = [
 type MasterFileKey = (typeof masterFileTypes)[number]["key"];
 type MasterUploadState = Record<MasterFileKey, File | null>;
 type SortDirection = "asc" | "desc";
-type SortState<T extends string> = { key: T; direction: SortDirection } | null;
+type SortState = { key: string; direction: SortDirection } | null;
 type AttendanceSortKey =
   | "empId"
   | "name"
@@ -128,7 +128,6 @@ type AttendanceSortKey =
   | "status"
   | "minutesLate"
   | "monthlyLate";
-type AttendanceSortSetter = (sort: SortState<AttendanceSortKey>) => void;
 
 const publicWorkspace = "public";
 
@@ -1147,17 +1146,17 @@ function cleanEmpId(value: unknown) {
 
 function getAttendanceSortValue(
   row: AttendanceRecord,
-  key: AttendanceSortKey,
+  key: string,
   monthlyLateCounts: Record<string, number> = {},
 ) {
   if (key === "minutesLate") return row.minutesLate;
   if (key === "monthlyLate") return monthlyLateCounts[row.empId] ?? 0;
-  return row[key] ?? "";
+  return (row as Record<string, unknown>)[key] as string ?? "";
 }
 
 function sortAttendanceRows(
   rows: AttendanceRecord[],
-  sort: SortState<AttendanceSortKey>,
+  sort: SortState,
   monthlyLateCounts: Record<string, number> = {},
 ) {
   if (!sort) return rows;
@@ -1178,39 +1177,30 @@ function sortAttendanceRows(
   });
 }
 
-function toggleSort<T extends string>(
-  current: SortState<string>,
-  key: T,
-  setSort: (sort: SortState<T>) => void,
-) {
-  if (!current || current.key !== key) {
-    setSort({ key, direction: "asc" });
-    return;
-  }
-
-  setSort({
-    key,
-    direction: current.direction === "asc" ? "desc" : "asc",
-  });
-}
-
-function SortButton<T extends string>({
+function SortButton({
   children,
   columnKey,
   setSort,
   sort,
 }: {
   children: ReactNode;
-  columnKey: T;
-  setSort?: (sort: SortState<T>) => void;
-  sort?: SortState<string>;
+  columnKey: string;
+  setSort?: (sort: SortState) => void;
+  sort?: SortState;
 }) {
   const active = sort?.key === columnKey;
   return (
     <button
       className={`sort-button ${active ? "active" : ""}`}
       disabled={!setSort}
-      onClick={() => setSort && toggleSort(sort ?? null, columnKey, setSort)}
+      onClick={() => {
+        if (!setSort) return;
+        if (!sort || sort.key !== columnKey) {
+          setSort({ key: columnKey, direction: "asc" });
+        } else {
+          setSort({ key: columnKey, direction: sort.direction === "asc" ? "desc" : "asc" });
+        }
+      }}
       type="button"
     >
       {children}
@@ -1326,11 +1316,9 @@ function DonutKpiCard({
 
   return (
     <article className="kpi-card kpi-donut">
-      <div className="donut compact" style={donutStyle}>
-        <div>
-          <strong>{totalActive}</strong>
-          <span>คน</span>
-        </div>
+      <div className="pie-chart-wrap">
+        <div className="donut compact" style={donutStyle} />
+        <span className="pie-total">{totalActive} คน</span>
       </div>
       <div className="legend compact">
         <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
@@ -1387,9 +1375,8 @@ function DashboardPanels({
   totalActivePeople: number;
 }) {
   const [detailStatusFilter, setDetailStatusFilter] = useState("all");
-  const [detailSortState, setDetailSortState] = useState<SortState<AttendanceSortKey>>(null);
-  const detailSort = detailSortState;
-  const setDetailSort: AttendanceSortSetter = (s) => setDetailSortState(s);
+  const [detailSort, setDetailSort_] = useState<SortState>(null);
+  const setDetailSort = setDetailSort_ as (sort: SortState) => void;
 
   const total = reportData?.totalEmployees ?? 0;
   const present = reportData?.present ?? 0;
@@ -2057,9 +2044,8 @@ function TimestampWithDeptPage({
   statusFilter: string;
 }) {
   const [page, setPage] = useState(1);
-  const [sortState, setSortState] = useState<SortState<AttendanceSortKey>>(null);
-  const sort = sortState;
-  const setSort: AttendanceSortSetter = (s) => setSortState(s);
+  const [sort, setSort_] = useState<SortState>(null);
+  const setSort = setSort_ as (sort: SortState) => void;
 
   const sourceRows = reportData?.timestampRows ?? [];
   const deptOptions = Array.from(new Set(sourceRows.map((record) => record.dept))).sort();
@@ -2228,9 +2214,8 @@ function ResultsPanel({
   statusFilter?: string;
 }) {
   const [page, setPage] = useState(1);
-  const [sortState, setSortState] = useState<SortState<AttendanceSortKey>>(null);
-  const sort = sortState;
-  const setSort: AttendanceSortSetter = (newSort) => setSortState(newSort);
+  const [sort, setSort_] = useState<SortState>(null);
+  const setSort = setSort_ as (sort: SortState) => void;
   const sourceRows = reportData?.records.filter((record) => record.status !== "Absent") ?? [];
   const deptOptions = Array.from(new Set(sourceRows.map((record) => record.dept))).sort();
   const normalizedQuery = query.trim().toLowerCase();
@@ -2418,9 +2403,8 @@ function ReportDashboard({
   setQuery: (value: string) => void;
   setSelectedDept: (value: string) => void;
 }) {
-  const [sortState, setSortState] = useState<SortState<AttendanceSortKey>>(null);
-  const sort = sortState;
-  const setSort: AttendanceSortSetter = (s) => setSortState(s);
+  const [sort, setSort_] = useState<SortState>(null);
+  const setSort = setSort_ as (sort: SortState) => void;
   const data = reportData ?? {
     targetDate: "-",
     totalEmployees: 0,
