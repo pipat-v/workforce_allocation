@@ -168,6 +168,7 @@ export default function Home() {
   const [dashboardDeptFilter, setDashboardDeptFilter] = useState("all");
   const [warnedIds, setWarnedIds] = useState<Set<string>>(new Set());
   const [warnPending, setWarnPending] = useState<Set<string>>(new Set());
+  const [warnCountMap, setWarnCountMap] = useState<Record<string, number>>({});
 
   const isoTargetDate = reportData?.isoTargetDate ?? "";
 
@@ -259,6 +260,10 @@ export default function Home() {
         if (data) setWarnedIds(new Set(data.map((r: { emp_id: string }) => r.emp_id)));
       });
   }, [isoTargetDate]);
+
+  useEffect(() => {
+    void loadWarnCountMap();
+  }, [reportData?.targetMonthKey]);
 
   async function loadDashboard() {
     await Promise.all([loadRuns(), loadActiveMasters()]);
@@ -612,6 +617,26 @@ export default function Home() {
     }
   }
 
+  async function loadWarnCountMap() {
+    const monthKey = reportData?.targetMonthKey;
+    if (!monthKey) return;
+    const [year, month] = monthKey.split("-");
+    const startDate = `${year}-${month}-01`;
+    const lastDay = new Date(Number(year), Number(month), 0).getDate();
+    const endDate = `${year}-${month}-${String(lastDay).padStart(2, "0")}`;
+    const { data: rows } = await supabase
+      .from("employee_warnings")
+      .select("emp_id, warn_date")
+      .gte("warn_date", startDate)
+      .lte("warn_date", endDate);
+    if (!rows) return;
+    const map: Record<string, number> = {};
+    for (const r of rows as Array<{ emp_id: string; warn_date: string }>) {
+      map[r.emp_id] = (map[r.emp_id] ?? 0) + 1;
+    }
+    setWarnCountMap(map);
+  }
+
   async function toggleWarning(empId: string) {
     if (!isoTargetDate || warnPending.has(empId)) return;
     setWarnPending((s) => new Set(s).add(empId));
@@ -624,6 +649,7 @@ export default function Home() {
       setWarnedIds((s) => new Set(s).add(empId));
     }
     setWarnPending((s) => { const n = new Set(s); n.delete(empId); return n; });
+    void loadWarnCountMap();
   }
 
   async function saveTimestampWithDeptRows(runId: string, report: ReportData) {
@@ -869,6 +895,7 @@ export default function Home() {
             setDeptFilter={setReportLateDept}
             setQuery={setReportLateQuery}
             setSelectedDept={setSelectedReportDept}
+            warnCountMap={warnCountMap}
           />
         ) : null}
 
@@ -2493,6 +2520,7 @@ function ReportDashboard({
   setDeptFilter,
   setQuery,
   setSelectedDept,
+  warnCountMap,
 }: {
   deptFilter: string;
   isLoadingReport: boolean;
@@ -2503,11 +2531,11 @@ function ReportDashboard({
   setDeptFilter: (value: string) => void;
   setQuery: (value: string) => void;
   setSelectedDept: (value: string) => void;
+  warnCountMap: Record<string, number>;
 }) {
   const [sort, setSort_] = useState<SortState>(null);
   const setSort = setSort_ as (sort: SortState) => void;
   const [tableStatusFilter, setTableStatusFilter] = useState<"all" | "Late" | "Absent">("all");
-  const [warnCountMap, setWarnCountMap] = useState<Record<string, number>>({});
 
   const data = reportData ?? {
     targetDate: "-",
@@ -2523,26 +2551,6 @@ function ReportDashboard({
     isoTargetDate: "",
     targetMonthKey: "",
   };
-  useEffect(() => {
-    if (!data.targetMonthKey) return;
-    const [year, month] = data.targetMonthKey.split("-");
-    const startDate = `${year}-${month}-01`;
-    const lastDay = new Date(Number(year), Number(month), 0).getDate();
-    const endDate = `${year}-${month}-${String(lastDay).padStart(2, "0")}`;
-    supabase
-      .from("employee_warnings")
-      .select("emp_id, warn_date")
-      .gte("warn_date", startDate)
-      .lte("warn_date", endDate)
-      .then(({ data: rows }) => {
-        if (!rows) return;
-        const map: Record<string, number> = {};
-        for (const r of rows as Array<{ emp_id: string; warn_date: string }>) {
-          map[r.emp_id] = (map[r.emp_id] ?? 0) + 1;
-        }
-        setWarnCountMap(map);
-      });
-  }, [data.targetMonthKey]);
 
   const scopedRecords = selectedDept === "all"
     ? data.records
