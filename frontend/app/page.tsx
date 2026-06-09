@@ -2430,7 +2430,8 @@ function ReportDashboard({
   const lateRate = scopedCameToWork
     ? ((scopedLate / scopedCameToWork) * 100).toFixed(1)
     : "0.0";
-  const riskCount = Object.values(data.monthlyLateCounts).filter((c) => c >= 3).length;
+  const scopedEmpIds = new Set(scopedRecords.map((r) => r.empId));
+  const riskCount = Array.from(scopedEmpIds).filter((id) => (data.monthlyLateCounts[id] ?? 0) >= 3).length;
   const maxDeptTotal = Math.max(...data.deptRows.map((row) => row.total), 1);
   const presentPercent = scopedTotal ? (scopedPresent / scopedTotal) * 100 : 0;
   const latePercent = scopedTotal ? (scopedLate / scopedTotal) * 100 : 0;
