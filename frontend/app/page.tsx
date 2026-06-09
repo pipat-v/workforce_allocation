@@ -1385,7 +1385,7 @@ function DashboardPanels({
   const presentPct = total ? (present / total) * 100 : 0;
   const latePct = total ? (late / total) * 100 : 0;
   const absentPct = total ? (absent / total) * 100 : 0;
-  const topDeptRows = reportData?.deptRows?.slice(0, 5) ?? [];
+  const topDeptRows = reportData?.deptRows ?? [];
   const dashboardLateRows = reportData?.lateRows ?? [];
   const maxDeptTotal = Math.max(...topDeptRows.map((row) => row.total), 1);
   const monthlyLateCounts = reportData?.monthlyLateCounts ?? {};
@@ -1449,7 +1449,7 @@ function DashboardPanels({
 
         <section className="panel dept-panel">
           <div className="panel-title-row">
-            <h3>พนักงานตามหน่วยงาน (Top 5)</h3>
+            <h3>พนักงานตามหน่วยงาน</h3>
           </div>
           <div className="dept-bars">
             {topDeptRows.length === 0 ? (
