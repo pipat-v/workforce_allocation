@@ -1268,9 +1268,11 @@ function getAttendanceSortValue(
   row: AttendanceRecord,
   key: string,
   monthlyLateCounts: Record<string, number> = {},
+  warnCountMap: Record<string, number> = {},
 ) {
   if (key === "minutesLate") return row.minutesLate;
   if (key === "monthlyLate") return monthlyLateCounts[row.empId] ?? 0;
+  if (key === "warnCount") return warnCountMap[row.empId] ?? 0;
   return (row as Record<string, unknown>)[key] as string ?? "";
 }
 
@@ -1278,12 +1280,13 @@ function sortAttendanceRows(
   rows: AttendanceRecord[],
   sort: SortState,
   monthlyLateCounts: Record<string, number> = {},
+  warnCountMap: Record<string, number> = {},
 ) {
   if (!sort) return rows;
 
   return [...rows].sort((a, b) => {
-    const aValue = getAttendanceSortValue(a, sort.key, monthlyLateCounts);
-    const bValue = getAttendanceSortValue(b, sort.key, monthlyLateCounts);
+    const aValue = getAttendanceSortValue(a, sort.key, monthlyLateCounts, warnCountMap);
+    const bValue = getAttendanceSortValue(b, sort.key, monthlyLateCounts, warnCountMap);
 
     if (typeof aValue === "number" && typeof bValue === "number") {
       return sort.direction === "asc" ? aValue - bValue : bValue - aValue;
@@ -2609,7 +2612,7 @@ function ReportDashboard({
     const matchesStatus = tableStatusFilter === "all" || row.status === tableStatusFilter;
     return matchesQuery && matchesDept && matchesStatus;
   });
-  const sortedTableRows = sortAttendanceRows(filteredTableRows, sort, data.monthlyLateCounts);
+  const sortedTableRows = sortAttendanceRows(filteredTableRows, sort, data.monthlyLateCounts, warnCountMap);
 
   return (
     <section className="report-page">
@@ -2842,7 +2845,7 @@ function ReportDashboard({
                 <th><SortButton columnKey="minutesLate" setSort={setSort} sort={sort}>สาย</SortButton></th>
                 <th><SortButton columnKey="monthlyLate" setSort={setSort} sort={sort}>สายเดือนนี้</SortButton></th>
                 <th>เสี่ยง</th>
-                <th>เตือนแล้ว</th>
+                <th><SortButton columnKey="warnCount" setSort={setSort} sort={sort}>เตือนแล้ว</SortButton></th>
               </tr>
             </thead>
             <tbody key={tableStatusFilter}>
