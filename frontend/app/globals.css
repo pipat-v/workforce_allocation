@@ -856,6 +856,19 @@ button {
   min-width: 0;
 }
 
+.ts-history-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ts-history-name-row .status-pill {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
 .ts-history-info strong {
   display: block;
   font-size: 13px;

@@ -1475,13 +1475,13 @@ function MasterDataPage({
                     return (
                       <div className="ts-history-row" key={file.id}>
                         <div className="ts-history-info">
-                          <strong>{file.original_filename ?? "ไฟล์"}</strong>
-                          <span>
-                            {dateText}
+                          <div className="ts-history-name-row">
+                            <strong>{file.original_filename ?? "ไฟล์"}</strong>
                             {file.is_active ? (
-                              <span className="status-pill uploaded" style={{ marginLeft: 6 }}>Active</span>
+                              <span className="status-pill uploaded">Active</span>
                             ) : null}
-                          </span>
+                          </div>
+                          <span>{dateText}</span>
                         </div>
                         <div className="ts-history-actions">
                           <button
