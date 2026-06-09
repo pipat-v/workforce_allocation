@@ -574,7 +574,8 @@ button {
   flex-direction: column;
   gap: 14px;
   margin-top: 16px;
-  max-height: 330px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -1757,10 +1758,22 @@ button.stacked-row {
   justify-items: center;
 }
 
+.dashboard-late-card,
+.dept-panel {
+  height: 440px;
+  overflow: hidden;
+}
+
 .dashboard-late-card {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.dept-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 .late-people-card {
