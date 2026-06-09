@@ -624,11 +624,15 @@ export default function Home() {
     const startDate = `${year}-${month}-01`;
     const lastDay = new Date(Number(year), Number(month), 0).getDate();
     const endDate = `${year}-${month}-${String(lastDay).padStart(2, "0")}`;
-    const { data: rows } = await supabase
+    const { data: rows, error: queryError } = await supabase
       .from("employee_warnings")
       .select("emp_id, warn_date")
       .gte("warn_date", startDate)
       .lte("warn_date", endDate);
+    if (queryError) {
+      setError(`โหลดจำนวนเตือนไม่สำเร็จ: ${queryError.message}`);
+      return;
+    }
     if (!rows) return;
     const map: Record<string, number> = {};
     for (const r of rows as Array<{ emp_id: string; warn_date: string }>) {
@@ -642,10 +646,26 @@ export default function Home() {
     setWarnPending((s) => new Set(s).add(empId));
     const isWarned = warnedIds.has(empId);
     if (isWarned) {
-      await supabase.from("employee_warnings").delete().eq("emp_id", empId).eq("warn_date", isoTargetDate);
+      const { error: deleteError } = await supabase
+        .from("employee_warnings")
+        .delete()
+        .eq("emp_id", empId)
+        .eq("warn_date", isoTargetDate);
+      if (deleteError) {
+        setError(`ยกเลิกการเตือนไม่สำเร็จ: ${deleteError.message}`);
+        setWarnPending((s) => { const n = new Set(s); n.delete(empId); return n; });
+        return;
+      }
       setWarnedIds((s) => { const n = new Set(s); n.delete(empId); return n; });
     } else {
-      await supabase.from("employee_warnings").upsert({ emp_id: empId, warn_date: isoTargetDate }, { onConflict: "emp_id,warn_date" });
+      const { error: upsertError } = await supabase
+        .from("employee_warnings")
+        .upsert({ emp_id: empId, warn_date: isoTargetDate }, { onConflict: "emp_id,warn_date" });
+      if (upsertError) {
+        setError(`บันทึกการเตือนไม่สำเร็จ: ${upsertError.message}`);
+        setWarnPending((s) => { const n = new Set(s); n.delete(empId); return n; });
+        return;
+      }
       setWarnedIds((s) => new Set(s).add(empId));
     }
     setWarnPending((s) => { const n = new Set(s); n.delete(empId); return n; });
