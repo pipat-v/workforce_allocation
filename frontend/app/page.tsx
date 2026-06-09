@@ -1304,19 +1304,20 @@ function DonutKpiCard({
   const presentPct = total ? (present / total) * 100 : 0;
   const latePct = total ? (late / total) * 100 : 0;
   const absentPct = total ? (absent / total) * 100 : 0;
-  const donutStyle = total
-    ? {
-        background: `conic-gradient(
-          #10b981 0 ${presentPct}%,
-          #f59e0b ${presentPct}% ${presentPct + latePct}%,
-          #ef4444 ${presentPct + latePct}% 100%
-        )`,
-      }
-    : { background: "#e2e8f0" };
 
   return (
     <article className="kpi-card kpi-donut">
-      <div className="donut compact" style={donutStyle} />
+      <div className="kpi-bar-chart">
+        <div className="kpi-bar-track">
+          <div className="kpi-bar-fill present" style={{ width: `${presentPct}%` }} />
+        </div>
+        <div className="kpi-bar-track">
+          <div className="kpi-bar-fill late" style={{ width: `${latePct}%` }} />
+        </div>
+        <div className="kpi-bar-track">
+          <div className="kpi-bar-fill absent" style={{ width: `${absentPct}%` }} />
+        </div>
+      </div>
       <div className="legend compact">
         <div className="pie-total">{totalActive} <span>คน</span></div>
         <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
