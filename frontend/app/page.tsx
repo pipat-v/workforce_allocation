@@ -2094,9 +2094,6 @@ function DayoffShiftEditor({
   ];
   const dayoffDouble = [
     { value: "ส,อา", label: "ส+อา — เสาร์&อาทิตย์" },
-    { value: "ศ,ส",  label: "ศ+ส — ศุกร์&เสาร์" },
-    { value: "อา,จ", label: "อา+จ — อาทิตย์&จันทร์" },
-    { value: "พฤ,ศ", label: "พฤ+ศ — พฤหัส&ศุกร์" },
   ];
   const shiftOptions = Array.from(new Set([
     "กะ1", "กะ2", "กะ3",
