@@ -956,7 +956,7 @@ export default function Home() {
           <>
             <section className="kpi-grid">
               <KpiCard
-                icon={<UsersRound size={34} />}
+                icon={<UsersRound size={26} />}
                 tone="green"
                 label="พนักงานที่มาทำงาน"
                 value={totalActivePeople.toLocaleString()}
@@ -965,7 +965,7 @@ export default function Home() {
                 progress={presentRate}
               />
               <KpiCard
-                icon={<ClipboardCheck size={34} />}
+                icon={<ClipboardCheck size={26} />}
                 tone="blue"
                 label="Present"
                 value={presentPeople.toLocaleString()}
@@ -973,7 +973,7 @@ export default function Home() {
                 note="พนักงานที่เข้างานตรงเวลา"
               />
               <KpiCard
-                icon={<UsersRound size={34} />}
+                icon={<UsersRound size={26} />}
                 tone="amber"
                 label="Late"
                 value={latePeople.toLocaleString()}
@@ -981,7 +981,7 @@ export default function Home() {
                 note="พนักงานที่มาสาย"
               />
               <KpiCard
-                icon={<BriefcaseBusiness size={34} />}
+                icon={<BriefcaseBusiness size={26} />}
                 tone="purple"
                 label="Absent"
                 value={absentPeople.toLocaleString()}
@@ -989,7 +989,7 @@ export default function Home() {
                 note="ไม่พบการสแกนเข้างาน"
               />
               <KpiCard
-                icon={<CalendarOff size={34} />}
+                icon={<CalendarOff size={26} />}
                 tone="gray"
                 label="Day Off"
                 value={dayoffPeople.toLocaleString()}

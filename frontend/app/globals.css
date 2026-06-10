@@ -298,8 +298,8 @@ button {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(160px, 1fr)) minmax(220px, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(190px, 1fr);
+  gap: 12px;
 }
 
 .kpi-card.kpi-donut {
@@ -352,12 +352,12 @@ button {
 }
 
 .kpi-card {
-  min-height: 130px;
+  min-height: 110px;
   display: grid;
-  grid-template-columns: 64px 1fr;
-  gap: 14px;
+  grid-template-columns: 52px 1fr;
+  gap: 10px;
   align-items: center;
-  padding: 18px 20px;
+  padding: 14px 16px;
   border-top: 3px solid transparent;
   transition: box-shadow 0.15s;
 }
@@ -373,11 +373,11 @@ button {
 .kpi-gray  { border-top-color: #94a3b8; }
 
 .kpi-icon {
-  width: 56px;
-  height: 56px;
+  width: 46px;
+  height: 46px;
   display: grid;
   place-items: center;
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
 .kpi-icon.green {
@@ -2763,7 +2763,10 @@ button.stacked-row {
 }
 
 @media (max-width: 1180px) {
-  .kpi-grid,
+  .kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .dashboard-grid,
   .workspace-grid,
   .table-filters {
