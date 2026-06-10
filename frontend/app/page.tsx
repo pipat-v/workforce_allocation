@@ -1387,8 +1387,10 @@ function normalizeShiftKey(value: unknown) {
 function isEmployeeDayOff(dayoff: string | undefined, targetDate: Date) {
   const value = String(dayoff ?? "").trim();
   if (!value) return false;
-  if (value === "พระ") return isBuddhistHolyDay(targetDate);
-  return value === getThaiWeekdayCode(targetDate);
+  const todayCode = getThaiWeekdayCode(targetDate);
+  // split by comma / slash / space / pipe to support "ส,อา" "ส/อา" "ส อา" etc.
+  const parts = value.split(/[,/|\s]+/).map((s) => s.trim()).filter(Boolean);
+  return parts.some((part) => part === "พระ" ? isBuddhistHolyDay(targetDate) : part === todayCode);
 }
 
 function getThaiWeekdayCode(date: Date) {
