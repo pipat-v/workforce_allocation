@@ -2459,17 +2459,6 @@ function SkillMatrixPage({
   }
 
   const selectedEmp = empList.find((e) => e.empId === selectedEmpId) ?? null;
-  const assignedSkills = selectedEmpId
-    ? skillList.filter((s) => (matrix[selectedEmpId]?.[s] ?? 0) > 0)
-    : [];
-  const unassignedSkills = selectedEmpId
-    ? skillList.filter((s) => (matrix[selectedEmpId]?.[s] ?? 0) === 0)
-    : [];
-  const filteredNewSkills = newSkillInput.trim()
-    ? unassignedSkills.filter((s) =>
-        s.toLowerCase().includes(newSkillInput.trim().toLowerCase()),
-      )
-    : unassignedSkills;
 
   const levelColors = ["#e5e7eb", "#fecaca", "#fed7aa", "#fef08a", "#bbf7d0", "#34d399"];
   const levelTextColors = ["#6b7280", "#991b1b", "#92400e", "#713f12", "#166534", "#064e3b"];
@@ -2577,10 +2566,10 @@ function SkillMatrixPage({
             </div>
 
             <div className="sl-skill-list">
-              {assignedSkills.length === 0 && (
-                <p className="sl-no-skills">ยังไม่มี skill — กด "+ เพิ่ม Skill" ด้านล่าง</p>
+              {skillList.length === 0 && (
+                <p className="sl-no-skills">ยังไม่มี skill ในระบบ — กด "+ เพิ่ม Skill" เพื่อสร้างใหม่</p>
               )}
-              {assignedSkills.map((skill) => {
+              {skillList.map((skill) => {
                 const level = matrix[selectedEmpId!]?.[skill] ?? 0;
                 const origLevel = origMatrix[selectedEmpId!]?.[skill] ?? 0;
                 const changed = level !== origLevel;
@@ -2624,14 +2613,14 @@ function SkillMatrixPage({
               })}
             </div>
 
-            {/* Add skill */}
+            {/* Add new skill */}
             <div className="sl-add-area">
               {addSkillOpen ? (
                 <div className="sl-add-panel">
                   <input
                     autoFocus
                     className="sl-add-input"
-                    placeholder="ค้นหาหรือพิมพ์ skill ใหม่..."
+                    placeholder="พิมพ์ชื่อ skill ใหม่ แล้วกด Enter..."
                     value={newSkillInput}
                     onChange={(e) => setNewSkillInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -2645,30 +2634,21 @@ function SkillMatrixPage({
                       }
                     }}
                   />
-                  <div className="sl-add-options">
-                    {filteredNewSkills.map((s) => (
-                      <button
-                        key={s}
-                        className="sl-add-option"
-                        onClick={() => assignSkill(selectedEmpId!, s)}
-                        type="button"
-                      >
-                        {s}
-                      </button>
-                    ))}
-                    {newSkillInput.trim() && !skillList.includes(newSkillInput.trim()) && (
-                      <button
-                        className="sl-add-option new"
-                        onClick={() => assignSkill(selectedEmpId!, newSkillInput.trim())}
-                        type="button"
-                      >
-                        + สร้าง "{newSkillInput.trim()}"
-                      </button>
-                    )}
-                    {filteredNewSkills.length === 0 && !newSkillInput.trim() && (
-                      <p className="sl-add-empty">ไม่มี skill ที่ยังไม่ได้กำหนด</p>
-                    )}
-                  </div>
+                  {newSkillInput.trim() && (
+                    <div className="sl-add-options">
+                      {skillList.includes(newSkillInput.trim()) ? (
+                        <p className="sl-add-empty">"{newSkillInput.trim()}" มีอยู่แล้วในรายการด้านบน</p>
+                      ) : (
+                        <button
+                          className="sl-add-option new"
+                          onClick={() => assignSkill(selectedEmpId!, newSkillInput.trim())}
+                          type="button"
+                        >
+                          + สร้าง "{newSkillInput.trim()}"
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <button
                     className="sl-add-close"
                     onClick={() => { setAddSkillOpen(false); setNewSkillInput(""); }}
@@ -2683,7 +2663,7 @@ function SkillMatrixPage({
                   onClick={() => setAddSkillOpen(true)}
                   type="button"
                 >
-                  + เพิ่ม Skill
+                  + เพิ่ม Skill ใหม่
                 </button>
               )}
             </div>
