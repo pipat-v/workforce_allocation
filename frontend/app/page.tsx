@@ -57,6 +57,12 @@ type DayoffShiftEditorRow = {
   raw: Record<string, unknown>;
 };
 
+type SkillMatrixSaveRow = {
+  empId: string;
+  skill: string;
+  level: number;
+};
+
 type AttendanceRecord = {
   empId: string;
   name: string;
@@ -431,6 +437,65 @@ export default function Home() {
     }
 
     setMessage("บันทึก Dayoff & Shift master แล้ว");
+    await loadActiveMasters();
+  }
+
+  async function saveSkillMatrixRows(rows: SkillMatrixSaveRow[]) {
+    setError("");
+    setMessage("");
+
+    const fileId = crypto.randomUUID();
+    const path = `${publicWorkspace}/masters/skill_matrix/${fileId}.xlsx`;
+    const workbookRows = rows.map((row) => ({
+      "Employee ID": row.empId,
+      "Skill": row.skill,
+      "Level": row.level,
+      "Can Do": row.level > 0 ? 1 : 0,
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(workbookRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "SkillMatrix");
+    const output = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const file = new Blob([output], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    const { error: uploadError } = await supabase.storage
+      .from("workforce-inputs")
+      .upload(path, file, { upsert: true });
+
+    if (uploadError) {
+      setError(uploadError.message);
+      return;
+    }
+
+    const { error: deactivateError } = await supabase
+      .from("master_data_files")
+      .update({ is_active: false })
+      .is("owner_id", null)
+      .eq("file_type", "skill_matrix");
+
+    if (deactivateError) {
+      setError(deactivateError.message);
+      return;
+    }
+
+    const { error: insertError } = await supabase
+      .from("master_data_files")
+      .insert({
+        owner_id: null,
+        file_type: "skill_matrix",
+        file_path: path,
+        original_filename: "SkillMatrix-edited.xlsx",
+        is_active: true,
+      });
+
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+
+    setMessage("บันทึก Skill Matrix master แล้ว");
     await loadActiveMasters();
   }
 
@@ -1002,7 +1067,15 @@ export default function Home() {
           />
         ) : null}
 
-        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report"].includes(activeTab) ? (
+        {activeTab === "skill" ? (
+          <SkillMatrixPage
+            activeFile={activeMasterMap.skill_matrix}
+            employeeMasterFile={activeMasterMap.employee_master}
+            saveSkillMatrixRows={saveSkillMatrixRows}
+          />
+        ) : null}
+
+        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report", "skill"].includes(activeTab) ? (
           <section className="panel empty-page">
             <h3>{activeNav?.label}</h3>
             <p>แท็บนี้จะเชื่อมข้อมูลจริงในขั้นถัดไป</p>
@@ -2224,6 +2297,308 @@ function DayoffShiftEditor({
             ) : null}
             {activeFile && !isLoading && filteredRows.length === 0 ? (
               <tr><td colSpan={6}>ไม่พบข้อมูลที่ค้นหา</td></tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function SkillMatrixPage({
+  activeFile,
+  employeeMasterFile,
+  saveSkillMatrixRows,
+}: {
+  activeFile?: MasterFile;
+  employeeMasterFile?: MasterFile;
+  saveSkillMatrixRows: (rows: SkillMatrixSaveRow[]) => Promise<void>;
+}) {
+  const [empList, setEmpList] = useState<{ empId: string; name: string; dept: string }[]>([]);
+  const [skillList, setSkillList] = useState<string[]>([]);
+  const [matrix, setMatrix] = useState<Record<string, Record<string, number>>>({});
+  const [origMatrix, setOrigMatrix] = useState<Record<string, Record<string, number>>>({});
+  const [query, setQuery] = useState("");
+  const [selectedDept, setSelectedDept] = useState("all");
+  const [addSkillMode, setAddSkillMode] = useState(false);
+  const [newSkillName, setNewSkillName] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!activeFile?.file_path) {
+      setEmpList([]);
+      setSkillList([]);
+      setMatrix({});
+      setOrigMatrix({});
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoading(true);
+
+    const skillPromise = downloadSheetRows(activeFile.file_path);
+    const empPromise = employeeMasterFile?.file_path
+      ? downloadSheetRows(employeeMasterFile.file_path)
+      : Promise.resolve([] as Record<string, unknown>[]);
+
+    Promise.all([skillPromise, empPromise])
+      .then(([skillRows, empRows]) => {
+        if (!isMounted) return;
+
+        const empInfo = new Map<string, { name: string; dept: string }>();
+        for (const row of empRows) {
+          const empId = cleanEmpId(
+            row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"],
+          );
+          const firstName = String(row["First Name (Local)"] ?? "").trim();
+          const lastName = String(row["Last Name (Local)"] ?? "").trim();
+          const name =
+            `${firstName} ${lastName}`.trim() ||
+            String(row["Employee Name"] ?? "").trim() ||
+            empId;
+          const dept = String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim();
+          if (empId) empInfo.set(empId, { name, dept });
+        }
+
+        const skillOrder: string[] = [];
+        const seenSkills = new Set<string>();
+        const empOrder: string[] = [];
+        const seenEmps = new Set<string>();
+        const newMatrix: Record<string, Record<string, number>> = {};
+
+        for (const row of skillRows) {
+          const empId = cleanEmpId(
+            row["Employee ID"] ?? row["Emp ID"] ?? row["emp_id"] ?? row["รหัสพนักงาน"],
+          );
+          const skill = String(row["Skill"] ?? row["skill"] ?? row["ทักษะ"] ?? "").trim();
+          const level = Number(row["Level"] ?? row["level"] ?? row["ระดับ"]) || 0;
+          if (!empId || !skill) continue;
+
+          if (!seenSkills.has(skill)) { seenSkills.add(skill); skillOrder.push(skill); }
+          if (!seenEmps.has(empId)) { seenEmps.add(empId); empOrder.push(empId); }
+          if (!newMatrix[empId]) newMatrix[empId] = {};
+          newMatrix[empId][skill] = level;
+        }
+
+        const newEmpList = empOrder.map((empId) => {
+          const info = empInfo.get(empId) ?? { name: empId, dept: "" };
+          return { empId, name: info.name, dept: info.dept };
+        });
+
+        setEmpList(newEmpList);
+        setSkillList(skillOrder);
+        setMatrix(newMatrix);
+        setOrigMatrix(JSON.parse(JSON.stringify(newMatrix)));
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setEmpList([]);
+        setSkillList([]);
+        setMatrix({});
+        setOrigMatrix({});
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsLoading(false);
+      });
+
+    return () => { isMounted = false; };
+  }, [activeFile?.file_path, employeeMasterFile?.file_path]);
+
+  const deptOptions = Array.from(new Set(empList.map((e) => e.dept).filter(Boolean))).sort();
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredEmps = empList.filter((emp) => {
+    if (selectedDept !== "all" && emp.dept !== selectedDept) return false;
+    if (!normalizedQuery) return true;
+    return [emp.empId, emp.name, emp.dept].some((v) =>
+      v.toLowerCase().includes(normalizedQuery),
+    );
+  });
+
+  const modifiedCount = empList.filter((emp) =>
+    skillList.some(
+      (skill) =>
+        (matrix[emp.empId]?.[skill] ?? 0) !== (origMatrix[emp.empId]?.[skill] ?? 0),
+    ),
+  ).length;
+
+  function updateLevel(empId: string, skill: string, level: number) {
+    setMatrix((prev) => ({
+      ...prev,
+      [empId]: { ...(prev[empId] ?? {}), [skill]: level },
+    }));
+  }
+
+  function confirmAddSkill() {
+    const trimmed = newSkillName.trim();
+    if (!trimmed || skillList.includes(trimmed)) return;
+    setSkillList((prev) => [...prev, trimmed]);
+    setAddSkillMode(false);
+    setNewSkillName("");
+  }
+
+  async function handleSave() {
+    setIsSaving(true);
+    try {
+      const flatRows: SkillMatrixSaveRow[] = [];
+      for (const emp of empList) {
+        for (const skill of skillList) {
+          const level = matrix[emp.empId]?.[skill] ?? 0;
+          if (level > 0) flatRows.push({ empId: emp.empId, skill, level });
+        }
+      }
+      await saveSkillMatrixRows(flatRows);
+      setOrigMatrix(JSON.parse(JSON.stringify(matrix)));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  const levelColors = ["#e5e7eb", "#fecaca", "#fed7aa", "#fef08a", "#bbf7d0", "#34d399"];
+
+  return (
+    <section className="panel skill-matrix-panel">
+      <div className="panel-title-row">
+        <div>
+          <h3>Skill Matrix</h3>
+          <p>แสดงและแก้ไขระดับทักษะรายคน — คลิก dropdown ในแต่ละช่องเพื่อเปลี่ยนระดับ (0=ไม่มี, 1–5)</p>
+        </div>
+        <button
+          className="primary-button"
+          disabled={!empList.length || isSaving}
+          onClick={handleSave}
+          type="button"
+        >
+          <UploadCloud size={17} />
+          {isSaving ? "Saving..." : `Save${modifiedCount > 0 ? ` (${modifiedCount} แก้ไข)` : ""}`}
+        </button>
+      </div>
+
+      <div className="table-filters skill-matrix-filters">
+        <input
+          aria-label="ค้นหา skill matrix"
+          placeholder="ค้นหา รหัส ชื่อ แผนก"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
+          <option value="all">ทุกแผนก</option>
+          {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <span className="dayoff-count">
+          {filteredEmps.length.toLocaleString()} / {empList.length.toLocaleString()} คน
+          {modifiedCount > 0 && <span className="modified-badge">{modifiedCount} แก้ไข</span>}
+        </span>
+      </div>
+
+      <div className="skill-matrix-table-wrap">
+        <table className="table skill-matrix-table">
+          <thead>
+            <tr>
+              <th className="sm-sticky sm-col-empid">Emp ID</th>
+              <th className="sm-sticky sm-col-name">ชื่อ</th>
+              <th className="sm-sticky sm-col-dept">แผนก</th>
+              {skillList.map((skill) => (
+                <th key={skill} className="sm-skill-col">{skill}</th>
+              ))}
+              <th className="sm-add-col">
+                {addSkillMode ? (
+                  <div className="sm-add-skill-row">
+                    <input
+                      autoFocus
+                      className="sm-add-skill-input"
+                      placeholder="ชื่อ skill..."
+                      value={newSkillName}
+                      onChange={(e) => setNewSkillName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") confirmAddSkill();
+                        if (e.key === "Escape") {
+                          setAddSkillMode(false);
+                          setNewSkillName("");
+                        }
+                      }}
+                    />
+                    <button
+                      className="sm-btn-confirm"
+                      onClick={confirmAddSkill}
+                      title="ยืนยัน"
+                      type="button"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      className="sm-btn-cancel"
+                      onClick={() => { setAddSkillMode(false); setNewSkillName(""); }}
+                      title="ยกเลิก"
+                      type="button"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="sm-add-skill-btn"
+                    onClick={() => setAddSkillMode(true)}
+                    title="เพิ่ม Skill ใหม่"
+                    type="button"
+                  >
+                    + Skill
+                  </button>
+                )}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredEmps.map((emp) => {
+              const isModified = skillList.some(
+                (skill) =>
+                  (matrix[emp.empId]?.[skill] ?? 0) !==
+                  (origMatrix[emp.empId]?.[skill] ?? 0),
+              );
+              return (
+                <tr key={emp.empId} className={isModified ? "row-modified" : ""}>
+                  <td className="sm-sticky sm-col-empid">{emp.empId}</td>
+                  <td className="sm-sticky sm-col-name">{emp.name}</td>
+                  <td className="sm-sticky sm-col-dept dept-cell">{emp.dept || "—"}</td>
+                  {skillList.map((skill) => {
+                    const level = matrix[emp.empId]?.[skill] ?? 0;
+                    return (
+                      <td key={skill} className="sm-cell">
+                        <select
+                          aria-label={`${emp.name} - ${skill}`}
+                          className="sm-level-select"
+                          style={{ background: levelColors[level] ?? "#e5e7eb" }}
+                          value={level}
+                          onChange={(e) => updateLevel(emp.empId, skill, Number(e.target.value))}
+                        >
+                          <option value={0}>—</option>
+                          <option value={1}>1</option>
+                          <option value={2}>2</option>
+                          <option value={3}>3</option>
+                          <option value={4}>4</option>
+                          <option value={5}>5</option>
+                        </select>
+                      </td>
+                    );
+                  })}
+                  <td />
+                </tr>
+              );
+            })}
+            {!activeFile ? (
+              <tr>
+                <td colSpan={skillList.length + 4}>
+                  อัปโหลด Skill Matrix master ก่อน จึงจะแก้ไขในหน้านี้ได้
+                </td>
+              </tr>
+            ) : null}
+            {activeFile && isLoading ? (
+              <tr><td colSpan={skillList.length + 4}>Loading Skill Matrix...</td></tr>
+            ) : null}
+            {activeFile && !isLoading && filteredEmps.length === 0 && empList.length > 0 ? (
+              <tr><td colSpan={skillList.length + 4}>ไม่พบข้อมูลที่ค้นหา</td></tr>
             ) : null}
           </tbody>
         </table>

@@ -2767,3 +2767,173 @@ button.stacked-row {
     overflow-x: auto;
   }
 }
+
+/* ── Skill Matrix ── */
+.skill-matrix-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.skill-matrix-panel .primary-button {
+  width: fit-content;
+}
+
+.skill-matrix-filters {
+  grid-template-columns: minmax(220px, 1fr) 200px auto;
+  align-items: center;
+}
+
+.skill-matrix-table-wrap {
+  overflow: auto;
+  max-height: 560px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.skill-matrix-table {
+  border-collapse: collapse;
+  white-space: nowrap;
+  width: max-content;
+  min-width: 100%;
+}
+
+.skill-matrix-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface2);
+  z-index: 1;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-bottom: 1.5px solid var(--line);
+}
+
+/* Sticky left columns */
+.sm-sticky {
+  position: sticky;
+  background: var(--panel);
+  z-index: 2;
+}
+
+.skill-matrix-table thead .sm-sticky {
+  z-index: 3;
+  background: var(--surface2);
+}
+
+.sm-col-empid {
+  left: 0;
+  min-width: 90px;
+}
+
+.sm-col-name {
+  left: 90px;
+  min-width: 150px;
+}
+
+.sm-col-dept {
+  left: 240px;
+  min-width: 130px;
+  border-right: 1.5px solid var(--line);
+}
+
+/* Modified row — override sticky bg */
+.skill-matrix-table tr.row-modified .sm-sticky {
+  background: #fffbeb;
+}
+
+.sm-skill-col {
+  min-width: 90px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sm-add-col {
+  min-width: 110px;
+  text-align: left;
+  padding: 6px 10px !important;
+}
+
+.sm-cell {
+  text-align: center;
+  padding: 4px 6px !important;
+}
+
+.sm-level-select {
+  width: 58px;
+  min-height: 30px;
+  border: 1.5px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.sm-level-select:focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.sm-add-skill-btn {
+  background: none;
+  border: 1.5px dashed var(--line);
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sm-add-skill-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sm-add-skill-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sm-add-skill-input {
+  width: 96px;
+  height: 28px;
+  padding: 2px 6px;
+  border: 1.5px solid var(--accent);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.sm-btn-confirm,
+.sm-btn-cancel {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.sm-btn-confirm {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.sm-btn-confirm:hover {
+  background: #bbf7d0;
+}
+
+.sm-btn-cancel {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.sm-btn-cancel:hover {
+  background: #fecaca;
+}
