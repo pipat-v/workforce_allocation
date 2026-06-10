@@ -302,6 +302,10 @@ button {
   gap: 12px;
 }
 
+.kpi-grid.kpi-grid-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .kpi-card.kpi-donut {
   display: flex;
   flex-direction: column;
@@ -2898,6 +2902,10 @@ button.stacked-row {
 
 @media (max-width: 1180px) {
   .kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .kpi-grid.kpi-grid-5 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 

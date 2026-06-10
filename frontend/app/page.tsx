@@ -3572,7 +3572,7 @@ function ReportDashboard({
 
   return (
     <section className="report-page">
-      <section className="kpi-grid">
+      <section className="kpi-grid kpi-grid-5">
         <KpiCard
           icon={<UsersRound size={34} />}
           tone="green"
