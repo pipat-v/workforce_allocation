@@ -6,6 +6,7 @@ import {
   BarChart3,
   BriefcaseBusiness,
   CalendarDays,
+  CalendarOff,
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
@@ -81,7 +82,7 @@ type AttendanceRecord = {
   shift: string;
   shiftStart: string;
   scanIn: string;
-  status: "Present" | "Late" | "Absent";
+  status: "Present" | "Late" | "Absent" | "DayOff";
   minutesLate: number;
 };
 
@@ -101,7 +102,8 @@ type ReportData = {
   present: number;
   late: number;
   absent: number;
-  deptRows: Array<{ dept: string; present: number; late: number; absent: number; total: number }>;
+  dayoff: number;
+  deptRows: Array<{ dept: string; present: number; late: number; absent: number; dayoff: number; total: number }>;
   lateRows: AttendanceRecord[];
   records: AttendanceRecord[];
   timestampRows: AttendanceRecord[];
@@ -230,6 +232,7 @@ export default function Home() {
       present: filtered.filter((r) => r.status === "Present").length,
       late: lateFiltered.length,
       absent: filtered.filter((r) => r.status === "Absent").length,
+      dayoff: filtered.filter((r) => r.status === "DayOff").length,
       lateRows: [...lateFiltered].sort((a, b) => b.minutesLate - a.minutesLate),
       deptRows: reportData.deptRows.filter((r) => r.dept === dashboardDeptFilter),
     };
@@ -239,6 +242,7 @@ export default function Home() {
   const presentPeople = dashboardReport?.present ?? 0;
   const latePeople = dashboardReport?.late ?? 0;
   const absentPeople = dashboardReport?.absent ?? 0;
+  const dayoffPeople = dashboardReport?.dayoff ?? 0;
   const totalActivePeople = presentPeople + latePeople;
   const presentRate = totalEmployees ? Math.round((totalActivePeople / totalEmployees) * 100) : 0;
   const workDate = new Date().toLocaleDateString("th-TH", {
@@ -984,10 +988,19 @@ export default function Home() {
                 unit="คน"
                 note="ไม่พบการสแกนเข้างาน"
               />
+              <KpiCard
+                icon={<CalendarOff size={34} />}
+                tone="gray"
+                label="Day Off"
+                value={dayoffPeople.toLocaleString()}
+                unit="คน"
+                note="พนักงานวันหยุดตามกำหนด"
+              />
               <DonutKpiCard
                 present={presentPeople}
                 late={latePeople}
                 absent={absentPeople}
+                dayoff={dayoffPeople}
                 total={totalEmployees}
                 totalActive={totalActivePeople}
               />
@@ -1208,7 +1221,7 @@ function buildReportData(
         position: "พนักงาน",
       }));
 
-  const records: AttendanceRecord[] = baseEmployees.flatMap((employee) => {
+  const records: AttendanceRecord[] = baseEmployees.flatMap((employee): AttendanceRecord[] => {
     const dayoffShift = dayoffShiftMap.get(employee.empId);
     const scans = scanByEmp.get(employee.empId)?.times ?? [];
     const scanIn = scans.sort((a, b) => a.getTime() - b.getTime())[0];
@@ -1220,7 +1233,17 @@ function buildReportData(
     const isScheduledOff = latestTimestamp
       ? isEmployeeDayOff(dayoffShift?.dayoff, latestTimestamp)
       : false;
-    if (!scanIn && isScheduledOff) return [];
+    if (!scanIn && isScheduledOff) return [{
+      empId: employee.empId,
+      name: employee.name,
+      dept: employee.dept,
+      position: employee.position,
+      shift,
+      shiftStart,
+      scanIn: "-",
+      status: "DayOff" as const,
+      minutesLate: 0,
+    }];
 
     const minutesLate = scanIn ? Math.max(0, minutesBetween(shiftStart, scanIn)) : 0;
     const status = !scanIn ? "Absent" : minutesLate > 5 ? "Late" : "Present";
@@ -1238,19 +1261,21 @@ function buildReportData(
     }];
   });
 
-  const deptMap = new Map<string, { dept: string; present: number; late: number; absent: number; total: number }>();
+  const deptMap = new Map<string, { dept: string; present: number; late: number; absent: number; dayoff: number; total: number }>();
   for (const record of records) {
     const current = deptMap.get(record.dept) ?? {
       dept: record.dept,
       present: 0,
       late: 0,
       absent: 0,
+      dayoff: 0,
       total: 0,
     };
     current.total += 1;
     if (record.status === "Present") current.present += 1;
     if (record.status === "Late") current.late += 1;
     if (record.status === "Absent") current.absent += 1;
+    if (record.status === "DayOff") current.dayoff += 1;
     deptMap.set(record.dept, current);
   }
 
@@ -1262,6 +1287,7 @@ function buildReportData(
     present: records.filter((record) => record.status === "Present").length,
     late: records.filter((record) => record.status === "Late").length,
     absent: records.filter((record) => record.status === "Absent").length,
+    dayoff: records.filter((record) => record.status === "DayOff").length,
     deptRows: Array.from(deptMap.values())
       .sort((a, b) => b.total - a.total),
     lateRows: records
@@ -1580,18 +1606,21 @@ function DonutKpiCard({
   present,
   late,
   absent,
+  dayoff = 0,
   total,
   totalActive,
 }: {
   present: number;
   late: number;
   absent: number;
+  dayoff?: number;
   total: number;
   totalActive: number;
 }) {
   const presentPct = total ? (present / total) * 100 : 0;
   const latePct = total ? (late / total) * 100 : 0;
   const absentPct = total ? (absent / total) * 100 : 0;
+  const dayoffPct = total ? (dayoff / total) * 100 : 0;
 
   return (
     <article className="kpi-card kpi-donut">
@@ -1601,12 +1630,14 @@ function DonutKpiCard({
           <div className="kpi-bar-fill present" style={{ width: `${presentPct}%` }} />
           <div className="kpi-bar-fill late" style={{ width: `${latePct}%` }} />
           <div className="kpi-bar-fill absent" style={{ width: `${absentPct}%` }} />
+          <div className="kpi-bar-fill dayoff" style={{ width: `${dayoffPct}%` }} />
         </div>
       </div>
       <div className="legend compact">
         <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
         <LegendRow color="amber" label="Late" value={String(late)} percent={`${latePct.toFixed(1)}%`} />
         <LegendRow color="red" label="Absent" value={String(absent)} percent={`${absentPct.toFixed(1)}%`} />
+        <LegendRow color="gray" label="Day Off" value={String(dayoff)} percent={`${dayoffPct.toFixed(1)}%`} />
       </div>
     </article>
   );
@@ -1838,8 +1869,8 @@ function DashboardPanels({
                     <td>{row.shift}</td>
                     <td>{row.shiftStart}</td>
                     <td>{row.scanIn}</td>
-                    <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td>
-                    <td>{row.status !== "Absent" ? formatLateTime(row.minutesLate) : "-"}</td>
+                    <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status === "DayOff" ? "วันหยุด" : row.status}</span></td>
+                    <td>{row.status !== "Absent" && row.status !== "DayOff" ? formatLateTime(row.minutesLate) : "-"}</td>
                     <td>
                       <span className={monthlyLate >= 3 ? "monthly-late-high" : ""}>
                         {monthlyLate > 0 ? monthlyLate : "-"}
@@ -2958,6 +2989,7 @@ function TimestampWithDeptPage({
           <option value="Present">Present</option>
           <option value="Late">Late</option>
           <option value="Absent">Absent</option>
+          <option value="DayOff">วันหยุด</option>
         </select>
         <button
           className="ghost-button"
@@ -3174,7 +3206,7 @@ function ResultsPanel({
                 <td>{row.scanIn}</td>
                 <td>
                   <span className={`status-pill ${row.status.toLowerCase()}`}>
-                    {row.status}
+                    {row.status === "DayOff" ? "วันหยุด" : row.status}
                   </span>
                 </td>
               </tr>
@@ -3272,7 +3304,7 @@ function ReportDashboard({
 }) {
   const [sort, setSort_] = useState<SortState>(null);
   const setSort = setSort_ as (sort: SortState) => void;
-  const [tableStatusFilter, setTableStatusFilter] = useState<"all" | "Late" | "Absent">("all");
+  const [tableStatusFilter, setTableStatusFilter] = useState<"all" | "Late" | "Absent" | "DayOff">("all");
 
   const data = reportData ?? {
     targetDate: "-",
@@ -3280,6 +3312,7 @@ function ReportDashboard({
     present: 0,
     late: 0,
     absent: 0,
+    dayoff: 0,
     deptRows: [],
     lateRows: [],
     records: [],
@@ -3296,6 +3329,7 @@ function ReportDashboard({
   const scopedPresent = scopedRecords.filter((row) => row.status === "Present").length;
   const scopedLate = scopedRecords.filter((row) => row.status === "Late").length;
   const scopedAbsent = scopedRecords.filter((row) => row.status === "Absent").length;
+  const scopedDayoff = scopedRecords.filter((row) => row.status === "DayOff").length;
   const scopedCameToWork = scopedPresent + scopedLate;
   const lateRate = scopedCameToWork
     ? ((scopedLate / scopedCameToWork) * 100).toFixed(1)
@@ -3368,6 +3402,7 @@ function ReportDashboard({
           present={scopedPresent}
           late={scopedLate}
           absent={scopedAbsent}
+          dayoff={scopedDayoff}
           total={scopedTotal}
           totalActive={scopedCameToWork}
         />
@@ -3389,6 +3424,7 @@ function ReportDashboard({
             <span><i className="present" />Present</span>
             <span><i className="late" />Late</span>
             <span><i className="absent" />Absent</span>
+            <span><i className="dayoff" />Day Off</span>
           </div>
           <div className="stacked-bars">
             {data.deptRows.map((row, index) => {
@@ -3410,6 +3446,7 @@ function ReportDashboard({
                     <i className="present" style={{ width: `${(row.present / maxDeptTotal) * 100}%` }} />
                     <i className="late" style={{ width: `${(row.late / maxDeptTotal) * 100}%` }} />
                     <i className="absent" style={{ width: `${(row.absent / maxDeptTotal) * 100}%` }} />
+                    <i className="dayoff" style={{ width: `${(row.dayoff / maxDeptTotal) * 100}%` }} />
                   </div>
                   <span className={`dept-present-rate ${rateTone}`}>{deptRate}%</span>
                   <div className="stacked-row-end">
@@ -3417,6 +3454,7 @@ function ReportDashboard({
                     <span className="stacked-mini-badges">
                       {row.late > 0 ? <span className="mini-badge late">{row.late}L</span> : null}
                       {row.absent > 0 ? <span className="mini-badge absent">{row.absent}A</span> : null}
+                      {row.dayoff > 0 ? <span className="mini-badge dayoff">{row.dayoff}D</span> : null}
                     </span>
                   </div>
                 </button>
@@ -3473,15 +3511,15 @@ function ReportDashboard({
             </div>
             <div className="report-table-actions">
               <div className="status-tabs">
-                {(["all", "Late", "Absent"] as const).map((s) => (
+                {(["all", "Late", "Absent", "DayOff"] as const).map((s) => (
                   <button
                     key={s}
-                    className={`status-tab${tableStatusFilter === s ? " active" : ""}${s === "Late" ? " amber" : s === "Absent" ? " red" : ""}`}
+                    className={`status-tab${tableStatusFilter === s ? " active" : ""}${s === "Late" ? " amber" : s === "Absent" ? " red" : s === "DayOff" ? " slate" : ""}`}
                     onClick={() => setTableStatusFilter(s)}
                     type="button"
                   >
-                    {s === "all" ? `ทั้งหมด` : s}
-                    <span className="tab-count">{s === "all" ? tableSourceRows.length : s === "Late" ? scopedLate : scopedAbsent}</span>
+                    {s === "all" ? "ทั้งหมด" : s === "DayOff" ? "วันหยุด" : s}
+                    <span className="tab-count">{s === "all" ? tableSourceRows.length : s === "Late" ? scopedLate : s === "Absent" ? scopedAbsent : scopedDayoff}</span>
                   </button>
                 ))}
               </div>
@@ -3556,8 +3594,8 @@ function ReportDashboard({
                     <td>{row.shift}</td>
                     <td>{row.shiftStart}</td>
                     <td>{row.scanIn ?? "-"}</td>
-                    <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td>
-                    <td>{row.status !== "Absent" ? <span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span> : "-"}</td>
+                    <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status === "DayOff" ? "วันหยุด" : row.status}</span></td>
+                    <td>{row.status !== "Absent" && row.status !== "DayOff" ? <span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span> : "-"}</td>
                     <td>
                       <span className={monthly >= 3 ? "monthly-late-high" : ""}>
                         {monthly > 0 ? monthly : "-"}
@@ -3631,7 +3669,7 @@ function KpiCard({
   progress,
 }: {
   icon: ReactNode;
-  tone: "green" | "blue" | "amber" | "purple";
+  tone: "green" | "blue" | "amber" | "purple" | "gray";
   label: string;
   value: string;
   unit: string;

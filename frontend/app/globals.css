@@ -334,6 +334,7 @@ button {
 .kpi-bar-fill.present { background: #10b981; }
 .kpi-bar-fill.late    { background: #f59e0b; }
 .kpi-bar-fill.absent  { background: #ef4444; }
+.kpi-bar-fill.dayoff  { background: #94a3b8; }
 
 .kpi-bar-label {
   font-size: 12px;
@@ -369,6 +370,7 @@ button {
 .kpi-blue  { border-top-color: var(--blue); }
 .kpi-amber { border-top-color: var(--amber); }
 .kpi-purple { border-top-color: var(--purple); }
+.kpi-gray  { border-top-color: #94a3b8; }
 
 .kpi-icon {
   width: 56px;
@@ -396,6 +398,11 @@ button {
 .kpi-icon.purple {
   color: var(--purple);
   background: #ede9fe;
+}
+
+.kpi-icon.gray {
+  color: #475569;
+  background: #e2e8f0;
 }
 
 .kpi-body span,
@@ -2052,6 +2059,7 @@ button {
 .stack-legend .present { background: #10b981; }
 .stack-legend .late { background: #f59e0b; }
 .stack-legend .absent { background: #dc2626; }
+.stack-legend .dayoff { background: #94a3b8; }
 
 /* ── Overview card (right column) ── */
 .report-overview-card {
@@ -2260,6 +2268,11 @@ button {
   color: #dc2626;
 }
 
+.mini-badge.dayoff {
+  background: #e2e8f0;
+  color: #475569;
+}
+
 button.stacked-row {
   width: 100%;
   border: 0;
@@ -2312,6 +2325,10 @@ button.stacked-row {
 
 .stacked-track .absent {
   background: #dc2626;
+}
+
+.stacked-track .dayoff {
+  background: #94a3b8;
 }
 
 .report-card.center {
@@ -2590,6 +2607,7 @@ button.stacked-row {
 
 .status-tab.active.amber { color: #b45309; }
 .status-tab.active.red   { color: #dc2626; }
+.status-tab.active.slate { color: #475569; }
 
 .tab-count {
   display: inline-flex;
@@ -2709,6 +2727,11 @@ button.stacked-row {
 .status-pill.present {
   background: #d1fae5;
   color: #047857;
+}
+
+.status-pill.dayoff {
+  background: #e2e8f0;
+  color: #475569;
 }
 
 .pagination {
