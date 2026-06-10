@@ -298,7 +298,7 @@ button {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(190px, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(190px, 1.5fr);
   gap: 12px;
 }
 
@@ -408,7 +408,8 @@ button {
 .kpi-body span,
 .kpi-body p {
   color: #475569;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .kpi-body div {
@@ -420,7 +421,7 @@ button {
 
 .kpi-body strong {
   color: var(--green);
-  font-size: 32px;
+  font-size: 28px;
   line-height: 1;
   font-weight: 700;
 }
@@ -442,9 +443,10 @@ button {
 }
 
 .kpi-body p {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .progress-wrap {

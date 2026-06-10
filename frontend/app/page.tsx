@@ -245,6 +245,10 @@ export default function Home() {
   const dayoffPeople = dashboardReport?.dayoff ?? 0;
   const totalActivePeople = presentPeople + latePeople;
   const presentRate = totalEmployees ? Math.round((totalActivePeople / totalEmployees) * 100) : 0;
+  const pctPresent = totalEmployees ? Math.round((presentPeople / totalEmployees) * 100) : 0;
+  const pctLate = totalEmployees ? Math.round((latePeople / totalEmployees) * 100) : 0;
+  const pctAbsent = totalEmployees ? Math.round((absentPeople / totalEmployees) * 100) : 0;
+  const pctDayoff = totalEmployees ? Math.round((dayoffPeople / totalEmployees) * 100) : 0;
   const workDate = new Date().toLocaleDateString("th-TH", {
     day: "numeric",
     month: "long",
@@ -958,7 +962,7 @@ export default function Home() {
               <KpiCard
                 icon={<UsersRound size={26} />}
                 tone="green"
-                label="พนักงานที่มาทำงาน"
+                label="มาทำงาน"
                 value={totalActivePeople.toLocaleString()}
                 unit="คน"
                 note={`จากทั้งหมด ${totalEmployees.toLocaleString()} คน`}
@@ -967,34 +971,34 @@ export default function Home() {
               <KpiCard
                 icon={<ClipboardCheck size={26} />}
                 tone="blue"
-                label="Present"
+                label="ตรงเวลา"
                 value={presentPeople.toLocaleString()}
                 unit="คน"
-                note="พนักงานที่เข้างานตรงเวลา"
+                note={`${pctPresent}% ของพนักงานทั้งหมด`}
               />
               <KpiCard
-                icon={<UsersRound size={26} />}
+                icon={<Clock size={26} />}
                 tone="amber"
-                label="Late"
+                label="มาสาย"
                 value={latePeople.toLocaleString()}
                 unit="คน"
-                note="พนักงานที่มาสาย"
+                note={`${pctLate}% ของพนักงานทั้งหมด`}
               />
               <KpiCard
-                icon={<BriefcaseBusiness size={26} />}
+                icon={<UserX size={26} />}
                 tone="purple"
-                label="Absent"
+                label="ขาดงาน"
                 value={absentPeople.toLocaleString()}
                 unit="คน"
-                note="ไม่พบการสแกนเข้างาน"
+                note={`${pctAbsent}% ของพนักงานทั้งหมด`}
               />
               <KpiCard
                 icon={<CalendarOff size={26} />}
                 tone="gray"
-                label="Day Off"
+                label="วันหยุด"
                 value={dayoffPeople.toLocaleString()}
                 unit="คน"
-                note="พนักงานวันหยุดตามกำหนด"
+                note={`${pctDayoff}% ของพนักงานทั้งหมด`}
               />
               <DonutKpiCard
                 present={presentPeople}
