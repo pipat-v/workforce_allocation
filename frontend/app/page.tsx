@@ -1843,6 +1843,107 @@ function DashboardPanels({
 
       </section>
 
+      {/* Supervisor check panel */}
+      {(() => {
+        if (dashboardLateRows.length === 0) return null;
+        type DeptStat = { late: number; warned: number };
+        const deptMap = new Map<string, DeptStat>();
+        for (const row of dashboardLateRows) {
+          const s = deptMap.get(row.dept) ?? { late: 0, warned: 0 };
+          s.late += 1;
+          if (warnedIds.has(row.empId)) s.warned += 1;
+          deptMap.set(row.dept, s);
+        }
+        const deptRows = Array.from(deptMap.entries())
+          .map(([dept, s]) => ({ dept, ...s, pending: s.late - s.warned }))
+          .sort((a, b) => b.pending - a.pending);
+        const totalLate = dashboardLateRows.length;
+        const totalWarned = dashboardLateRows.filter((r) => warnedIds.has(r.empId)).length;
+        const totalPending = totalLate - totalWarned;
+        const pct = totalLate ? Math.round((totalWarned / totalLate) * 100) : 0;
+        const allDone = totalPending === 0;
+        return (
+          <section className="panel sup-check-panel">
+            <div className="sup-check-header">
+              <div className="sup-check-title">
+                <h3>สถานะการตักเตือน</h3>
+                <p>ตรวจสอบว่าหัวหน้าได้ตักเตือนพนักงานมาสายครบทุกคนแล้วหรือยัง</p>
+              </div>
+              <div className="sup-check-summary">
+                <div className="sup-check-stat">
+                  <span className="sup-stat-value">{totalWarned}</span>
+                  <span className="sup-stat-label">เตือนแล้ว</span>
+                </div>
+                <div className="sup-check-divider" />
+                <div className="sup-check-stat">
+                  <span className="sup-stat-value muted">{totalLate}</span>
+                  <span className="sup-stat-label">ทั้งหมด</span>
+                </div>
+                <div className="sup-check-divider" />
+                <div className="sup-check-stat">
+                  <span className={`sup-stat-value ${totalPending > 0 ? "danger" : "success"}`}>{totalPending}</span>
+                  <span className="sup-stat-label">ยังค้าง</span>
+                </div>
+                <span className={`sup-overall-badge ${allDone ? "done" : "pending"}`}>
+                  {allDone ? "✓ ครบแล้ว" : `⚠ ยังค้าง ${totalPending} คน`}
+                </span>
+              </div>
+            </div>
+            <div className="sup-progress-wrap">
+              <div className="sup-progress-bar">
+                <div className="sup-progress-fill" style={{ width: `${pct}%` }} />
+              </div>
+              <span className="sup-progress-pct">{pct}%</span>
+            </div>
+            <div className="sup-check-table-wrap">
+              <table className="table compact-table">
+                <thead>
+                  <tr>
+                    <th>หน่วยงาน</th>
+                    <th style={{ textAlign: "center" }}>มาสาย</th>
+                    <th style={{ textAlign: "center" }}>เตือนแล้ว</th>
+                    <th style={{ textAlign: "center" }}>ยังค้าง</th>
+                    <th>ความคืบหน้า</th>
+                    <th style={{ textAlign: "center" }}>สถานะ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deptRows.map((row) => {
+                    const deptPct = row.late ? Math.round((row.warned / row.late) * 100) : 100;
+                    const done = row.pending === 0;
+                    return (
+                      <tr key={row.dept} className={done ? "sup-row-done" : "sup-row-pending"}>
+                        <td><span className="dept-chip">{row.dept}</span></td>
+                        <td style={{ textAlign: "center" }}>{row.late}</td>
+                        <td style={{ textAlign: "center" }}><strong style={{ color: "#10b981" }}>{row.warned}</strong></td>
+                        <td style={{ textAlign: "center" }}>
+                          {row.pending > 0
+                            ? <strong style={{ color: "#ef4444" }}>{row.pending}</strong>
+                            : <span style={{ color: "#94a3b8" }}>—</span>}
+                        </td>
+                        <td>
+                          <div className="sup-mini-bar-wrap">
+                            <div className="sup-mini-bar">
+                              <div className="sup-mini-fill" style={{ width: `${deptPct}%` }} />
+                            </div>
+                            <span className="sup-mini-pct">{deptPct}%</span>
+                          </div>
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <span className={`sup-status-badge ${done ? "done" : "pending"}`}>
+                            {done ? "✓ ครบ" : `ค้าง ${row.pending}`}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        );
+      })()}
+
       {/* Employee detail table */}
       <section className="panel detail-attendance-panel">
         <div className="panel-title-row">

@@ -3309,3 +3309,196 @@ button.stacked-row {
   padding: 0;
   text-decoration: underline;
 }
+
+/* ── Supervisor Check Panel ────────────────────────────────── */
+.sup-check-panel {
+  margin-top: 20px;
+}
+
+.sup-check-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.sup-check-title h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+
+.sup-check-title p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.sup-check-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface-2, #f8fafc);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 20px;
+  flex-shrink: 0;
+}
+
+.sup-check-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.sup-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--text);
+}
+
+.sup-stat-value.muted { color: var(--muted); }
+.sup-stat-value.success { color: #10b981; }
+.sup-stat-value.danger  { color: #ef4444; }
+
+.sup-stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sup-check-divider {
+  width: 1px;
+  height: 36px;
+  background: var(--line);
+}
+
+.sup-overall-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sup-overall-badge.done {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.sup-overall-badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.sup-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.sup-progress-bar {
+  flex: 1;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.sup-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #34d399);
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+.sup-progress-pct {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 38px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sup-check-table-wrap {
+  overflow-x: auto;
+}
+
+.sup-row-done td {
+  background: #f0fdf4;
+}
+
+.sup-row-pending td {
+  background: #fffbeb;
+}
+
+.sup-mini-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 100px;
+}
+
+.sup-mini-bar {
+  flex: 1;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.sup-mini-fill {
+  height: 100%;
+  background: #10b981;
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+
+.sup-mini-pct {
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 30px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sup-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sup-status-badge.done {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.sup-status-badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.dept-chip {
+  display: inline-block;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
