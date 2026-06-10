@@ -2320,8 +2320,9 @@ function SkillMatrixPage({
   const [origMatrix, setOrigMatrix] = useState<Record<string, Record<string, number>>>({});
   const [query, setQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("all");
-  const [addSkillMode, setAddSkillMode] = useState(false);
-  const [newSkillName, setNewSkillName] = useState("");
+  const [selectedEmpId, setSelectedEmpId] = useState<string | null>(null);
+  const [addSkillOpen, setAddSkillOpen] = useState(false);
+  const [newSkillInput, setNewSkillInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -2430,14 +2431,6 @@ function SkillMatrixPage({
     }));
   }
 
-  function confirmAddSkill() {
-    const trimmed = newSkillName.trim();
-    if (!trimmed || skillList.includes(trimmed)) return;
-    setSkillList((prev) => [...prev, trimmed]);
-    setAddSkillMode(false);
-    setNewSkillName("");
-  }
-
   async function handleSave() {
     setIsSaving(true);
     try {
@@ -2455,154 +2448,248 @@ function SkillMatrixPage({
     }
   }
 
+  function assignSkill(empId: string, skill: string) {
+    if (!skillList.includes(skill)) setSkillList((prev) => [...prev, skill]);
+    setMatrix((prev) => ({
+      ...prev,
+      [empId]: { ...(prev[empId] ?? {}), [skill]: 1 },
+    }));
+    setAddSkillOpen(false);
+    setNewSkillInput("");
+  }
+
+  const selectedEmp = empList.find((e) => e.empId === selectedEmpId) ?? null;
+  const assignedSkills = selectedEmpId
+    ? skillList.filter((s) => (matrix[selectedEmpId]?.[s] ?? 0) > 0)
+    : [];
+  const unassignedSkills = selectedEmpId
+    ? skillList.filter((s) => (matrix[selectedEmpId]?.[s] ?? 0) === 0)
+    : [];
+  const filteredNewSkills = newSkillInput.trim()
+    ? unassignedSkills.filter((s) =>
+        s.toLowerCase().includes(newSkillInput.trim().toLowerCase()),
+      )
+    : unassignedSkills;
+
   const levelColors = ["#e5e7eb", "#fecaca", "#fed7aa", "#fef08a", "#bbf7d0", "#34d399"];
+  const levelTextColors = ["#6b7280", "#991b1b", "#92400e", "#713f12", "#166534", "#064e3b"];
 
   return (
-    <section className="panel skill-matrix-panel">
-      <div className="panel-title-row">
-        <div>
-          <h3>Skill Matrix</h3>
-          <p>แสดงและแก้ไขระดับทักษะรายคน — คลิก dropdown ในแต่ละช่องเพื่อเปลี่ยนระดับ (0=ไม่มี, 1–5)</p>
+    <section className="panel sl-layout">
+      {/* ── LEFT: employee list ── */}
+      <aside className="sl-sidebar">
+        <div className="sl-sidebar-head">
+          <div className="sl-search-row">
+            <input
+              aria-label="ค้นหาพนักงาน"
+              placeholder="ค้นหา รหัส ชื่อ แผนก"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
+              <option value="all">ทุกแผนก</option>
+              {Array.from(new Set(empList.map((e) => e.dept).filter(Boolean)))
+                .sort()
+                .map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div className="sl-emp-count">
+            {filteredEmps.length} / {empList.length} คน
+            {modifiedCount > 0 && (
+              <span className="modified-badge">{modifiedCount} แก้ไข</span>
+            )}
+          </div>
         </div>
-        <button
-          className="primary-button"
-          disabled={!empList.length || isSaving}
-          onClick={handleSave}
-          type="button"
-        >
-          <UploadCloud size={17} />
-          {isSaving ? "Saving..." : `Save${modifiedCount > 0 ? ` (${modifiedCount} แก้ไข)` : ""}`}
-        </button>
-      </div>
 
-      <div className="table-filters skill-matrix-filters">
-        <input
-          aria-label="ค้นหา skill matrix"
-          placeholder="ค้นหา รหัส ชื่อ แผนก"
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
-          <option value="all">ทุกแผนก</option>
-          {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <span className="dayoff-count">
-          {filteredEmps.length.toLocaleString()} / {empList.length.toLocaleString()} คน
-          {modifiedCount > 0 && <span className="modified-badge">{modifiedCount} แก้ไข</span>}
-        </span>
-      </div>
-
-      <div className="skill-matrix-table-wrap">
-        <table className="table skill-matrix-table">
-          <thead>
-            <tr>
-              <th className="sm-sticky sm-col-empid">Emp ID</th>
-              <th className="sm-sticky sm-col-name">ชื่อ</th>
-              <th className="sm-sticky sm-col-dept">แผนก</th>
-              {skillList.map((skill) => (
-                <th key={skill} className="sm-skill-col">{skill}</th>
-              ))}
-              <th className="sm-add-col">
-                {addSkillMode ? (
-                  <div className="sm-add-skill-row">
-                    <input
-                      autoFocus
-                      className="sm-add-skill-input"
-                      placeholder="ชื่อ skill..."
-                      value={newSkillName}
-                      onChange={(e) => setNewSkillName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") confirmAddSkill();
-                        if (e.key === "Escape") {
-                          setAddSkillMode(false);
-                          setNewSkillName("");
-                        }
-                      }}
-                    />
-                    <button
-                      className="sm-btn-confirm"
-                      onClick={confirmAddSkill}
-                      title="ยืนยัน"
-                      type="button"
-                    >
-                      ✓
-                    </button>
-                    <button
-                      className="sm-btn-cancel"
-                      onClick={() => { setAddSkillMode(false); setNewSkillName(""); }}
-                      title="ยกเลิก"
-                      type="button"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ) : (
+        <ul className="sl-emp-list">
+          {isLoading ? (
+            <li className="sl-emp-empty">Loading...</li>
+          ) : !activeFile ? (
+            <li className="sl-emp-empty">อัปโหลด Skill Matrix master ก่อน</li>
+          ) : filteredEmps.length === 0 ? (
+            <li className="sl-emp-empty">ไม่พบข้อมูลที่ค้นหา</li>
+          ) : (
+            filteredEmps.map((emp) => {
+              const isModified = skillList.some(
+                (s) =>
+                  (matrix[emp.empId]?.[s] ?? 0) !== (origMatrix[emp.empId]?.[s] ?? 0),
+              );
+              const skillCount = skillList.filter(
+                (s) => (matrix[emp.empId]?.[s] ?? 0) > 0,
+              ).length;
+              return (
+                <li key={emp.empId}>
                   <button
-                    className="sm-add-skill-btn"
-                    onClick={() => setAddSkillMode(true)}
-                    title="เพิ่ม Skill ใหม่"
+                    className={`sl-emp-item ${selectedEmpId === emp.empId ? "active" : ""} ${isModified ? "modified" : ""}`}
+                    onClick={() => {
+                      setSelectedEmpId(emp.empId);
+                      setAddSkillOpen(false);
+                      setNewSkillInput("");
+                    }}
                     type="button"
                   >
-                    + Skill
+                    <div className="sl-emp-avatar">{emp.name.charAt(0) || "?"}</div>
+                    <div className="sl-emp-info">
+                      <strong>{emp.name}</strong>
+                      <span>{emp.empId}{emp.dept ? ` · ${emp.dept}` : ""}</span>
+                    </div>
+                    <div className="sl-emp-meta">
+                      <span className="sl-skill-count">{skillCount}</span>
+                      {isModified && <span className="sl-modified-dot" />}
+                    </div>
                   </button>
-                )}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredEmps.map((emp) => {
-              const isModified = skillList.some(
-                (skill) =>
-                  (matrix[emp.empId]?.[skill] ?? 0) !==
-                  (origMatrix[emp.empId]?.[skill] ?? 0),
+                </li>
               );
-              return (
-                <tr key={emp.empId} className={isModified ? "row-modified" : ""}>
-                  <td className="sm-sticky sm-col-empid">{emp.empId}</td>
-                  <td className="sm-sticky sm-col-name">{emp.name}</td>
-                  <td className="sm-sticky sm-col-dept dept-cell">{emp.dept || "—"}</td>
-                  {skillList.map((skill) => {
-                    const level = matrix[emp.empId]?.[skill] ?? 0;
-                    return (
-                      <td key={skill} className="sm-cell">
-                        <select
-                          aria-label={`${emp.name} - ${skill}`}
-                          className="sm-level-select"
-                          style={{ background: levelColors[level] ?? "#e5e7eb" }}
-                          value={level}
-                          onChange={(e) => updateLevel(emp.empId, skill, Number(e.target.value))}
+            })
+          )}
+        </ul>
+      </aside>
+
+      {/* ── RIGHT: skill detail ── */}
+      <section className="sl-detail">
+        {!selectedEmp ? (
+          <div className="sl-detail-empty">
+            <LayoutGrid size={40} strokeWidth={1.2} />
+            <p>เลือกพนักงานทางซ้ายเพื่อดูและแก้ไข Skill</p>
+          </div>
+        ) : (
+          <>
+            <div className="sl-detail-header">
+              <div className="sl-detail-emp">
+                <div className="sl-detail-avatar">{selectedEmp.name.charAt(0) || "?"}</div>
+                <div>
+                  <strong>{selectedEmp.name}</strong>
+                  <span>{selectedEmp.empId}{selectedEmp.dept ? ` · ${selectedEmp.dept}` : ""}</span>
+                </div>
+              </div>
+              <button
+                className="primary-button"
+                disabled={isSaving || !empList.length}
+                onClick={handleSave}
+                type="button"
+              >
+                <UploadCloud size={16} />
+                {isSaving
+                  ? "Saving..."
+                  : `Save${modifiedCount > 0 ? ` (${modifiedCount} แก้ไข)` : ""}`}
+              </button>
+            </div>
+
+            <div className="sl-skill-list">
+              {assignedSkills.length === 0 && (
+                <p className="sl-no-skills">ยังไม่มี skill — กด "+ เพิ่ม Skill" ด้านล่าง</p>
+              )}
+              {assignedSkills.map((skill) => {
+                const level = matrix[selectedEmpId!]?.[skill] ?? 0;
+                const origLevel = origMatrix[selectedEmpId!]?.[skill] ?? 0;
+                const changed = level !== origLevel;
+                return (
+                  <div key={skill} className={`sl-skill-row${changed ? " changed" : ""}`}>
+                    <span className="sl-skill-name">{skill}</span>
+                    <div className="sl-level-btns">
+                      {[1, 2, 3, 4, 5].map((v) => (
+                        <button
+                          key={v}
+                          className={`sl-level-btn${level === v ? " active" : ""}`}
+                          style={
+                            level === v
+                              ? {
+                                  background: levelColors[v],
+                                  color: levelTextColors[v],
+                                  borderColor: levelColors[v],
+                                }
+                              : {}
+                          }
+                          onClick={() =>
+                            updateLevel(selectedEmpId!, skill, level === v ? 0 : v)
+                          }
+                          title={`ระดับ ${v}`}
+                          type="button"
                         >
-                          <option value={0}>—</option>
-                          <option value={1}>1</option>
-                          <option value={2}>2</option>
-                          <option value={3}>3</option>
-                          <option value={4}>4</option>
-                          <option value={5}>5</option>
-                        </select>
-                      </td>
-                    );
-                  })}
-                  <td />
-                </tr>
-              );
-            })}
-            {!activeFile ? (
-              <tr>
-                <td colSpan={skillList.length + 4}>
-                  อัปโหลด Skill Matrix master ก่อน จึงจะแก้ไขในหน้านี้ได้
-                </td>
-              </tr>
-            ) : null}
-            {activeFile && isLoading ? (
-              <tr><td colSpan={skillList.length + 4}>Loading Skill Matrix...</td></tr>
-            ) : null}
-            {activeFile && !isLoading && filteredEmps.length === 0 && empList.length > 0 ? (
-              <tr><td colSpan={skillList.length + 4}>ไม่พบข้อมูลที่ค้นหา</td></tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      className="sl-remove-btn"
+                      onClick={() => updateLevel(selectedEmpId!, skill, 0)}
+                      title="ลบ skill นี้"
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add skill */}
+            <div className="sl-add-area">
+              {addSkillOpen ? (
+                <div className="sl-add-panel">
+                  <input
+                    autoFocus
+                    className="sl-add-input"
+                    placeholder="ค้นหาหรือพิมพ์ skill ใหม่..."
+                    value={newSkillInput}
+                    onChange={(e) => setNewSkillInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        setAddSkillOpen(false);
+                        setNewSkillInput("");
+                      }
+                      if (e.key === "Enter") {
+                        const trimmed = newSkillInput.trim();
+                        if (trimmed) assignSkill(selectedEmpId!, trimmed);
+                      }
+                    }}
+                  />
+                  <div className="sl-add-options">
+                    {filteredNewSkills.map((s) => (
+                      <button
+                        key={s}
+                        className="sl-add-option"
+                        onClick={() => assignSkill(selectedEmpId!, s)}
+                        type="button"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                    {newSkillInput.trim() && !skillList.includes(newSkillInput.trim()) && (
+                      <button
+                        className="sl-add-option new"
+                        onClick={() => assignSkill(selectedEmpId!, newSkillInput.trim())}
+                        type="button"
+                      >
+                        + สร้าง "{newSkillInput.trim()}"
+                      </button>
+                    )}
+                    {filteredNewSkills.length === 0 && !newSkillInput.trim() && (
+                      <p className="sl-add-empty">ไม่มี skill ที่ยังไม่ได้กำหนด</p>
+                    )}
+                  </div>
+                  <button
+                    className="sl-add-close"
+                    onClick={() => { setAddSkillOpen(false); setNewSkillInput(""); }}
+                    type="button"
+                  >
+                    ปิด
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="sl-add-trigger"
+                  onClick={() => setAddSkillOpen(true)}
+                  type="button"
+                >
+                  + เพิ่ม Skill
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </section>
     </section>
   );
 }
