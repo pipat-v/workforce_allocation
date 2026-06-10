@@ -63,6 +63,16 @@ type SkillMatrixSaveRow = {
   level: number;
 };
 
+type SkillFlatRow = {
+  id: string;
+  empId: string;
+  name: string;
+  dept: string;
+  skill: string;
+  level: number;
+  origLevel: number;
+};
+
 type AttendanceRecord = {
   empId: string;
   name: string;
@@ -2314,24 +2324,19 @@ function SkillMatrixPage({
   employeeMasterFile?: MasterFile;
   saveSkillMatrixRows: (rows: SkillMatrixSaveRow[]) => Promise<void>;
 }) {
-  const [empList, setEmpList] = useState<{ empId: string; name: string; dept: string }[]>([]);
-  const [skillList, setSkillList] = useState<string[]>([]);
-  const [matrix, setMatrix] = useState<Record<string, Record<string, number>>>({});
-  const [origMatrix, setOrigMatrix] = useState<Record<string, Record<string, number>>>({});
+  const [rows, setRows] = useState<SkillFlatRow[]>([]);
   const [query, setQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("all");
-  const [selectedEmpId, setSelectedEmpId] = useState<string | null>(null);
-  const [addSkillOpen, setAddSkillOpen] = useState(false);
-  const [newSkillInput, setNewSkillInput] = useState("");
+  const [selectedSkill, setSelectedSkill] = useState("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLevel, setBulkLevel] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!activeFile?.file_path) {
-      setEmpList([]);
-      setSkillList([]);
-      setMatrix({});
-      setOrigMatrix({});
+      setRows([]);
+      setSelectedIds(new Set());
       return;
     }
 
@@ -2362,42 +2367,32 @@ function SkillMatrixPage({
           if (empId) empInfo.set(empId, { name, dept });
         }
 
-        const skillOrder: string[] = [];
-        const seenSkills = new Set<string>();
-        const empOrder: string[] = [];
-        const seenEmps = new Set<string>();
-        const newMatrix: Record<string, Record<string, number>> = {};
+        const parsed: SkillFlatRow[] = skillRows
+          .map((row, i) => {
+            const empId = cleanEmpId(
+              row["Employee ID"] ?? row["Emp ID"] ?? row["emp_id"] ?? row["รหัสพนักงาน"],
+            );
+            const skill = String(row["Skill"] ?? row["skill"] ?? row["ทักษะ"] ?? "").trim();
+            const level = Number(row["Level"] ?? row["level"] ?? row["ระดับ"]) || 0;
+            const info = empInfo.get(empId) ?? { name: empId, dept: "" };
+            return {
+              id: `${i}-${empId}-${skill}`,
+              empId,
+              name: info.name,
+              dept: info.dept,
+              skill,
+              level,
+              origLevel: level,
+            };
+          })
+          .filter((r) => r.empId && r.skill);
 
-        for (const row of skillRows) {
-          const empId = cleanEmpId(
-            row["Employee ID"] ?? row["Emp ID"] ?? row["emp_id"] ?? row["รหัสพนักงาน"],
-          );
-          const skill = String(row["Skill"] ?? row["skill"] ?? row["ทักษะ"] ?? "").trim();
-          const level = Number(row["Level"] ?? row["level"] ?? row["ระดับ"]) || 0;
-          if (!empId || !skill) continue;
-
-          if (!seenSkills.has(skill)) { seenSkills.add(skill); skillOrder.push(skill); }
-          if (!seenEmps.has(empId)) { seenEmps.add(empId); empOrder.push(empId); }
-          if (!newMatrix[empId]) newMatrix[empId] = {};
-          newMatrix[empId][skill] = level;
-        }
-
-        const newEmpList = empOrder.map((empId) => {
-          const info = empInfo.get(empId) ?? { name: empId, dept: "" };
-          return { empId, name: info.name, dept: info.dept };
-        });
-
-        setEmpList(newEmpList);
-        setSkillList(skillOrder);
-        setMatrix(newMatrix);
-        setOrigMatrix(JSON.parse(JSON.stringify(newMatrix)));
+        setRows(parsed);
+        setSelectedIds(new Set());
       })
       .catch(() => {
         if (!isMounted) return;
-        setEmpList([]);
-        setSkillList([]);
-        setMatrix({});
-        setOrigMatrix({});
+        setRows([]);
       })
       .finally(() => {
         if (!isMounted) return;
@@ -2407,269 +2402,219 @@ function SkillMatrixPage({
     return () => { isMounted = false; };
   }, [activeFile?.file_path, employeeMasterFile?.file_path]);
 
-  const deptOptions = Array.from(new Set(empList.map((e) => e.dept).filter(Boolean))).sort();
+  const deptOptions = Array.from(new Set(rows.map((r) => r.dept).filter(Boolean))).sort();
+  const skillOptions = Array.from(new Set(rows.map((r) => r.skill).filter(Boolean))).sort();
   const normalizedQuery = query.trim().toLowerCase();
-  const filteredEmps = empList.filter((emp) => {
-    if (selectedDept !== "all" && emp.dept !== selectedDept) return false;
+  const filteredRows = rows.filter((row) => {
+    if (selectedDept !== "all" && row.dept !== selectedDept) return false;
+    if (selectedSkill !== "all" && row.skill !== selectedSkill) return false;
     if (!normalizedQuery) return true;
-    return [emp.empId, emp.name, emp.dept].some((v) =>
+    return [row.empId, row.name, row.dept, row.skill].some((v) =>
       v.toLowerCase().includes(normalizedQuery),
     );
   });
 
-  const modifiedCount = empList.filter((emp) =>
-    skillList.some(
-      (skill) =>
-        (matrix[emp.empId]?.[skill] ?? 0) !== (origMatrix[emp.empId]?.[skill] ?? 0),
-    ),
-  ).length;
+  const modifiedIds = new Set(
+    rows.filter((r) => r.level !== r.origLevel).map((r) => r.id),
+  );
+  const allFilteredSelected =
+    filteredRows.length > 0 && filteredRows.every((r) => selectedIds.has(r.id));
 
-  function updateLevel(empId: string, skill: string, level: number) {
-    setMatrix((prev) => ({
-      ...prev,
-      [empId]: { ...(prev[empId] ?? {}), [skill]: level },
-    }));
+  function updateRow(id: string, level: number) {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, level } : r)));
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (allFilteredSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredRows.forEach((r) => next.delete(r.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredRows.forEach((r) => next.add(r.id));
+        return next;
+      });
+    }
+  }
+
+  function applyBulk() {
+    if (!bulkLevel) return;
+    const level = Number(bulkLevel);
+    setRows((prev) =>
+      prev.map((r) => (selectedIds.has(r.id) ? { ...r, level } : r)),
+    );
+    setSelectedIds(new Set());
+    setBulkLevel("");
   }
 
   async function handleSave() {
     setIsSaving(true);
     try {
-      const flatRows: SkillMatrixSaveRow[] = [];
-      for (const emp of empList) {
-        for (const skill of skillList) {
-          const level = matrix[emp.empId]?.[skill] ?? 0;
-          if (level > 0) flatRows.push({ empId: emp.empId, skill, level });
-        }
-      }
+      const flatRows = rows
+        .filter((r) => r.level > 0)
+        .map((r) => ({ empId: r.empId, skill: r.skill, level: r.level }));
       await saveSkillMatrixRows(flatRows);
-      setOrigMatrix(JSON.parse(JSON.stringify(matrix)));
+      setRows((prev) => prev.map((r) => ({ ...r, origLevel: r.level })));
     } finally {
       setIsSaving(false);
     }
   }
 
-  function assignSkill(empId: string, skill: string) {
-    if (!skillList.includes(skill)) setSkillList((prev) => [...prev, skill]);
-    setMatrix((prev) => ({
-      ...prev,
-      [empId]: { ...(prev[empId] ?? {}), [skill]: 1 },
-    }));
-    setAddSkillOpen(false);
-    setNewSkillInput("");
-  }
-
-  const selectedEmp = empList.find((e) => e.empId === selectedEmpId) ?? null;
-
-  const levelColors = ["#e5e7eb", "#fecaca", "#fed7aa", "#fef08a", "#bbf7d0", "#34d399"];
-  const levelTextColors = ["#6b7280", "#991b1b", "#92400e", "#713f12", "#166534", "#064e3b"];
+  const levelBg: Record<number, string> = {
+    1: "#fecaca", 2: "#fed7aa", 3: "#fef08a", 4: "#bbf7d0", 5: "#34d399",
+  };
 
   return (
-    <section className="panel sl-layout">
-      {/* ── LEFT: employee list ── */}
-      <aside className="sl-sidebar">
-        <div className="sl-sidebar-head">
-          <div className="sl-search-row">
-            <input
-              aria-label="ค้นหาพนักงาน"
-              placeholder="ค้นหา รหัส ชื่อ แผนก"
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
-              <option value="all">ทุกแผนก</option>
-              {Array.from(new Set(empList.map((e) => e.dept).filter(Boolean)))
-                .sort()
-                .map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </div>
-          <div className="sl-emp-count">
-            {filteredEmps.length} / {empList.length} คน
-            {modifiedCount > 0 && (
-              <span className="modified-badge">{modifiedCount} แก้ไข</span>
-            )}
-          </div>
+    <section className="panel dayoff-editor-panel">
+      <div className="panel-title-row">
+        <div>
+          <h3>Skill Matrix</h3>
+          <p>แก้ไขระดับทักษะรายคน — กรอง Skill เพื่อแก้หลายคนพร้อมกัน หรือเลือกหลายแถว bulk edit</p>
         </div>
+        <button
+          className="primary-button"
+          disabled={!rows.length || isSaving}
+          onClick={handleSave}
+          type="button"
+        >
+          <UploadCloud size={17} />
+          {isSaving ? "Saving..." : `Save${modifiedIds.size > 0 ? ` (${modifiedIds.size} แก้ไข)` : ""}`}
+        </button>
+      </div>
 
-        <ul className="sl-emp-list">
-          {isLoading ? (
-            <li className="sl-emp-empty">Loading...</li>
-          ) : !activeFile ? (
-            <li className="sl-emp-empty">อัปโหลด Skill Matrix master ก่อน</li>
-          ) : filteredEmps.length === 0 ? (
-            <li className="sl-emp-empty">ไม่พบข้อมูลที่ค้นหา</li>
-          ) : (
-            filteredEmps.map((emp) => {
-              const isModified = skillList.some(
-                (s) =>
-                  (matrix[emp.empId]?.[s] ?? 0) !== (origMatrix[emp.empId]?.[s] ?? 0),
-              );
-              const skillCount = skillList.filter(
-                (s) => (matrix[emp.empId]?.[s] ?? 0) > 0,
-              ).length;
-              return (
-                <li key={emp.empId}>
-                  <button
-                    className={`sl-emp-item ${selectedEmpId === emp.empId ? "active" : ""} ${isModified ? "modified" : ""}`}
-                    onClick={() => {
-                      setSelectedEmpId(emp.empId);
-                      setAddSkillOpen(false);
-                      setNewSkillInput("");
-                    }}
-                    type="button"
-                  >
-                    <div className="sl-emp-avatar">{emp.name.charAt(0) || "?"}</div>
-                    <div className="sl-emp-info">
-                      <strong>{emp.name}</strong>
-                      <span>{emp.empId}{emp.dept ? ` · ${emp.dept}` : ""}</span>
-                    </div>
-                    <div className="sl-emp-meta">
-                      <span className="sl-skill-count">{skillCount}</span>
-                      {isModified && <span className="sl-modified-dot" />}
-                    </div>
-                  </button>
-                </li>
-              );
-            })
-          )}
-        </ul>
-      </aside>
+      <div className="table-filters dayoff-editor-filters" style={{ gridTemplateColumns: "1fr 180px 180px auto" }}>
+        <input
+          aria-label="ค้นหา skill matrix"
+          placeholder="ค้นหา รหัส ชื่อ แผนก ทักษะ"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
+          <option value="all">ทุกแผนก</option>
+          {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select value={selectedSkill} onChange={(e) => setSelectedSkill(e.target.value)}>
+          <option value="all">ทุก Skill</option>
+          {skillOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <span className="dayoff-count">
+          {filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} แถว
+          {modifiedIds.size > 0 && <span className="modified-badge">{modifiedIds.size} แก้ไข</span>}
+        </span>
+      </div>
 
-      {/* ── RIGHT: skill detail ── */}
-      <section className="sl-detail">
-        {!selectedEmp ? (
-          <div className="sl-detail-empty">
-            <LayoutGrid size={40} strokeWidth={1.2} />
-            <p>เลือกพนักงานทางซ้ายเพื่อดูและแก้ไข Skill</p>
-          </div>
-        ) : (
-          <>
-            <div className="sl-detail-header">
-              <div className="sl-detail-emp">
-                <div className="sl-detail-avatar">{selectedEmp.name.charAt(0) || "?"}</div>
-                <div>
-                  <strong>{selectedEmp.name}</strong>
-                  <span>{selectedEmp.empId}{selectedEmp.dept ? ` · ${selectedEmp.dept}` : ""}</span>
-                </div>
-              </div>
-              <button
-                className="primary-button"
-                disabled={isSaving || !empList.length}
-                onClick={handleSave}
-                type="button"
+      {selectedIds.size > 0 && (
+        <div className="dayoff-bulk-bar">
+          <span className="bulk-count">{selectedIds.size} แถวที่เลือก</span>
+          <select value={bulkLevel} onChange={(e) => setBulkLevel(e.target.value)}>
+            <option value="">เปลี่ยน Level...</option>
+            <option value="0">0 — ไม่มี</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+          <button
+            className="primary-button"
+            disabled={!bulkLevel}
+            onClick={applyBulk}
+            style={{ height: 32, fontSize: 12, padding: "0 14px" }}
+            type="button"
+          >
+            Apply
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => setSelectedIds(new Set())}
+            style={{ height: 32, fontSize: 12, padding: "0 14px" }}
+            type="button"
+          >
+            ยกเลิก
+          </button>
+        </div>
+      )}
+
+      <div className="dayoff-editor-table">
+        <table className="table">
+          <thead>
+            <tr>
+              <th style={{ width: 36 }}>
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleSelectAll}
+                  title="เลือกทั้งหมดในมุมมองนี้"
+                />
+              </th>
+              <th>Emp ID</th>
+              <th>ชื่อ</th>
+              <th>แผนก</th>
+              <th>Skill</th>
+              <th>Level</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRows.map((row) => (
+              <tr
+                key={row.id}
+                className={[
+                  selectedIds.has(row.id) ? "row-selected" : "",
+                  modifiedIds.has(row.id) ? "row-modified" : "",
+                ].filter(Boolean).join(" ")}
               >
-                <UploadCloud size={16} />
-                {isSaving
-                  ? "Saving..."
-                  : `Save${modifiedCount > 0 ? ` (${modifiedCount} แก้ไข)` : ""}`}
-              </button>
-            </div>
-
-            <div className="sl-skill-list">
-              {skillList.length === 0 && (
-                <p className="sl-no-skills">ยังไม่มี skill ในระบบ — กด "+ เพิ่ม Skill" เพื่อสร้างใหม่</p>
-              )}
-              {skillList.map((skill) => {
-                const level = matrix[selectedEmpId!]?.[skill] ?? 0;
-                const origLevel = origMatrix[selectedEmpId!]?.[skill] ?? 0;
-                const changed = level !== origLevel;
-                return (
-                  <div key={skill} className={`sl-skill-row${changed ? " changed" : ""}`}>
-                    <span className="sl-skill-name">{skill}</span>
-                    <div className="sl-level-btns">
-                      {[1, 2, 3, 4, 5].map((v) => (
-                        <button
-                          key={v}
-                          className={`sl-level-btn${level === v ? " active" : ""}`}
-                          style={
-                            level === v
-                              ? {
-                                  background: levelColors[v],
-                                  color: levelTextColors[v],
-                                  borderColor: levelColors[v],
-                                }
-                              : {}
-                          }
-                          onClick={() =>
-                            updateLevel(selectedEmpId!, skill, level === v ? 0 : v)
-                          }
-                          title={`ระดับ ${v}`}
-                          type="button"
-                        >
-                          {v}
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      className="sl-remove-btn"
-                      onClick={() => updateLevel(selectedEmpId!, skill, 0)}
-                      title="ลบ skill นี้"
-                      type="button"
-                    >
-                      ×
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Add new skill */}
-            <div className="sl-add-area">
-              {addSkillOpen ? (
-                <div className="sl-add-panel">
+                <td>
                   <input
-                    autoFocus
-                    className="sl-add-input"
-                    placeholder="พิมพ์ชื่อ skill ใหม่ แล้วกด Enter..."
-                    value={newSkillInput}
-                    onChange={(e) => setNewSkillInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") {
-                        setAddSkillOpen(false);
-                        setNewSkillInput("");
-                      }
-                      if (e.key === "Enter") {
-                        const trimmed = newSkillInput.trim();
-                        if (trimmed) assignSkill(selectedEmpId!, trimmed);
-                      }
-                    }}
+                    type="checkbox"
+                    checked={selectedIds.has(row.id)}
+                    onChange={() => toggleSelect(row.id)}
                   />
-                  {newSkillInput.trim() && (
-                    <div className="sl-add-options">
-                      {skillList.includes(newSkillInput.trim()) ? (
-                        <p className="sl-add-empty">"{newSkillInput.trim()}" มีอยู่แล้วในรายการด้านบน</p>
-                      ) : (
-                        <button
-                          className="sl-add-option new"
-                          onClick={() => assignSkill(selectedEmpId!, newSkillInput.trim())}
-                          type="button"
-                        >
-                          + สร้าง "{newSkillInput.trim()}"
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  <button
-                    className="sl-add-close"
-                    onClick={() => { setAddSkillOpen(false); setNewSkillInput(""); }}
-                    type="button"
+                </td>
+                <td>{row.empId}</td>
+                <td>{row.name}</td>
+                <td className="dept-cell">{row.dept || "—"}</td>
+                <td>{row.skill}</td>
+                <td>
+                  <select
+                    className="skill-level-cell"
+                    style={{ background: levelBg[row.level] ?? "" }}
+                    value={row.level}
+                    onChange={(e) => updateRow(row.id, Number(e.target.value))}
                   >
-                    ปิด
-                  </button>
-                </div>
-              ) : (
-                <button
-                  className="sl-add-trigger"
-                  onClick={() => setAddSkillOpen(true)}
-                  type="button"
-                >
-                  + เพิ่ม Skill ใหม่
-                </button>
-              )}
-            </div>
-          </>
-        )}
-      </section>
+                    <option value={0}>— (0)</option>
+                    <option value={1}>1</option>
+                    <option value={2}>2</option>
+                    <option value={3}>3</option>
+                    <option value={4}>4</option>
+                    <option value={5}>5</option>
+                  </select>
+                </td>
+              </tr>
+            ))}
+            {!activeFile ? (
+              <tr><td colSpan={6}>อัปโหลด Skill Matrix master ก่อน จึงจะแก้ไขในหน้านี้ได้</td></tr>
+            ) : null}
+            {activeFile && isLoading ? (
+              <tr><td colSpan={6}>Loading Skill Matrix...</td></tr>
+            ) : null}
+            {activeFile && !isLoading && filteredRows.length === 0 ? (
+              <tr><td colSpan={6}>ไม่พบข้อมูลที่ค้นหา</td></tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

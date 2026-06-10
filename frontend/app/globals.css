@@ -1608,6 +1608,17 @@ button {
   overflow: auto;
 }
 
+.skill-level-cell {
+  width: 90px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-weight: 600;
+  background: #ffffff;
+  transition: background 0.1s;
+}
+
 .dayoff-editor-table select {
   width: 100%;
   min-width: 96px;
