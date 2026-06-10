@@ -2325,11 +2325,16 @@ function SkillMatrixPage({
   saveSkillMatrixRows: (rows: SkillMatrixSaveRow[]) => Promise<void>;
 }) {
   const [rows, setRows] = useState<SkillFlatRow[]>([]);
+  const [empInfoMap, setEmpInfoMap] = useState<Map<string, { name: string; dept: string }>>(new Map());
   const [query, setQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("all");
   const [selectedSkill, setSelectedSkill] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLevel, setBulkLevel] = useState("");
+  const [addEmpId, setAddEmpId] = useState("");
+  const [addSkill, setAddSkill] = useState("");
+  const [addLevel, setAddLevel] = useState(1);
+  const [addOpen, setAddOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -2388,6 +2393,7 @@ function SkillMatrixPage({
           .filter((r) => r.empId && r.skill);
 
         setRows(parsed);
+        setEmpInfoMap(empInfo);
         setSelectedIds(new Set());
       })
       .catch(() => {
@@ -2469,6 +2475,39 @@ function SkillMatrixPage({
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function addRow() {
+    const empId = addEmpId.trim();
+    const skill = addSkill.trim();
+    if (!empId || !skill) return;
+
+    const existing = rows.find((r) => r.empId === empId && r.skill === skill);
+    if (existing) {
+      setRows((prev) =>
+        prev.map((r) => (r.empId === empId && r.skill === skill ? { ...r, level: addLevel } : r)),
+      );
+    } else {
+      const info = empInfoMap.get(empId) ??
+        rows.find((r) => r.empId === empId) ??
+        { name: empId, dept: "" };
+      setRows((prev) => [
+        ...prev,
+        {
+          id: `add-${Date.now()}-${empId}-${skill}`,
+          empId,
+          name: info.name,
+          dept: info.dept,
+          skill,
+          level: addLevel,
+          origLevel: 0,
+        },
+      ]);
+    }
+    setAddEmpId("");
+    setAddSkill("");
+    setAddLevel(1);
+    setAddOpen(false);
   }
 
   const levelBg: Record<number, string> = {
@@ -2615,6 +2654,74 @@ function SkillMatrixPage({
           </tbody>
         </table>
       </div>
+
+      {/* Add row */}
+      {activeFile && (
+        <div className="skill-add-row-bar">
+          {addOpen ? (
+            <>
+              <input
+                className="skill-add-empid"
+                list="skill-emp-datalist"
+                placeholder="Emp ID หรือชื่อ..."
+                value={addEmpId}
+                onChange={(e) => setAddEmpId(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") setAddOpen(false); }}
+              />
+              <datalist id="skill-emp-datalist">
+                {Array.from(new Set(rows.map((r) => r.empId))).map((id) => {
+                  const r = rows.find((x) => x.empId === id);
+                  return <option key={id} value={id}>{r?.name ?? id}</option>;
+                })}
+              </datalist>
+              <input
+                className="skill-add-skillname"
+                list="skill-name-datalist"
+                placeholder="ชื่อ Skill..."
+                value={addSkill}
+                onChange={(e) => setAddSkill(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addRow();
+                  if (e.key === "Escape") setAddOpen(false);
+                }}
+              />
+              <datalist id="skill-name-datalist">
+                {Array.from(new Set(rows.map((r) => r.skill))).sort().map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+              <select
+                value={addLevel}
+                onChange={(e) => setAddLevel(Number(e.target.value))}
+                style={{ background: levelBg[addLevel] ?? "", height: 34, border: "1px solid var(--line)", borderRadius: 6, padding: "0 8px", fontWeight: 600 }}
+              >
+                {[1, 2, 3, 4, 5].map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+              <button
+                className="primary-button"
+                disabled={!addEmpId.trim() || !addSkill.trim()}
+                onClick={addRow}
+                style={{ height: 34, fontSize: 13, padding: "0 16px" }}
+                type="button"
+              >
+                เพิ่ม
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => { setAddOpen(false); setAddEmpId(""); setAddSkill(""); }}
+                style={{ height: 34, fontSize: 13, padding: "0 12px" }}
+                type="button"
+              >
+                ยกเลิก
+              </button>
+            </>
+          ) : (
+            <button className="skill-add-row-btn" onClick={() => setAddOpen(true)} type="button">
+              + เพิ่ม Skill ให้พนักงาน
+            </button>
+          )}
+        </div>
+      )}
     </section>
   );
 }
