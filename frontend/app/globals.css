@@ -2075,8 +2075,9 @@ button {
 /* ── Main grid: dept bars | overview ── */
 .report-grid {
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: 1.5fr 1fr;
   gap: 14px;
+  min-width: 0;
 }
 
 .report-card {
@@ -2121,23 +2122,106 @@ button {
 .report-overview-card h3 {
   font-size: 15px;
   font-weight: 700;
-  margin: 0 0 14px;
+  margin: 0;
   color: #1e293b;
 }
 
-.overview-donut-row {
+.sup-report-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line);
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.sup-report-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sup-report-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.sup-report-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.sup-report-stat-val {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.sup-report-stat-lbl {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sup-report-dept-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.sup-dept-row {
+  display: grid;
+  grid-template-columns: 1fr 120px 44px 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.sup-dept-row.done { background: #f0fdf4; }
+.sup-dept-row.pending { background: #fffbeb; }
+
+.sup-dept-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sup-dept-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sup-dept-counts {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .late-dept-breakdown {
   padding-top: 14px;
+  border-top: 1px solid var(--line);
   flex: 1;
   overflow-y: auto;
-  max-height: 200px;
+  max-height: 160px;
 }
 
 .late-dept-breakdown h4 {

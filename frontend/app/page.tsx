@@ -3520,13 +3520,32 @@ function ReportDashboard({
   const scopedAbsent = scopedRecords.filter((row) => row.status === "Absent").length;
   const scopedDayoff = scopedRecords.filter((row) => row.status === "DayOff").length;
   const scopedCameToWork = scopedPresent + scopedLate;
+  const activeTotal = scopedTotal - scopedDayoff; // exclude DayOff from % denominator
   const lateRate = scopedCameToWork
     ? ((scopedLate / scopedCameToWork) * 100).toFixed(1)
     : "0.0";
-  const maxDeptTotal = Math.max(...data.deptRows.map((row) => row.total), 1);
-  const presentPercent = scopedTotal ? (scopedPresent / scopedTotal) * 100 : 0;
-  const latePercent = scopedTotal ? (scopedLate / scopedTotal) * 100 : 0;
-  const absentPercent = scopedTotal ? (scopedAbsent / scopedTotal) * 100 : 0;
+  const maxDeptTotal = Math.max(...data.deptRows.map((row) => row.present + row.late + row.absent), 1);
+  const presentPercent = activeTotal ? (scopedPresent / activeTotal) * 100 : 0;
+  const latePercent = activeTotal ? (scopedLate / activeTotal) * 100 : 0;
+  const absentPercent = activeTotal ? (scopedAbsent / activeTotal) * 100 : 0;
+  const warnedOnDate = new Set(
+    Object.entries(warnDates)
+      .filter(([, dates]) => data.isoTargetDate ? dates.includes(data.isoTargetDate) : false)
+      .map(([id]) => id),
+  );
+  const supDeptMap = new Map<string, { late: number; warned: number }>();
+  for (const row of data.lateRows) {
+    const s = supDeptMap.get(row.dept) ?? { late: 0, warned: 0 };
+    s.late += 1;
+    if (warnedOnDate.has(row.empId)) s.warned += 1;
+    supDeptMap.set(row.dept, s);
+  }
+  const supDeptRows = Array.from(supDeptMap.entries())
+    .map(([dept, s]) => ({ dept, ...s, pending: s.late - s.warned }))
+    .sort((a, b) => b.pending - a.pending);
+  const supTotalLate = data.lateRows.length;
+  const supTotalWarned = data.lateRows.filter((r) => warnedOnDate.has(r.empId)).length;
+  const supPct = supTotalLate ? Math.round((supTotalWarned / supTotalLate) * 100) : 0;
   const lateDeptRows = Array.from(
     data.lateRows.reduce((map, row) => {
       map.set(row.dept, (map.get(row.dept) ?? 0) + 1);
@@ -3561,7 +3580,7 @@ function ReportDashboard({
           value={scopedTotal.toLocaleString()}
           unit="คน"
           note={selectedDeptLabel}
-          progress={scopedTotal ? Math.round((scopedCameToWork / scopedTotal) * 100) : 0}
+          progress={activeTotal ? Math.round((scopedCameToWork / activeTotal) * 100) : 0}
         />
         <KpiCard
           icon={<CheckCircle2 size={34} />}
@@ -3569,7 +3588,7 @@ function ReportDashboard({
           label="มาทำงาน"
           value={scopedPresent.toLocaleString()}
           unit="คน"
-          note={`${presentPercent.toFixed(1)}% ของทั้งหมด`}
+          note={`${presentPercent.toFixed(1)}% ของคนที่ต้องมา`}
         />
         <KpiCard
           icon={<Clock size={34} />}
@@ -3585,7 +3604,7 @@ function ReportDashboard({
           label="ขาดงาน"
           value={scopedAbsent.toLocaleString()}
           unit="คน"
-          note={`${absentPercent.toFixed(1)}% ของทั้งหมด`}
+          note={`${absentPercent.toFixed(1)}% ของคนที่ต้องมา`}
         />
         <DonutKpiCard
           present={scopedPresent}
@@ -3613,11 +3632,11 @@ function ReportDashboard({
             <span><i className="present" />Present</span>
             <span><i className="late" />Late</span>
             <span><i className="absent" />Absent</span>
-            <span><i className="dayoff" />Day Off</span>
           </div>
           <div className="stacked-bars">
             {data.deptRows.map((row, index) => {
-              const deptRate = row.total > 0 ? Math.round(((row.present + row.late) / row.total) * 100) : 0;
+              const deptActive = row.present + row.late + row.absent;
+              const deptRate = deptActive > 0 ? Math.round(((row.present + row.late) / deptActive) * 100) : 0;
               const rateTone = deptRate >= 95 ? "good" : deptRate >= 85 ? "warn" : "bad";
               return (
                 <button
@@ -3635,15 +3654,13 @@ function ReportDashboard({
                     <i className="present" style={{ width: `${(row.present / maxDeptTotal) * 100}%` }} />
                     <i className="late" style={{ width: `${(row.late / maxDeptTotal) * 100}%` }} />
                     <i className="absent" style={{ width: `${(row.absent / maxDeptTotal) * 100}%` }} />
-                    <i className="dayoff" style={{ width: `${(row.dayoff / maxDeptTotal) * 100}%` }} />
                   </div>
                   <span className={`dept-present-rate ${rateTone}`}>{deptRate}%</span>
                   <div className="stacked-row-end">
-                    <strong>{row.total}</strong>
+                    <strong>{deptActive}</strong>
                     <span className="stacked-mini-badges">
                       {row.late > 0 ? <span className="mini-badge late">{row.late}L</span> : null}
                       {row.absent > 0 ? <span className="mini-badge absent">{row.absent}A</span> : null}
-                      {row.dayoff > 0 ? <span className="mini-badge dayoff">{row.dayoff}D</span> : null}
                     </span>
                   </div>
                 </button>
@@ -3654,28 +3671,63 @@ function ReportDashboard({
         </div>
 
         <div className="panel report-overview-card">
-          <h3>ภาพรวมการเข้างาน{selectedDept !== "all" ? ` · ${selectedDept}` : ""}</h3>
-          <div className="overview-donut-row">
-            <div
-              className="report-donut"
-              style={{
-                background: `conic-gradient(#10b981 0 ${presentPercent}%, #f59e0b ${presentPercent}% ${presentPercent + latePercent}%, #dc2626 ${presentPercent + latePercent}% 100%)`,
-              }}
-            >
-              <div>
-                <strong>{scopedTotal}</strong>
-                <span>คน</span>
-              </div>
+          <div className="sup-report-header">
+            <h3>สถานะการตักเตือน{selectedDept !== "all" ? ` · ${selectedDept}` : ""}</h3>
+            <span className={`sup-overall-badge ${supTotalLate === 0 || supTotalLate === supTotalWarned ? "done" : "pending"}`}>
+              {supTotalLate === 0
+                ? "ไม่มีคนมาสาย"
+                : supTotalLate === supTotalWarned
+                  ? "✓ ครบแล้ว"
+                  : `⚠ ค้าง ${supTotalLate - supTotalWarned}`}
+            </span>
+          </div>
+          <div className="sup-report-progress">
+            <div className="sup-progress-bar">
+              <div className="sup-progress-fill" style={{ width: `${supPct}%` }} />
             </div>
-            <div className="report-legend">
-              <LegendRow color="green" label="Present" value={String(scopedPresent)} percent={`${presentPercent.toFixed(1)}%`} />
-              <LegendRow color="amber" label="Late" value={String(scopedLate)} percent={`${latePercent.toFixed(1)}%`} />
-              <LegendRow color="red" label="Absent" value={String(scopedAbsent)} percent={`${absentPercent.toFixed(1)}%`} />
+            <span className="sup-progress-pct">{supPct}%</span>
+          </div>
+          <div className="sup-report-stats">
+            <div className="sup-report-stat-item">
+              <span className="sup-report-stat-val" style={{ color: "#10b981" }}>{supTotalWarned}</span>
+              <span className="sup-report-stat-lbl">เตือนแล้ว</span>
             </div>
+            <div className="sup-report-stat-item">
+              <span className="sup-report-stat-val" style={{ color: "#f59e0b" }}>{supTotalLate}</span>
+              <span className="sup-report-stat-lbl">มาสายทั้งหมด</span>
+            </div>
+            <div className="sup-report-stat-item">
+              <span className="sup-report-stat-val" style={{ color: supTotalLate - supTotalWarned > 0 ? "#ef4444" : "#94a3b8" }}>
+                {supTotalLate - supTotalWarned}
+              </span>
+              <span className="sup-report-stat-lbl">ยังค้าง</span>
+            </div>
+          </div>
+          <div className="sup-report-dept-list">
+            {supDeptRows.map((row) => {
+              const dPct = row.late ? Math.round((row.warned / row.late) * 100) : 100;
+              const done = row.pending === 0;
+              return (
+                <div key={row.dept} className={`sup-dept-row ${done ? "done" : "pending"}`}>
+                  <span className="sup-dept-name">{row.dept}</span>
+                  <div className="sup-dept-bar-wrap">
+                    <div className="sup-mini-bar">
+                      <div className="sup-mini-fill" style={{ width: `${dPct}%` }} />
+                    </div>
+                    <span className="sup-mini-pct">{dPct}%</span>
+                  </div>
+                  <span className="sup-dept-counts">{row.warned}/{row.late}</span>
+                  <span className={`sup-status-badge ${done ? "done" : "pending"}`}>
+                    {done ? "✓" : `${row.pending}`}
+                  </span>
+                </div>
+              );
+            })}
+            {supDeptRows.length === 0 && <p className="empty-copy">ไม่มีพนักงานมาสาย</p>}
           </div>
           <div className="late-dept-breakdown">
             <h4>หน่วยงานที่มาสาย</h4>
-            {lateDeptRows.slice(0, 6).map((row, index) => (
+            {lateDeptRows.slice(0, 5).map((row, index) => (
               <div className="late-dept-row" key={row.dept}>
                 <i style={{ background: pieColors[index % pieColors.length] }} />
                 <span className="late-dept-name">{row.dept}</span>
