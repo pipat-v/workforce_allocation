@@ -55,6 +55,7 @@ type DayoffShiftEditorRow = {
   dept: string;
   dayoff: string;
   shift: string;
+  shiftStart: string;
   raw: Record<string, unknown>;
 };
 
@@ -410,6 +411,7 @@ export default function Home() {
       "ชื่อ นามสกุล": row.name,
       "วันหยุด\nประจำสัปดาห์": row.dayoff,
       "อยู่กะไหน": row.shift,
+      "เวลาเข้างาน": row.shiftStart,
     }));
     const worksheet = XLSX.utils.json_to_sheet(workbookRows);
     const workbook = XLSX.utils.book_new();
@@ -1357,6 +1359,7 @@ function toDayoffShiftEditorRow(row: Record<string, unknown>, index: number): Da
   const firstName = String(row["First Name (Local)"] ?? "").trim();
   const lastName = String(row["Last Name (Local)"] ?? "").trim();
   const fallbackName = String(row["ชื่อ นามสกุล"] ?? row["Employee Name"] ?? row["Name"] ?? "").trim();
+  const shiftStartRaw = row["เวลาเข้างาน"] ?? row["เวลาเข้า"] ?? row["shift_start"];
   return {
     id: `${empId || "row"}-${index}`,
     empId,
@@ -1364,6 +1367,7 @@ function toDayoffShiftEditorRow(row: Record<string, unknown>, index: number): Da
     dept: findRowCol(row, "หน่วยงาน", "Org. Unit Description", "Name (Section)", "แผนก", "Department"),
     dayoff: findRowCol(row, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"),
     shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
+    shiftStart: normalizeTimeText(shiftStartRaw),
     raw: row,
   };
 }
@@ -1382,6 +1386,15 @@ function normalizeShiftLabel(value: unknown) {
 
 function normalizeShiftKey(value: unknown) {
   return normalizeShiftLabel(value).replace(/\s+/g, "");
+}
+
+function addHoursToTime(timeStr: string, hours: number): string {
+  if (!timeStr) return "";
+  const [h, m] = timeStr.split(":").map(Number);
+  const total = h * 60 + m + hours * 60;
+  const nh = Math.floor(total / 60) % 24;
+  const nm = total % 60;
+  return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
 }
 
 function isEmployeeDayOff(dayoff: string | undefined, targetDate: Date) {
@@ -2123,7 +2136,7 @@ function DayoffShiftEditor({
     rows
       .filter((row) => {
         const orig = originalRows.find((r) => r.id === row.id);
-        return orig && (orig.dayoff !== row.dayoff || orig.shift !== row.shift);
+        return orig && (orig.dayoff !== row.dayoff || orig.shift !== row.shift || orig.shiftStart !== row.shiftStart);
       })
       .map((r) => r.id),
   );
@@ -2181,15 +2194,12 @@ function DayoffShiftEditor({
     return () => { isMounted = false; };
   }, [activeFile?.file_path, employeeMasterFile?.file_path]);
 
-  function updateRow(id: string, field: "dayoff" | "shift", value: string) {
+  function updateRow(id: string, field: "dayoff" | "shift" | "shiftStart", value: string) {
+    const rawKey = field === "dayoff" ? "วันหยุด\nประจำสัปดาห์" : field === "shift" ? "อยู่กะไหน" : "เวลาเข้างาน";
     setRows((current) =>
       current.map((row) =>
         row.id === id
-          ? {
-              ...row,
-              [field]: value,
-              raw: { ...row.raw, [field === "dayoff" ? "วันหยุด\nประจำสัปดาห์" : "อยู่กะไหน"]: value },
-            }
+          ? { ...row, [field]: value, raw: { ...row.raw, [rawKey]: value } }
           : row,
       ),
     );
@@ -2355,6 +2365,8 @@ function DayoffShiftEditor({
               <th>แผนก</th>
               <th>Dayoff</th>
               <th>Shift</th>
+              <th>เวลาเข้า</th>
+              <th>เวลาออก</th>
             </tr>
           </thead>
           <tbody>
@@ -2393,16 +2405,27 @@ function DayoffShiftEditor({
                     {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </td>
+                <td>
+                  <input
+                    className="shift-time-input"
+                    type="time"
+                    value={row.shiftStart}
+                    onChange={(e) => updateRow(row.id, "shiftStart", e.target.value)}
+                  />
+                </td>
+                <td className="shift-end-cell">
+                  {row.shiftStart ? addHoursToTime(row.shiftStart, 9) : "—"}
+                </td>
               </tr>
             ))}
             {!activeFile ? (
-              <tr><td colSpan={6}>อัปโหลด Dayoff & Shift master ก่อน จึงจะแก้ไขในหน้านี้ได้</td></tr>
+              <tr><td colSpan={8}>อัปโหลด Dayoff & Shift master ก่อน จึงจะแก้ไขในหน้านี้ได้</td></tr>
             ) : null}
             {activeFile && isLoading ? (
-              <tr><td colSpan={6}>Loading Dayoff & Shift...</td></tr>
+              <tr><td colSpan={8}>Loading Dayoff & Shift...</td></tr>
             ) : null}
             {activeFile && !isLoading && filteredRows.length === 0 ? (
-              <tr><td colSpan={6}>ไม่พบข้อมูลที่ค้นหา</td></tr>
+              <tr><td colSpan={8}>ไม่พบข้อมูลที่ค้นหา</td></tr>
             ) : null}
           </tbody>
         </table>

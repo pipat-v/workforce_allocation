@@ -1693,6 +1693,31 @@ button {
   transition: background 0.1s;
 }
 
+.shift-time-input {
+  width: 100%;
+  min-width: 88px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 13px;
+  background: #fff;
+  color: var(--text);
+}
+
+.shift-time-input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px #dbeafe;
+}
+
+.shift-end-cell {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .dayoff-editor-table select {
   width: 100%;
   min-width: 96px;
