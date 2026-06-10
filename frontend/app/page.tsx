@@ -1754,6 +1754,7 @@ function DashboardPanels({
                   <th>หน่วยงาน</th>
                   <th>เข้างาน</th>
                   <th>สาย</th>
+                  <th>สะสมเดือนนี้</th>
                   <th>เตือน</th>
                 </tr>
               </thead>
@@ -1761,12 +1762,20 @@ function DashboardPanels({
                 {dashboardLateRows.map((row) => {
                   const warned = warnedIds.has(row.empId);
                   const pending = warnPending.has(row.empId);
+                  const monthlyLate = monthlyLateCounts[row.empId] ?? 0;
+                  const riskLevel = monthlyLate >= 5 ? "fire" : monthlyLate >= 3 ? "warn" : "";
                   return (
                   <tr key={`dashboard-late-${row.empId}-${row.scanIn}`} className={warned ? "row-warned" : ""}>
                     <td>{row.name}</td>
                     <td><span className="dept-chip">{row.dept}</span></td>
                     <td>{row.scanIn}</td>
                     <td><span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span></td>
+                    <td>
+                      <span className={`monthly-count-badge${riskLevel ? ` ${riskLevel}` : ""}`}>
+                        {monthlyLate} ครั้ง
+                        {riskLevel === "fire" ? " 🔴" : riskLevel === "warn" ? " 🟡" : ""}
+                      </span>
+                    </td>
                     <td>
                       <button
                         className={`warn-btn${warned ? " warned" : ""}`}
@@ -1782,7 +1791,7 @@ function DashboardPanels({
                   );
                 })}
                 {dashboardLateRows.length === 0 ? (
-                  <tr><td colSpan={5}>ยังไม่มีข้อมูลคนมาสาย</td></tr>
+                  <tr><td colSpan={6}>ยังไม่มีข้อมูลคนมาสาย</td></tr>
                 ) : null}
               </tbody>
             </table>
