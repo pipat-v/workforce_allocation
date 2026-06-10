@@ -1584,7 +1584,7 @@ button {
 }
 
 .dayoff-editor-filters {
-  grid-template-columns: minmax(220px, 1fr) 200px auto;
+  grid-template-columns: minmax(200px, 1fr) 170px 190px 150px auto;
   align-items: center;
 }
 

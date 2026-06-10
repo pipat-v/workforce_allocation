@@ -2076,6 +2076,8 @@ function DayoffShiftEditor({
   const [originalRows, setOriginalRows] = useState<DayoffShiftEditorRow[]>([]);
   const [query, setQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("all");
+  const [selectedDayoff, setSelectedDayoff] = useState("all");
+  const [selectedShift, setSelectedShift] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDayoff, setBulkDayoff] = useState("");
   const [bulkShift, setBulkShift] = useState("");
@@ -2104,6 +2106,14 @@ function DayoffShiftEditor({
   const normalizedQuery = query.trim().toLowerCase();
   const filteredRows = rows.filter((row) => {
     if (selectedDept !== "all" && row.dept !== selectedDept) return false;
+    if (selectedDayoff !== "all") {
+      if (selectedDayoff === "__empty__" && row.dayoff !== "") return false;
+      if (selectedDayoff !== "__empty__" && row.dayoff !== selectedDayoff) return false;
+    }
+    if (selectedShift !== "all") {
+      if (selectedShift === "__empty__" && row.shift !== "") return false;
+      if (selectedShift !== "__empty__" && row.shift !== selectedShift) return false;
+    }
     if (!normalizedQuery) return true;
     return [row.empId, row.name, row.dept, row.dayoff, row.shift]
       .some((v) => v.toLowerCase().includes(normalizedQuery));
@@ -2262,7 +2272,7 @@ function DayoffShiftEditor({
       <div className="table-filters dayoff-editor-filters">
         <input
           aria-label="ค้นหา dayoff shift"
-          placeholder="ค้นหา รหัส ชื่อ แผนก วันหยุด กะ"
+          placeholder="ค้นหา รหัส ชื่อ แผนก"
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -2270,6 +2280,21 @@ function DayoffShiftEditor({
         <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
           <option value="all">ทุกแผนก</option>
           {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select value={selectedDayoff} onChange={(e) => setSelectedDayoff(e.target.value)}>
+          <option value="all">ทุก Dayoff</option>
+          <option value="__empty__">— ยังไม่ได้ตั้ง</option>
+          <optgroup label="หยุด 1 วัน">
+            {dayoffSingle.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </optgroup>
+          <optgroup label="หยุด 2 วัน">
+            {dayoffDouble.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </optgroup>
+        </select>
+        <select value={selectedShift} onChange={(e) => setSelectedShift(e.target.value)}>
+          <option value="all">ทุก Shift</option>
+          <option value="__empty__">— ยังไม่ได้ตั้ง</option>
+          {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
         <span className="dayoff-count">
           {filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} คน
