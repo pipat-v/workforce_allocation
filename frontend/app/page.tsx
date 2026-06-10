@@ -2082,7 +2082,22 @@ function DayoffShiftEditor({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const dayoffOptions = ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา", "พระ"];
+  const dayoffSingle = [
+    { value: "จ",  label: "จ — จันทร์" },
+    { value: "อ",  label: "อ — อังคาร" },
+    { value: "พ",  label: "พ — พุธ" },
+    { value: "พฤ", label: "พฤ — พฤหัส" },
+    { value: "ศ",  label: "ศ — ศุกร์" },
+    { value: "ส",  label: "ส — เสาร์" },
+    { value: "อา", label: "อา — อาทิตย์" },
+    { value: "พระ",label: "พระ — วันพระ" },
+  ];
+  const dayoffDouble = [
+    { value: "ส,อา", label: "ส+อา — เสาร์&อาทิตย์" },
+    { value: "ศ,ส",  label: "ศ+ส — ศุกร์&เสาร์" },
+    { value: "อา,จ", label: "อา+จ — อาทิตย์&จันทร์" },
+    { value: "พฤ,ศ", label: "พฤ+ศ — พฤหัส&ศุกร์" },
+  ];
   const shiftOptions = Array.from(new Set([
     "กะ1", "กะ2", "กะ3",
     ...rows.map((r) => r.shift).filter(Boolean),
@@ -2270,7 +2285,12 @@ function DayoffShiftEditor({
           <span className="bulk-count">{selectedIds.size} คนที่เลือก</span>
           <select value={bulkDayoff} onChange={(e) => setBulkDayoff(e.target.value)}>
             <option value="">เปลี่ยน Dayoff...</option>
-            {dayoffOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+            <optgroup label="หยุด 1 วัน">
+              {dayoffSingle.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </optgroup>
+            <optgroup label="หยุด 2 วัน">
+              {dayoffDouble.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </optgroup>
           </select>
           <select value={bulkShift} onChange={(e) => setBulkShift(e.target.value)}>
             <option value="">เปลี่ยน Shift...</option>
@@ -2337,7 +2357,12 @@ function DayoffShiftEditor({
                 <td>
                   <select value={row.dayoff} onChange={(e) => updateRow(row.id, "dayoff", e.target.value)}>
                     <option value="">-</option>
-                    {dayoffOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                    <optgroup label="หยุด 1 วัน">
+                      {dayoffSingle.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </optgroup>
+                    <optgroup label="หยุด 2 วัน">
+                      {dayoffDouble.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </optgroup>
                   </select>
                 </td>
                 <td>
