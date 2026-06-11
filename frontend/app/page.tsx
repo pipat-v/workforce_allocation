@@ -1240,7 +1240,7 @@ function buildReportData(
     const isScheduledOff = latestTimestamp
       ? isEmployeeDayOff(dayoffShift?.dayoff, latestTimestamp)
       : false;
-    if (!scanIn && isScheduledOff) return [{
+    if (isScheduledOff) return [{
       empId: employee.empId,
       name: employee.name,
       dept: employee.dept,
@@ -1608,6 +1608,13 @@ function minutesBetween(shiftStart: string, scanIn: Date) {
   return Math.round((scanIn.getTime() - shift.getTime()) / 60000);
 }
 
+const STATUS_TH: Record<string, string> = {
+  Present: "ตรงเวลา",
+  Late: "มาสาย",
+  Absent: "ขาดงาน",
+  DayOff: "วันหยุด",
+};
+
 function formatLateTime(minutes: number): string {
   if (!minutes) return "0 นาที";
   const h = Math.floor(minutes / 60);
@@ -1654,10 +1661,10 @@ function DonutKpiCard({
         </div>
       </div>
       <div className="legend compact">
-        <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
-        <LegendRow color="amber" label="Late" value={String(late)} percent={`${latePct.toFixed(1)}%`} />
-        <LegendRow color="red" label="Absent" value={String(absent)} percent={`${absentPct.toFixed(1)}%`} />
-        <LegendRow color="gray" label="Day Off" value={String(dayoff)} percent={`${dayoffPct.toFixed(1)}%`} />
+        <LegendRow color="green" label="ตรงเวลา" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
+        <LegendRow color="amber" label="มาสาย" value={String(late)} percent={`${latePct.toFixed(1)}%`} />
+        <LegendRow color="red" label="ขาดงาน" value={String(absent)} percent={`${absentPct.toFixed(1)}%`} />
+        <LegendRow color="gray" label="วันหยุด" value={String(dayoff)} percent={`${dayoffPct.toFixed(1)}%`} />
       </div>
     </article>
   );
@@ -1683,7 +1690,7 @@ function exportLateAbsentToExcel(
       "กะ": r.shift,
       "เวลาเข้างาน": r.shiftStart,
       "Scan In": r.scanIn,
-      "สถานะ": r.status,
+      "สถานะ": STATUS_TH[r.status] ?? r.status,
       "สาย (นาที)": r.minutesLate,
       "สายสะสมเดือนนี้ (ครั้ง)": monthlyLateCounts[r.empId] ?? 0,
     }));
@@ -1721,6 +1728,80 @@ function DashboardPanels({
   const [detailStatusFilter, setDetailStatusFilter] = useState("all");
   const [detailSort, setDetailSort_] = useState<SortState>(null);
   const setDetailSort = setDetailSort_ as (sort: SortState) => void;
+  const [leaveMap, setLeaveMap] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (!isoTargetDate) return;
+    const absentIds = (reportData?.records ?? [])
+      .filter((r: { status: string }) => r.status === "Absent")
+      .map((r: { empId: string }) => r.empId);
+    supabase.from("leave_records").select("emp_id, leave_type").eq("leave_date", isoTargetDate)
+      .then(async ({ data: rows }) => {
+        const map = new Map((rows ?? []).map((r: { emp_id: string; leave_type: string }) => [r.emp_id, r.leave_type]));
+        const missing = absentIds.filter((id: string) => !map.has(id));
+        if (missing.length) {
+          await supabase.from("leave_records").upsert(
+            missing.map((empId: string) => ({ emp_id: empId, leave_date: isoTargetDate, leave_type: "ขาดงาน" })),
+            { onConflict: "emp_id,leave_date" }
+          );
+          missing.forEach((id: string) => map.set(id, "ขาดงาน"));
+        }
+        setLeaveMap(map);
+      });
+  }, [isoTargetDate, reportData]);
+
+  const saveLeave = async (empId: string, leaveType: string) => {
+    if (!isoTargetDate || !leaveType) return;
+    setLeaveMap(prev => new Map(prev).set(empId, leaveType));
+    await supabase.from("leave_records").upsert(
+      { emp_id: empId, leave_date: isoTargetDate, leave_type: leaveType },
+      { onConflict: "emp_id,leave_date" }
+    );
+  };
+
+  const [confirmation, setConfirmation] = useState<{ confirmed_by: string; confirmed_at: string } | null | undefined>(undefined);
+  const [confirmName, setConfirmName] = useState("");
+  const [isConfirming, setIsConfirming] = useState(false);
+
+  useEffect(() => {
+    if (!isoTargetDate) { setConfirmation(undefined); return; }
+    const deptKey = dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter;
+    supabase.from("daily_confirmations")
+      .select("confirmed_by, confirmed_at")
+      .eq("confirm_date", isoTargetDate)
+      .eq("dept", deptKey)
+      .maybeSingle()
+      .then(({ data }) => setConfirmation(data ?? null));
+  }, [isoTargetDate, dashboardDeptFilter]);
+
+  const handleConfirm = async () => {
+    if (!confirmName.trim()) {
+      const input = document.querySelector<HTMLInputElement>(".confirm-name-input");
+      input?.focus();
+      input?.classList.add("confirm-input-error");
+      setTimeout(() => input?.classList.remove("confirm-input-error"), 1200);
+      return;
+    }
+    if (!isoTargetDate) return;
+    setIsConfirming(true);
+    const deptKey = dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter;
+    const leaveCounts: Record<string, number> = {};
+    for (const lt of leaveMap.values()) leaveCounts[lt] = (leaveCounts[lt] ?? 0) + 1;
+    const { data, error } = await supabase.from("daily_confirmations").upsert({
+      confirm_date: isoTargetDate,
+      dept: deptKey,
+      confirmed_by: confirmName.trim(),
+      late_count: reportData?.late ?? 0,
+      absent_count: reportData?.absent ?? 0,
+      leave_breakdown: leaveCounts,
+    }, { onConflict: "confirm_date,dept" }).select("confirmed_by, confirmed_at").single();
+    if (error) {
+      alert(`บันทึกไม่สำเร็จ: ${error.message}\n\nกรุณา run migration 008_daily_confirmations.sql ใน Supabase SQL Editor ก่อน`);
+    } else if (data) {
+      setConfirmation(data as { confirmed_by: string; confirmed_at: string });
+    }
+    setIsConfirming(false);
+  };
 
   const total = reportData?.totalEmployees ?? 0;
   const present = reportData?.present ?? 0;
@@ -1758,6 +1839,60 @@ function DashboardPanels({
 
   return (
     <>
+      {isoTargetDate && (
+        <section className="confirm-attendance-card">
+          <div className="confirm-card-top">
+            <div className="confirm-card-title-row">
+              <ClipboardCheck size={15} className="confirm-title-icon" />
+              <span className="confirm-title-text">ยืนยันตรวจสอบการเข้างาน</span>
+              <span className="confirm-title-dept">{dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter}</span>
+            </div>
+            <div className="confirm-summary-row">
+              <span className="csb present">ตรงเวลา {present}</span>
+              <span className="csb late">มาสาย {late}</span>
+              <span className="csb absent">ขาด/ลา {absent}</span>
+              {absent > 0 && (() => {
+                const deptAbsentIds = new Set(allRecords.filter(r => r.status === "Absent").map(r => r.empId));
+                return (["ลาป่วย", "ลากิจ", "ลาพักร้อน", "ขาดงาน"] as const).map(type => {
+                  const cnt = [...leaveMap.entries()].filter(([eid, lt]) => deptAbsentIds.has(eid) && lt === type).length;
+                  return cnt ? <span key={type} className={`csb-leave ${type === "ขาดงาน" ? "red" : type === "ลาพักร้อน" ? "green" : type === "ลากิจ" ? "amber" : "blue"}`}>{type} {cnt}</span> : null;
+                });
+              })()}
+            </div>
+          </div>
+          <div className="confirm-card-action">
+            {confirmation === undefined ? (
+              <span className="confirm-loading">กำลังโหลด...</span>
+            ) : confirmation ? (
+              <div className="confirm-done-row">
+                <CheckCircle2 size={15} className="confirm-done-icon" />
+                <span>รับทราบแล้วโดย <strong>{confirmation.confirmed_by}</strong> · {new Date(confirmation.confirmed_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</span>
+                <button className="ghost-button small" onClick={() => setConfirmation(null)}>แก้ไข</button>
+              </div>
+            ) : (
+              <div className="confirm-form-row">
+                <div className="confirm-input-wrap">
+                  <input
+                    className="confirm-name-input"
+                    placeholder="กรอกชื่อหัวหน้าหน่วยงานก่อนยืนยัน"
+                    value={confirmName}
+                    onChange={(e) => setConfirmName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleConfirm(); }}
+                  />
+                </div>
+                <button
+                  className={`confirm-submit-btn${!confirmName.trim() ? " needs-name" : ""}`}
+                  disabled={isConfirming}
+                  onClick={handleConfirm}
+                >
+                  <CheckCircle2 size={13} />
+                  {isConfirming ? "กำลังบันทึก..." : "ยืนยันรับทราบ"}
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
       <section className="dashboard-grid">
         <section className="panel dashboard-late-card">
           <div className="panel-title-row">
@@ -1958,9 +2093,9 @@ function DashboardPanels({
               onChange={(e) => setDetailStatusFilter(e.target.value)}
             >
               <option value="all">ทุกสถานะ</option>
-              <option value="Absent">Absent</option>
-              <option value="Late">Late</option>
-              <option value="Present">Present</option>
+              <option value="Absent">ขาดงาน</option>
+              <option value="Late">มาสาย</option>
+              <option value="Present">ตรงเวลา</option>
             </select>
             <button
               className="primary-button small"
@@ -1969,7 +2104,7 @@ function DashboardPanels({
               type="button"
             >
               <Download size={14} />
-              Export Late/Absent
+              Export สาย/ขาด
             </button>
           </div>
         </div>
@@ -2001,7 +2136,26 @@ function DashboardPanels({
                     <td>{row.shift}</td>
                     <td>{row.shiftStart}</td>
                     <td>{row.scanIn}</td>
-                    <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status === "DayOff" ? "วันหยุด" : row.status}</span></td>
+                    <td>
+                      {row.status === "Absent" ? (() => {
+                        const lt = leaveMap.get(row.empId) ?? "ขาดงาน";
+                        const lc = ({ "ลาป่วย": "leave-sick", "ลากิจ": "leave-personal", "ลาพักร้อน": "leave-vacation" } as Record<string, string>)[lt] ?? "leave-absent";
+                        return (
+                          <select
+                            className={`leave-select ${lc}`}
+                            value={lt}
+                            onChange={(e) => saveLeave(row.empId, e.target.value)}
+                          >
+                            <option value="ขาดงาน">ขาดงาน</option>
+                            <option value="ลาป่วย">ลาป่วย</option>
+                            <option value="ลากิจ">ลากิจ</option>
+                            <option value="ลาพักร้อน">ลาพักร้อน</option>
+                          </select>
+                        );
+                      })() : (
+                        <span className={`status-pill ${row.status.toLowerCase()}`}>{STATUS_TH[row.status] ?? row.status}</span>
+                      )}
+                    </td>
                     <td>{row.status !== "Absent" && row.status !== "DayOff" ? formatLateTime(row.minutesLate) : "-"}</td>
                     <td>
                       <span className={monthlyLate >= 3 ? "monthly-late-high" : ""}>
@@ -2024,7 +2178,6 @@ function DashboardPanels({
         </p>
       </section>
 
-      <ResultsPanel reportData={reportData} />
     </>
   );
 }
@@ -2255,15 +2408,30 @@ function DayoffShiftEditor({
     let isMounted = true;
     setIsLoading(true);
 
+    // กะ1=AI(col 34), กะ2=AL(col 37), กะ3=AO(col 40)
+    const SHIFT_TIME_COL: Record<string, number> = { "กะ1": 34, "กะ2": 37, "กะ3": 40 };
+
     const dayoffPromise = downloadSheetRows(activeFile.file_path);
-    const empPromise = employeeMasterFile?.file_path
-      ? downloadSheetRows(employeeMasterFile.file_path)
-      : Promise.resolve([] as Record<string, unknown>[]);
+    const empPromise: Promise<{ rows: Record<string, unknown>[]; rawRows: unknown[][] }> =
+      employeeMasterFile?.file_path
+        ? (async () => {
+            const { data, error } = await supabase.storage.from("workforce-inputs").download(employeeMasterFile.file_path);
+            if (error || !data) return { rows: [], rawRows: [] };
+            const buffer = await data.arrayBuffer();
+            const wb = XLSX.read(buffer, { type: "array", cellDates: true });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            return {
+              rows: XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: true }),
+              rawRows: XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: true }),
+            };
+          })()
+        : Promise.resolve({ rows: [] as Record<string, unknown>[], rawRows: [] as unknown[][] });
 
     Promise.all([dayoffPromise, empPromise])
-      .then(([dayoffRows, empRows]) => {
+      .then(([dayoffRows, { rows: empRows, rawRows: empRawRows }]) => {
         if (!isMounted) return;
         const deptMap = new Map<string, string>();
+        const timeMap = new Map<string, string>();
         for (const row of empRows) {
           const empId = cleanEmpId(
             row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"],
@@ -2273,9 +2441,34 @@ function DayoffShiftEditor({
           ).trim();
           if (empId && dept) deptMap.set(empId, dept);
         }
+        // ดึงเวลาเข้าจาก column index ตาม shift (AI=กะ1, AL=กะ2, AO=กะ3)
+        const hdrIdx = empRawRows.findIndex((r) =>
+          (r as unknown[]).some((c) =>
+            ["User ID (Job Information)", "Employee ID", "Emp ID"].includes(String(c))
+          )
+        );
+        if (hdrIdx >= 0) {
+          const hdr = empRawRows[hdrIdx] as unknown[];
+          const empColIdx = hdr.findIndex((c) =>
+            ["User ID (Job Information)", "Employee ID", "Emp ID"].includes(String(c))
+          );
+          const shiftColIdx = hdr.findIndex((c) =>
+            ["อยู่กะไหน", "shift", "กะ", "Shift"].includes(String(c))
+          );
+          for (const rawRow of empRawRows.slice(hdrIdx + 1)) {
+            const r = rawRow as unknown[];
+            const empId = empColIdx >= 0 ? cleanEmpId(r[empColIdx]) : "";
+            if (!empId) continue;
+            const shiftKey = normalizeShiftKey(shiftColIdx >= 0 ? r[shiftColIdx] : "กะ1");
+            const colIdx = SHIFT_TIME_COL[shiftKey] ?? SHIFT_TIME_COL["กะ1"];
+            const t = normalizeTimeText(r[colIdx]);
+            if (t) timeMap.set(empId, t);
+          }
+        }
         const parsed = dayoffRows.map((row, i) => {
           const r = toDayoffShiftEditorRow(row, i);
           if (!r.dept && deptMap.has(r.empId)) r.dept = deptMap.get(r.empId)!;
+          if (!r.shiftStart && timeMap.has(r.empId)) r.shiftStart = timeMap.get(r.empId)!;
           return r;
         });
         setRows(parsed);
@@ -3175,9 +3368,9 @@ function TimestampWithDeptPage({
           onChange={(event) => updateFilter(() => setStatusFilter(event.target.value))}
         >
           <option value="all">ทุกสถานะ</option>
-          <option value="Present">Present</option>
-          <option value="Late">Late</option>
-          <option value="Absent">Absent</option>
+          <option value="Present">ตรงเวลา</option>
+          <option value="Late">มาสาย</option>
+          <option value="Absent">ขาดงาน</option>
           <option value="DayOff">วันหยุด</option>
         </select>
         <button
@@ -3217,7 +3410,7 @@ function TimestampWithDeptPage({
                 <td>{row.shift}</td>
                 <td>{row.shiftStart}</td>
                 <td>{row.scanIn}</td>
-                <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td>
+                <td><span className={`status-pill ${row.status.toLowerCase()}`}>{STATUS_TH[row.status] ?? row.status}</span></td>
                 <td>{row.minutesLate}</td>
               </tr>
             ))}
@@ -3351,8 +3544,8 @@ function ResultsPanel({
             onChange={(event) => updateFilter(() => setStatusFilter?.(event.target.value))}
           >
             <option value="all">ทุกสถานะ</option>
-            <option value="Present">Present</option>
-            <option value="Late">Late</option>
+            <option value="Present">ตรงเวลา</option>
+            <option value="Late">มาสาย</option>
           </select>
           <button
             className="ghost-button"
@@ -3494,6 +3687,35 @@ function ReportDashboard({
   const [sort, setSort_] = useState<SortState>(null);
   const setSort = setSort_ as (sort: SortState) => void;
   const [tableStatusFilter, setTableStatusFilter] = useState<"all" | "Late" | "Absent" | "DayOff">("all");
+  const [leaveMap, setLeaveMap] = useState<Map<string, string>>(new Map());
+
+  const isoDate = reportData?.isoTargetDate ?? "";
+  const [deptConfirmations, setDeptConfirmations] = useState<Map<string, { confirmed_by: string; confirmed_at: string }>>(new Map());
+
+  useEffect(() => {
+    if (!isoDate) return;
+    supabase.from("leave_records").select("emp_id, leave_type").eq("leave_date", isoDate)
+      .then(({ data: rows }) => {
+        if (!rows) return;
+        setLeaveMap(new Map(rows.map((r: { emp_id: string; leave_type: string }) => [r.emp_id, r.leave_type])));
+      });
+    supabase.from("daily_confirmations")
+      .select("dept, confirmed_by, confirmed_at")
+      .eq("confirm_date", isoDate)
+      .then(({ data: rows }) => {
+        if (!rows) return;
+        setDeptConfirmations(new Map(rows.map((r: { dept: string; confirmed_by: string; confirmed_at: string }) => [r.dept, { confirmed_by: r.confirmed_by, confirmed_at: r.confirmed_at }])));
+      });
+  }, [isoDate]);
+
+  const saveLeave = async (empId: string, leaveType: string) => {
+    if (!isoDate || !leaveType) return;
+    setLeaveMap(prev => new Map(prev).set(empId, leaveType));
+    await supabase.from("leave_records").upsert(
+      { emp_id: empId, leave_date: isoDate, leave_type: leaveType },
+      { onConflict: "emp_id,leave_date" }
+    );
+  };
 
   const data = reportData ?? {
     targetDate: "-",
@@ -3521,6 +3743,9 @@ function ReportDashboard({
   const scopedDayoff = scopedRecords.filter((row) => row.status === "DayOff").length;
   const scopedCameToWork = scopedPresent + scopedLate;
   const activeTotal = scopedTotal - scopedDayoff; // exclude DayOff from % denominator
+  const riskCount = new Set(
+    scopedRecords.filter(r => (data.monthlyLateCounts[r.empId] ?? 0) >= 3).map(r => r.empId)
+  ).size;
   const lateRate = scopedCameToWork
     ? ((scopedLate / scopedCameToWork) * 100).toFixed(1)
     : "0.0";
@@ -3533,8 +3758,11 @@ function ReportDashboard({
       .filter(([, dates]) => data.isoTargetDate ? dates.includes(data.isoTargetDate) : false)
       .map(([id]) => id),
   );
+  const scopedLateRows = selectedDept === "all"
+    ? data.lateRows
+    : data.lateRows.filter((r) => r.dept === selectedDept);
   const supDeptMap = new Map<string, { late: number; warned: number }>();
-  for (const row of data.lateRows) {
+  for (const row of scopedLateRows) {
     const s = supDeptMap.get(row.dept) ?? { late: 0, warned: 0 };
     s.late += 1;
     if (warnedOnDate.has(row.empId)) s.warned += 1;
@@ -3543,8 +3771,8 @@ function ReportDashboard({
   const supDeptRows = Array.from(supDeptMap.entries())
     .map(([dept, s]) => ({ dept, ...s, pending: s.late - s.warned }))
     .sort((a, b) => b.pending - a.pending);
-  const supTotalLate = data.lateRows.length;
-  const supTotalWarned = data.lateRows.filter((r) => warnedOnDate.has(r.empId)).length;
+  const supTotalLate = scopedLateRows.length;
+  const supTotalWarned = scopedLateRows.filter((r) => warnedOnDate.has(r.empId)).length;
   const supPct = supTotalLate ? Math.round((supTotalWarned / supTotalLate) * 100) : 0;
   const lateDeptRows = Array.from(
     data.lateRows.reduce((map, row) => {
@@ -3558,7 +3786,7 @@ function ReportDashboard({
   const pieColors = ["#2563eb", "#0f172a", "#10b981", "#f59e0b", "#dc2626", "#7c3aed"];
   const selectedDeptLabel = selectedDept === "all" ? "ทั้งโรงงาน" : selectedDept;
   const normalizedQuery = query.trim().toLowerCase();
-  const tableSourceRows = scopedRecords.filter((r) => r.status === "Late" || r.status === "Absent");
+  const tableSourceRows = scopedRecords.filter((r) => r.status === "Late" || r.status === "Absent" || r.status === "DayOff");
   const tableDeptOptions = Array.from(new Set(tableSourceRows.map((r) => r.dept))).sort();
   const filteredTableRows = tableSourceRows.filter((row) => {
     const matchesQuery = !normalizedQuery || [
@@ -3572,7 +3800,7 @@ function ReportDashboard({
 
   return (
     <section className="report-page">
-      <section className="kpi-grid kpi-grid-5">
+      <section className="kpi-grid">
         <KpiCard
           icon={<UsersRound size={34} />}
           tone="green"
@@ -3606,17 +3834,24 @@ function ReportDashboard({
           unit="คน"
           note={`${absentPercent.toFixed(1)}% ของคนที่ต้องมา`}
         />
-        <DonutKpiCard
-          present={scopedPresent}
-          late={scopedLate}
-          absent={scopedAbsent}
-          dayoff={scopedDayoff}
-          total={scopedTotal}
-          totalActive={scopedCameToWork}
+        <KpiCard
+          icon={<CalendarOff size={34} />}
+          tone="gray"
+          label="วันหยุด"
+          value={scopedDayoff.toLocaleString()}
+          unit="คน"
+          note="ไม่นับในอัตราเข้างาน"
+        />
+        <KpiCard
+          icon={<AlertTriangle size={34} />}
+          tone="red"
+          label="เสี่ยง"
+          value={riskCount.toLocaleString()}
+          unit="คน"
+          note="สายสะสม ≥3 ครั้ง/เดือน"
         />
       </section>
 
-      <HeatmapPanel dailyStats={dailyStats} targetMonthKey={data.targetMonthKey} />
 
       <section className="report-grid">
         <div className="panel report-card">
@@ -3629,15 +3864,18 @@ function ReportDashboard({
             ) : null}
           </div>
           <div className="stack-legend">
-            <span><i className="present" />Present</span>
-            <span><i className="late" />Late</span>
-            <span><i className="absent" />Absent</span>
+            <span><i className="present" />มาตรงเวลา</span>
+            <span><i className="late" />มาสาย</span>
+            <span><i className="absent" />ขาดงาน</span>
           </div>
           <div className="stacked-bars">
             {data.deptRows.map((row, index) => {
               const deptActive = row.present + row.late + row.absent;
               const deptRate = deptActive > 0 ? Math.round(((row.present + row.late) / deptActive) * 100) : 0;
               const rateTone = deptRate >= 95 ? "good" : deptRate >= 85 ? "warn" : "bad";
+              const pPresent = deptActive > 0 ? (row.present / deptActive) * 100 : 0;
+              const pLate    = deptActive > 0 ? (row.late    / deptActive) * 100 : 0;
+              const pAbsent  = deptActive > 0 ? (row.absent  / deptActive) * 100 : 0;
               return (
                 <button
                   className={`stacked-row dept-click ${selectedDept === row.dept ? "active" : ""}`}
@@ -3651,17 +3889,17 @@ function ReportDashboard({
                   <span className="dept-rank">#{index + 1}</span>
                   <span className="stacked-dept-name">{row.dept}</span>
                   <div className="stacked-track">
-                    <i className="present" style={{ width: `${(row.present / maxDeptTotal) * 100}%` }} />
-                    <i className="late" style={{ width: `${(row.late / maxDeptTotal) * 100}%` }} />
-                    <i className="absent" style={{ width: `${(row.absent / maxDeptTotal) * 100}%` }} />
+                    <span className="seg present" style={{ width: `${pPresent}%` }} />
+                    <span className="seg late"    style={{ width: `${pLate}%` }}>
+                      {row.late > 0 ? `สาย ${row.late}` : ""}
+                    </span>
+                    <span className="seg absent"  style={{ width: `${pAbsent}%` }}>
+                      {row.absent > 0 ? `ขาด ${row.absent}` : ""}
+                    </span>
                   </div>
                   <span className={`dept-present-rate ${rateTone}`}>{deptRate}%</span>
                   <div className="stacked-row-end">
-                    <strong>{deptActive}</strong>
-                    <span className="stacked-mini-badges">
-                      {row.late > 0 ? <span className="mini-badge late">{row.late}L</span> : null}
-                      {row.absent > 0 ? <span className="mini-badge absent">{row.absent}A</span> : null}
-                    </span>
+                    <strong className="dept-total">{deptActive} คน</strong>
                   </div>
                 </button>
               );
@@ -3724,20 +3962,6 @@ function ReportDashboard({
               );
             })}
             {supDeptRows.length === 0 && <p className="empty-copy">ไม่มีพนักงานมาสาย</p>}
-          </div>
-          <div className="late-dept-breakdown">
-            <h4>หน่วยงานที่มาสาย</h4>
-            {lateDeptRows.slice(0, 5).map((row, index) => (
-              <div className="late-dept-row" key={row.dept}>
-                <i style={{ background: pieColors[index % pieColors.length] }} />
-                <span className="late-dept-name">{row.dept}</span>
-                <div className="late-dept-bar">
-                  <div style={{ width: `${(row.count / lateDeptTotal) * 100}%`, background: pieColors[index % pieColors.length] }} />
-                </div>
-                <span className="late-dept-count">{row.count}</span>
-              </div>
-            ))}
-            {lateDeptRows.length === 0 ? <p className="empty-copy">ยังไม่มีข้อมูลคนมาสาย</p> : null}
           </div>
         </div>
       </section>
@@ -3835,7 +4059,23 @@ function ReportDashboard({
                     <td>{row.shift}</td>
                     <td>{row.shiftStart}</td>
                     <td>{row.scanIn ?? "-"}</td>
-                    <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status === "DayOff" ? "วันหยุด" : row.status}</span></td>
+                    <td>
+                      {row.status === "Absent" ? (
+                        <select
+                          className={`leave-select${leaveMap.has(row.empId) ? " saved" : ""}`}
+                          value={leaveMap.get(row.empId) ?? ""}
+                          onChange={(e) => saveLeave(row.empId, e.target.value)}
+                        >
+                          <option value="">— เลือกประเภท —</option>
+                          <option value="ลาป่วย">ลาป่วย</option>
+                          <option value="ลากิจ">ลากิจ</option>
+                          <option value="ลาพักร้อน">ลาพักร้อน</option>
+                          <option value="ขาดงาน">ขาดงาน</option>
+                        </select>
+                      ) : (
+                        <span className={`status-pill ${row.status.toLowerCase()}`}>{STATUS_TH[row.status] ?? row.status}</span>
+                      )}
+                    </td>
                     <td>{row.status !== "Absent" && row.status !== "DayOff" ? <span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span> : "-"}</td>
                     <td>
                       <span className={monthly >= 3 ? "monthly-late-high" : ""}>
@@ -3870,6 +4110,76 @@ function ReportDashboard({
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/* ── Supervisor Confirmation Summary ── */}
+      <section className="panel confirm-summary-panel">
+        <div className="panel-title-row">
+          <ClipboardCheck size={16} />
+          <h3>สถานะการตรวจสอบการเข้างานรายหน่วยงาน</h3>
+          {isoDate && <span className="table-count">{isoDate ? new Date(isoDate + "T00:00:00").toLocaleDateString("th-TH", { dateStyle: "medium" }) : ""}</span>}
+        </div>
+        {!reportData ? (
+          <p className="muted-text">กด โหลดข้อมูล เพื่อดูสถานะ</p>
+        ) : (
+          <div className="table-scroll">
+            <table className="table data-table">
+              <thead>
+                <tr>
+                  <th>หน่วยงาน</th>
+                  <th className="num">รวม</th>
+                  <th className="num">ตรงเวลา</th>
+                  <th className="num">มาสาย</th>
+                  <th className="num">ขาด/ลา</th>
+                  <th className="num">วันหยุด</th>
+                  <th>สถานะ</th>
+                  <th>ยืนยันโดย</th>
+                  <th>เวลาที่ยืนยัน</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(reportData.deptRows ?? []).map(dept => {
+                  const conf = deptConfirmations.get(dept.dept);
+                  return (
+                    <tr key={dept.dept} className={conf ? "row-confirmed" : ""}>
+                      <td className="dept-cell">{dept.dept}</td>
+                      <td className="num">{dept.total}</td>
+                      <td className="num">{dept.present}</td>
+                      <td className="num">{dept.late > 0 ? <span className="csb late">{dept.late}</span> : "—"}</td>
+                      <td className="num">{dept.absent > 0 ? <span className="csb absent">{dept.absent}</span> : "—"}</td>
+                      <td className="num">{dept.dayoff > 0 ? dept.dayoff : "—"}</td>
+                      <td>
+                        {conf
+                          ? <span className="confirm-status-badge confirmed"><CheckCircle2 size={12} />ยืนยันแล้ว</span>
+                          : <span className="confirm-status-badge pending">รอยืนยัน</span>}
+                      </td>
+                      <td>{conf ? conf.confirmed_by : "—"}</td>
+                      <td className="muted-text">{conf ? new Date(conf.confirmed_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
+                    </tr>
+                  );
+                })}
+                {(reportData.deptRows ?? []).length === 0 && (
+                  <tr><td colSpan={9}>ไม่มีข้อมูลหน่วยงาน</td></tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td><strong>รวมทั้งหมด</strong></td>
+                  <td className="num"><strong>{reportData.totalEmployees}</strong></td>
+                  <td className="num"><strong>{reportData.present}</strong></td>
+                  <td className="num"><strong>{reportData.late}</strong></td>
+                  <td className="num"><strong>{reportData.absent}</strong></td>
+                  <td className="num"><strong>{reportData.dayoff}</strong></td>
+                  <td colSpan={3}>
+                    <span className="confirm-summary-count">
+                      {deptConfirmations.size}/{(reportData.deptRows ?? []).length} หน่วยงานยืนยันแล้ว
+                    </span>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </section>
     </section>
   );

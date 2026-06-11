@@ -22,6 +22,11 @@
   box-sizing: border-box;
 }
 
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -43,7 +48,8 @@ button {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 242px 1fr;
 }
@@ -90,17 +96,17 @@ button {
 .nav-item,
 .logout {
   width: 100%;
-  min-height: 46px;
+  min-height: 38px;
   display: grid;
-  grid-template-columns: 24px 1fr 16px;
+  grid-template-columns: 20px 1fr 16px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   border: 0;
-  padding: 0 12px;
+  padding: 0 10px;
   border-radius: 8px;
   background: transparent;
   color: rgba(255, 255, 255, 0.88);
-  font-size: 15px;
+  font-size: 13px;
   text-align: left;
 }
 
@@ -122,6 +128,9 @@ button {
 
 .main {
   min-width: 0;
+  height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 20px 22px 28px;
 }
 
@@ -407,6 +416,11 @@ button {
 .kpi-icon.gray {
   color: #475569;
   background: #e2e8f0;
+}
+
+.kpi-icon.red {
+  color: #dc2626;
+  background: #fee2e2;
 }
 
 .kpi-body span,
@@ -2082,6 +2096,7 @@ button {
   grid-template-columns: 1.5fr 1fr;
   gap: 14px;
   min-width: 0;
+  align-items: stretch;
 }
 
 .report-card {
@@ -2121,6 +2136,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0;
+  min-height: 0;
 }
 
 .report-overview-card h3 {
@@ -2181,9 +2197,9 @@ button {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 14px;
-  max-height: 220px;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .sup-dept-row {
@@ -2368,7 +2384,7 @@ button {
 
 .stacked-row {
   display: grid;
-  grid-template-columns: 24px 120px 1fr 40px auto;
+  grid-template-columns: 28px 1fr 2fr 52px auto;
   gap: 8px;
   align-items: center;
   font-size: 12px;
@@ -2378,8 +2394,14 @@ button {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  min-width: 36px;
-  gap: 2px;
+  min-width: 52px;
+  gap: 3px;
+}
+
+.dept-total {
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
 }
 
 .stacked-mini-badges {
@@ -2389,10 +2411,10 @@ button {
 
 .mini-badge {
   display: inline-block;
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
   line-height: 1.4;
 }
 
@@ -2441,32 +2463,50 @@ button.stacked-row {
 }
 
 .stacked-track {
-  height: 24px;
+  height: 20px;
   display: flex;
   overflow: hidden;
   background: #f1f5f9;
   border-radius: 6px;
 }
 
-.stacked-track i {
+.stacked-track .seg {
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
   transition: width 0.3s ease;
 }
 
-.stacked-track .present {
-  background: #10b981;
+.stacked-track .present { background: #10b981; }
+.stacked-track .late    { background: #f59e0b; }
+.stacked-track .absent  { background: #dc2626; }
+.stacked-track .dayoff  { background: #94a3b8; }
+
+.dayoff-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
 }
 
-.stacked-track .late {
-  background: #f59e0b;
-}
-
-.stacked-track .absent {
-  background: #dc2626;
-}
-
-.stacked-track .dayoff {
+.dayoff-notice-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
   background: #94a3b8;
+  flex-shrink: 0;
 }
 
 .report-card.center {
@@ -2643,10 +2683,6 @@ button.stacked-row {
   border-radius: 50%;
 }
 
-.report-table-panel {
-  max-height: 360px;
-  overflow: auto;
-}
 
 .empty-copy {
   color: var(--muted);
@@ -2871,6 +2907,48 @@ button.stacked-row {
   background: #e2e8f0;
   color: #475569;
 }
+
+.leave-select {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #f8fafc;
+  color: #64748b;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.leave-select:hover {
+  border-color: #94a3b8;
+}
+
+.leave-select.leave-absent {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+.leave-select.leave-sick {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+.leave-select.leave-personal {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fcd34d;
+}
+.leave-select.leave-vacation {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #6ee7b7;
+}
+.leave-select option[value="ขาดงาน"] { color: #b91c1c; background: #fff1f2; }
+.leave-select option[value="ลาป่วย"] { color: #1d4ed8; background: #eff6ff; }
+.leave-select option[value="ลากิจ"] { color: #b45309; background: #fffbeb; }
+.leave-select option[value="ลาพักร้อน"] { color: #065f46; background: #ecfdf5; }
 
 .pagination {
   display: flex;
@@ -3594,3 +3672,134 @@ button.stacked-row {
   font-size: 12px;
   font-weight: 500;
 }
+
+/* ── Confirm attendance banner ── */
+.confirm-attendance-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #fff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 18px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.confirm-card-top { flex: 1; min-width: 0; }
+.confirm-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.confirm-title-icon { color: #64748b; flex-shrink: 0; }
+.confirm-title-text { font-size: 13px; font-weight: 600; color: #334155; }
+.confirm-title-dept {
+  font-size: 12px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 1px 8px;
+  border-radius: 20px;
+}
+.confirm-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.csb {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+.csb.present { background: #dcfce7; color: #15803d; }
+.csb.late    { background: #fef9c3; color: #92400e; }
+.csb.absent  { background: #fee2e2; color: #b91c1c; }
+.csb-leave {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 12px;
+}
+.csb-leave.blue   { background: #eff6ff; color: #1d4ed8; }
+.csb-leave.amber  { background: #fffbeb; color: #b45309; }
+.csb-leave.green  { background: #ecfdf5; color: #065f46; }
+.csb-leave.red    { background: #fff1f2; color: #be123c; }
+.confirm-card-action { flex-shrink: 0; }
+.confirm-loading { color: #94a3b8; font-size: 13px; }
+.confirm-done-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #334155;
+}
+.confirm-done-icon { color: #16a34a; flex-shrink: 0; }
+.confirm-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.confirm-name-input {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  outline: none;
+  width: 180px;
+  transition: border-color 0.15s;
+}
+.confirm-name-input:focus { border-color: #6366f1; }
+.confirm-submit-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.confirm-submit-btn:hover:not(:disabled) { background: #4338ca; }
+.confirm-submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.confirm-submit-btn.needs-name { background: #94a3b8; }
+.confirm-submit-btn.needs-name:hover { background: #64748b; }
+.confirm-input-wrap { position: relative; }
+.confirm-name-input.confirm-input-error {
+  border-color: #ef4444;
+  animation: input-shake 0.3s ease;
+}
+@keyframes input-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* ── Confirmation summary table ── */
+.confirm-summary-panel { margin-top: 16px; }
+.confirm-summary-panel .panel-title-row { gap: 8px; }
+.row-confirmed { background: #f0fdf4; }
+.confirm-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+.confirm-status-badge.confirmed { background: #dcfce7; color: #15803d; }
+.confirm-status-badge.pending   { background: #fef3c7; color: #92400e; }
+.confirm-summary-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+.table tfoot td { background: #f8fafc; font-size: 12px; padding: 6px 10px; }
+.num { text-align: center; }
