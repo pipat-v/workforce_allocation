@@ -650,7 +650,7 @@ export default function Home() {
 
     try {
       const employeeMaster = activeMasterMap.employee_master;
-      const latestRun = runs.find((run) => run.scan_file_path);
+      const latestRun = (selectedRunId ? runs.find(r => r.id === selectedRunId) : null) ?? runs.find((run) => run.scan_file_path);
 
       if (!employeeMaster || !latestRun?.scan_file_path) {
         setError("ต้องมีไฟล์รายชื่อพนักงานและ timestamp ล่าสุดก่อนสร้าง Report & Dashboard");
@@ -912,7 +912,7 @@ export default function Home() {
                       <div
                         key={run.id}
                         className={`run-picker-item${isSelected ? " active" : ""}`}
-                        onClick={() => { setSelectedRunId(run.id); setShowRunPicker(false); }}
+                        onClick={() => { setSelectedRunId(run.id); setLoadedReportKey(""); setShowRunPicker(false); }}
                       >
                         <span className="run-picker-date">{displayDate}</span>
                       </div>
