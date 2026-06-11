@@ -896,10 +896,17 @@ export default function Home() {
               </div>
               {showRunPicker && runs.length > 0 && (
                 <div className="run-picker-dropdown">
-                  {runs.filter(r => r.scan_file_path).map(run => {
-                    const runDate = run.target_date
-                      ? new Date(run.target_date).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })
-                      : new Date(run.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+                  {((() => {
+                    const seen = new Map<string, AllocationRun>();
+                    for (const run of runs) {
+                      if (!run.scan_file_path) continue;
+                      const key = run.target_date ?? run.created_at.slice(0, 10);
+                      if (!seen.has(key)) seen.set(key, run);
+                    }
+                    return Array.from(seen.values());
+                  })()).map(run => {
+                    const dateKey = run.target_date ?? run.created_at.slice(0, 10);
+                    const displayDate = new Date(dateKey).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
                     const isSelected = (selectedRunId ?? runs[0]?.id) === run.id;
                     return (
                       <div
@@ -907,8 +914,7 @@ export default function Home() {
                         className={`run-picker-item${isSelected ? " active" : ""}`}
                         onClick={() => { setSelectedRunId(run.id); setShowRunPicker(false); }}
                       >
-                        <span className="run-picker-date">{runDate}</span>
-                        <span className="run-picker-file">{run.original_filename ?? run.scan_file_path?.split("/").pop() ?? "-"}</span>
+                        <span className="run-picker-date">{displayDate}</span>
                       </div>
                     );
                   })}
