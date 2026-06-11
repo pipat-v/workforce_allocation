@@ -206,6 +206,53 @@ button {
   font-size: 16px;
 }
 
+.date-picker-wrap {
+  position: relative;
+}
+
+.run-picker-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 100%;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 100;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.run-picker-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.1s;
+}
+
+.run-picker-item:last-child { border-bottom: none; }
+.run-picker-item:hover { background: #f1f5f9; }
+.run-picker-item.active { background: #eff6ff; }
+
+.run-picker-date {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.run-picker-file {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
 .avatar {
   width: 42px;
   height: 42px;

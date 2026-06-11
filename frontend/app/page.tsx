@@ -182,6 +182,8 @@ export default function Home() {
   const [monthlyLateMinutes, setMonthlyLateMinutes] = useState<Record<string, number>>({});
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [prevMonthLateCounts, setPrevMonthLateCounts] = useState<Record<string, number>>({});
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [showRunPicker, setShowRunPicker] = useState(false);
 
   const isoTargetDate = reportData?.isoTargetDate ?? "";
 
@@ -204,7 +206,7 @@ export default function Home() {
     [masterUploads],
   );
 
-  const latestRun = runs[0];
+  const latestRun = (selectedRunId ? runs.find(r => r.id === selectedRunId) : null) ?? runs[0];
   const reportSourceKey =
     activeMasterMap.employee_master?.file_path && latestRun?.scan_file_path
       ? [
@@ -250,7 +252,8 @@ export default function Home() {
   const pctLate = totalEmployees ? Math.round((latePeople / totalEmployees) * 100) : 0;
   const pctAbsent = totalEmployees ? Math.round((absentPeople / totalEmployees) * 100) : 0;
   const pctDayoff = totalEmployees ? Math.round((dayoffPeople / totalEmployees) * 100) : 0;
-  const workDate = new Date().toLocaleDateString("th-TH", {
+  const workDateBase = latestRun?.target_date ? new Date(latestRun.target_date) : new Date();
+  const workDate = workDateBase.toLocaleDateString("th-TH", {
     day: "numeric",
     month: "long",
     year: "numeric",
@@ -879,16 +882,38 @@ export default function Home() {
             <p className="subtitle">ระบบจัดสรรตำแหน่งงานอัตโนมัติ</p>
           </div>
           <div className="top-actions">
-            <div className="date-picker">
-              <CalendarDays size={19} />
-              <div>
-                <div className="date-picker-label-row">
-                  <span>วันที่ทำงาน</span>
-                  <span className="work-time">{workTime} น.</span>
+            <div className="date-picker-wrap">
+              <div className="date-picker" style={{ cursor: "pointer" }} onClick={() => setShowRunPicker(v => !v)}>
+                <CalendarDays size={19} />
+                <div>
+                  <div className="date-picker-label-row">
+                    <span>วันที่ทำงาน</span>
+                    <span className="work-time">{workTime} น.</span>
+                  </div>
+                  <strong>{workDate}</strong>
                 </div>
-                <strong>{workDate}</strong>
+                <ChevronDown size={17} style={{ transition: "transform 0.2s", transform: showRunPicker ? "rotate(180deg)" : "rotate(0deg)" }} />
               </div>
-              <ChevronDown size={17} />
+              {showRunPicker && runs.length > 0 && (
+                <div className="run-picker-dropdown">
+                  {runs.filter(r => r.scan_file_path).map(run => {
+                    const runDate = run.target_date
+                      ? new Date(run.target_date).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })
+                      : new Date(run.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+                    const isSelected = (selectedRunId ?? runs[0]?.id) === run.id;
+                    return (
+                      <div
+                        key={run.id}
+                        className={`run-picker-item${isSelected ? " active" : ""}`}
+                        onClick={() => { setSelectedRunId(run.id); setShowRunPicker(false); }}
+                      >
+                        <span className="run-picker-date">{runDate}</span>
+                        <span className="run-picker-file">{run.original_filename ?? run.scan_file_path?.split("/").pop() ?? "-"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div className="admin-chip">
               <div className="avatar">A</div>
