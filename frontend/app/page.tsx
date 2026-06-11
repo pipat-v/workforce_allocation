@@ -960,9 +960,9 @@ export default function Home() {
 
         {activeTab === "dashboard" ? (
           <>
-            <section className="kpi-grid">
+            <section className="kpi-grid kpi-grid-5">
               <KpiCard
-                icon={<UsersRound size={26} />}
+                icon={<UsersRound size={34} />}
                 tone="green"
                 label="มาทำงาน"
                 value={totalActivePeople.toLocaleString()}
@@ -971,7 +971,7 @@ export default function Home() {
                 progress={presentRate}
               />
               <KpiCard
-                icon={<ClipboardCheck size={26} />}
+                icon={<ClipboardCheck size={34} />}
                 tone="blue"
                 label="ตรงเวลา"
                 value={presentPeople.toLocaleString()}
@@ -979,7 +979,7 @@ export default function Home() {
                 note={`${pctPresent}% ของพนักงานทั้งหมด`}
               />
               <KpiCard
-                icon={<Clock size={26} />}
+                icon={<Clock size={34} />}
                 tone="amber"
                 label="มาสาย"
                 value={latePeople.toLocaleString()}
@@ -987,7 +987,7 @@ export default function Home() {
                 note={`${pctLate}% ของพนักงานทั้งหมด`}
               />
               <KpiCard
-                icon={<UserX size={26} />}
+                icon={<UserX size={34} />}
                 tone="purple"
                 label="ขาดงาน"
                 value={absentPeople.toLocaleString()}
@@ -995,20 +995,12 @@ export default function Home() {
                 note={`${pctAbsent}% ของพนักงานทั้งหมด`}
               />
               <KpiCard
-                icon={<CalendarOff size={26} />}
+                icon={<CalendarOff size={34} />}
                 tone="gray"
                 label="วันหยุด"
                 value={dayoffPeople.toLocaleString()}
                 unit="คน"
                 note={`${pctDayoff}% ของพนักงานทั้งหมด`}
-              />
-              <DonutKpiCard
-                present={presentPeople}
-                late={latePeople}
-                absent={absentPeople}
-                dayoff={dayoffPeople}
-                total={totalEmployees}
-                totalActive={totalActivePeople}
               />
             </section>
 
@@ -1651,7 +1643,7 @@ function DonutKpiCard({
 
   return (
     <article className="kpi-card kpi-donut">
-      <div className="kpi-bar-chart">
+      <div className="kpi-donut-header">
         <span className="kpi-bar-label">{totalActive} คน</span>
         <div className="kpi-stacked-bar">
           <div className="kpi-bar-fill present" style={{ width: `${presentPct}%` }} />
@@ -1660,7 +1652,7 @@ function DonutKpiCard({
           <div className="kpi-bar-fill dayoff" style={{ width: `${dayoffPct}%` }} />
         </div>
       </div>
-      <div className="legend compact">
+      <div className="kpi-donut-legend">
         <LegendRow color="green" label="ตรงเวลา" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
         <LegendRow color="amber" label="มาสาย" value={String(late)} percent={`${latePct.toFixed(1)}%`} />
         <LegendRow color="red" label="ขาดงาน" value={String(absent)} percent={`${absentPct.toFixed(1)}%`} />
@@ -1729,6 +1721,8 @@ function DashboardPanels({
   const [detailSort, setDetailSort_] = useState<SortState>(null);
   const setDetailSort = setDetailSort_ as (sort: SortState) => void;
   const [leaveMap, setLeaveMap] = useState<Map<string, string>>(new Map());
+  const [warnPanelCollapsed, setWarnPanelCollapsed] = useState(true);
+  const [detailPanelCollapsed, setDetailPanelCollapsed] = useState(true);
 
   useEffect(() => {
     if (!isoTargetDate) return;
@@ -1951,6 +1945,15 @@ function DashboardPanels({
           </div>
         </section>
 
+        <div className="dashboard-right-col">
+        <DonutKpiCard
+          present={reportData?.present ?? 0}
+          late={reportData?.late ?? 0}
+          absent={reportData?.absent ?? 0}
+          dayoff={reportData?.dayoff ?? 0}
+          total={reportData?.totalEmployees ?? 0}
+          totalActive={totalActivePeople}
+        />
         <section className="panel dept-panel">
           <div className="panel-title-row">
             <h3>พนักงานตามหน่วยงาน</h3>
@@ -1975,6 +1978,7 @@ function DashboardPanels({
             ))}
           </div>
         </section>
+        </div>
 
       </section>
 
@@ -1999,93 +2003,105 @@ function DashboardPanels({
         const allDone = totalPending === 0;
         return (
           <section className="panel sup-check-panel">
-            <div className="sup-check-header">
-              <div className="sup-check-title">
-                <h3>สถานะการตักเตือน</h3>
-                <p>ตรวจสอบว่าหัวหน้าได้ตักเตือนพนักงานมาสายครบทุกคนแล้วหรือยัง</p>
-              </div>
-              <div className="sup-check-summary">
-                <div className="sup-check-stat">
-                  <span className="sup-stat-value">{totalWarned}</span>
-                  <span className="sup-stat-label">เตือนแล้ว</span>
-                </div>
-                <div className="sup-check-divider" />
-                <div className="sup-check-stat">
-                  <span className="sup-stat-value muted">{totalLate}</span>
-                  <span className="sup-stat-label">ทั้งหมด</span>
-                </div>
-                <div className="sup-check-divider" />
-                <div className="sup-check-stat">
-                  <span className={`sup-stat-value ${totalPending > 0 ? "danger" : "success"}`}>{totalPending}</span>
-                  <span className="sup-stat-label">ยังค้าง</span>
-                </div>
-                <span className={`sup-overall-badge ${allDone ? "done" : "pending"}`}>
-                  {allDone ? "✓ ครบแล้ว" : `⚠ ยังค้าง ${totalPending} คน`}
-                </span>
-              </div>
+            <div className="panel-collapse-trigger" onClick={() => setWarnPanelCollapsed(c => !c)}>
+              <h3>สถานะการตักเตือน</h3>
+              <ChevronDown size={16} className="panel-collapse-chevron" style={{ transform: warnPanelCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }} />
             </div>
-            <div className="sup-progress-wrap">
-              <div className="sup-progress-bar">
-                <div className="sup-progress-fill" style={{ width: `${pct}%` }} />
-              </div>
-              <span className="sup-progress-pct">{pct}%</span>
-            </div>
-            <div className="sup-check-table-wrap">
-              <table className="table compact-table">
-                <thead>
-                  <tr>
-                    <th>หน่วยงาน</th>
-                    <th style={{ textAlign: "center" }}>มาสาย</th>
-                    <th style={{ textAlign: "center" }}>เตือนแล้ว</th>
-                    <th style={{ textAlign: "center" }}>ยังค้าง</th>
-                    <th>ความคืบหน้า</th>
-                    <th style={{ textAlign: "center" }}>สถานะ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {deptRows.map((row) => {
-                    const deptPct = row.late ? Math.round((row.warned / row.late) * 100) : 100;
-                    const done = row.pending === 0;
-                    return (
-                      <tr key={row.dept} className={done ? "sup-row-done" : "sup-row-pending"}>
-                        <td><span className="dept-chip">{row.dept}</span></td>
-                        <td style={{ textAlign: "center" }}>{row.late}</td>
-                        <td style={{ textAlign: "center" }}><strong style={{ color: "#10b981" }}>{row.warned}</strong></td>
-                        <td style={{ textAlign: "center" }}>
-                          {row.pending > 0
-                            ? <strong style={{ color: "#ef4444" }}>{row.pending}</strong>
-                            : <span style={{ color: "#94a3b8" }}>—</span>}
-                        </td>
-                        <td>
-                          <div className="sup-mini-bar-wrap">
-                            <div className="sup-mini-bar">
-                              <div className="sup-mini-fill" style={{ width: `${deptPct}%` }} />
-                            </div>
-                            <span className="sup-mini-pct">{deptPct}%</span>
-                          </div>
-                        </td>
-                        <td style={{ textAlign: "center" }}>
-                          <span className={`sup-status-badge ${done ? "done" : "pending"}`}>
-                            {done ? "✓ ครบ" : `ค้าง ${row.pending}`}
-                          </span>
-                        </td>
+            {!warnPanelCollapsed && (
+              <>
+                <div className="sup-check-header" style={{ marginTop: "12px" }}>
+                  <div className="sup-check-title">
+                    <p>ตรวจสอบว่าหัวหน้าได้ตักเตือนพนักงานมาสายครบทุกคนแล้วหรือยัง</p>
+                  </div>
+                  <div className="sup-check-summary">
+                    <div className="sup-check-stat">
+                      <span className="sup-stat-value">{totalWarned}</span>
+                      <span className="sup-stat-label">เตือนแล้ว</span>
+                    </div>
+                    <div className="sup-check-divider" />
+                    <div className="sup-check-stat">
+                      <span className="sup-stat-value muted">{totalLate}</span>
+                      <span className="sup-stat-label">ทั้งหมด</span>
+                    </div>
+                    <div className="sup-check-divider" />
+                    <div className="sup-check-stat">
+                      <span className={`sup-stat-value ${totalPending > 0 ? "danger" : "success"}`}>{totalPending}</span>
+                      <span className="sup-stat-label">ยังค้าง</span>
+                    </div>
+                    <span className={`sup-overall-badge ${allDone ? "done" : "pending"}`}>
+                      {allDone ? "✓ ครบแล้ว" : `⚠ ยังค้าง ${totalPending} คน`}
+                    </span>
+                  </div>
+                </div>
+                <div className="sup-progress-wrap">
+                  <div className="sup-progress-bar">
+                    <div className="sup-progress-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="sup-progress-pct">{pct}%</span>
+                </div>
+                <div className="sup-check-table-wrap">
+                  <table className="table compact-table">
+                    <thead>
+                      <tr>
+                        <th>หน่วยงาน</th>
+                        <th style={{ textAlign: "center" }}>มาสาย</th>
+                        <th style={{ textAlign: "center" }}>เตือนแล้ว</th>
+                        <th style={{ textAlign: "center" }}>ยังค้าง</th>
+                        <th>ความคืบหน้า</th>
+                        <th style={{ textAlign: "center" }}>สถานะ</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {deptRows.map((row) => {
+                        const deptPct = row.late ? Math.round((row.warned / row.late) * 100) : 100;
+                        const done = row.pending === 0;
+                        return (
+                          <tr key={row.dept} className={done ? "sup-row-done" : "sup-row-pending"}>
+                            <td><span className="dept-chip">{row.dept}</span></td>
+                            <td style={{ textAlign: "center" }}>{row.late}</td>
+                            <td style={{ textAlign: "center" }}><strong style={{ color: "#10b981" }}>{row.warned}</strong></td>
+                            <td style={{ textAlign: "center" }}>
+                              {row.pending > 0
+                                ? <strong style={{ color: "#ef4444" }}>{row.pending}</strong>
+                                : <span style={{ color: "#94a3b8" }}>—</span>}
+                            </td>
+                            <td>
+                              <div className="sup-mini-bar-wrap">
+                                <div className="sup-mini-bar">
+                                  <div className="sup-mini-fill" style={{ width: `${deptPct}%` }} />
+                                </div>
+                                <span className="sup-mini-pct">{deptPct}%</span>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: "center" }}>
+                              <span className={`sup-status-badge ${done ? "done" : "pending"}`}>
+                                {done ? "✓ ครบ" : `ค้าง ${row.pending}`}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </section>
         );
       })()}
 
       {/* Employee detail table */}
       <section className="panel detail-attendance-panel">
-        <div className="panel-title-row">
+        <div className="panel-collapse-trigger" onClick={() => setDetailPanelCollapsed(c => !c)}>
           <h3>
             สถานะพนักงานรายคน
             {dashboardDeptFilter !== "all" ? ` · ${dashboardDeptFilter}` : ""}
           </h3>
+          <ChevronDown size={16} className="panel-collapse-chevron" style={{ transform: detailPanelCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }} />
+        </div>
+        {!detailPanelCollapsed && (<>
+        <div className="panel-title-row" style={{ marginTop: "12px" }}>
+          <div />
           <div className="table-actions">
             <select
               aria-label="กรองสถานะ"
@@ -2176,6 +2192,7 @@ function DashboardPanels({
           <span className="risk-badge" style={{ marginRight: 6 }}>เสี่ยง</span>
           = มาสายสะสม ≥ 3 ครั้งในเดือนนี้ · Export จะรวมเฉพาะ Late และ Absent
         </p>
+        </>)}
       </section>
 
     </>
@@ -3691,6 +3708,9 @@ function ReportDashboard({
 
   const isoDate = reportData?.isoTargetDate ?? "";
   const [deptConfirmations, setDeptConfirmations] = useState<Map<string, { confirmed_by: string; confirmed_at: string }>>(new Map());
+  const [confirmPanelCollapsed, setConfirmPanelCollapsed] = useState(true);
+  const [warnPanelCollapsed, setWarnPanelCollapsed] = useState(true);
+  const [lateAbsentCollapsed, setLateAbsentCollapsed] = useState(true);
 
   useEffect(() => {
     if (!isoDate) return;
@@ -3967,13 +3987,17 @@ function ReportDashboard({
       </section>
 
       <section className="panel report-table-panel">
-        <div className="report-table-header">
+        <div className="panel-collapse-trigger" onClick={() => setLateAbsentCollapsed(c => !c)}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <h3>รายละเอียด Late &amp; Absent</h3>
+            {selectedDept !== "all" && <span className="dept-filter-chip">{selectedDept}</span>}
+            <span className="table-count-badge">{sortedTableRows.length} คน</span>
+          </div>
+          <ChevronDown size={16} className="panel-collapse-chevron" style={{ transform: lateAbsentCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }} />
+        </div>
+        {!lateAbsentCollapsed && (<>
+        <div className="report-table-header" style={{ marginTop: "12px" }}>
           <div className="report-table-header-top">
-            <div className="report-table-title-row">
-              <h3>รายละเอียด Late &amp; Absent</h3>
-              {selectedDept !== "all" && <span className="dept-filter-chip">{selectedDept}</span>}
-              <span className="table-count-badge">{sortedTableRows.length} คน</span>
-            </div>
             <div className="report-table-actions">
               <div className="status-tabs">
                 {(["all", "Late", "Absent", "DayOff"] as const).map((s) => (
@@ -4110,77 +4134,129 @@ function ReportDashboard({
             </tbody>
           </table>
         </div>
+        </>)}
       </section>
 
       {/* ── Supervisor Confirmation Summary ── */}
-      <section className="panel confirm-summary-panel">
-        <div className="panel-title-row">
-          <ClipboardCheck size={16} />
-          <h3>สถานะการตรวจสอบการเข้างานรายหน่วยงาน</h3>
-          {isoDate && <span className="table-count">{isoDate ? new Date(isoDate + "T00:00:00").toLocaleDateString("th-TH", { dateStyle: "medium" }) : ""}</span>}
-        </div>
-        {!reportData ? (
-          <p className="muted-text">กด โหลดข้อมูล เพื่อดูสถานะ</p>
-        ) : (
-          <div className="table-scroll">
-            <table className="table data-table">
-              <thead>
-                <tr>
-                  <th>หน่วยงาน</th>
-                  <th className="num">รวม</th>
-                  <th className="num">ตรงเวลา</th>
-                  <th className="num">มาสาย</th>
-                  <th className="num">ขาด/ลา</th>
-                  <th className="num">วันหยุด</th>
-                  <th>สถานะ</th>
-                  <th>ยืนยันโดย</th>
-                  <th>เวลาที่ยืนยัน</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(reportData.deptRows ?? []).map(dept => {
-                  const conf = deptConfirmations.get(dept.dept);
-                  return (
-                    <tr key={dept.dept} className={conf ? "row-confirmed" : ""}>
-                      <td className="dept-cell">{dept.dept}</td>
-                      <td className="num">{dept.total}</td>
-                      <td className="num">{dept.present}</td>
-                      <td className="num">{dept.late > 0 ? <span className="csb late">{dept.late}</span> : "—"}</td>
-                      <td className="num">{dept.absent > 0 ? <span className="csb absent">{dept.absent}</span> : "—"}</td>
-                      <td className="num">{dept.dayoff > 0 ? dept.dayoff : "—"}</td>
-                      <td>
-                        {conf
-                          ? <span className="confirm-status-badge confirmed"><CheckCircle2 size={12} />ยืนยันแล้ว</span>
-                          : <span className="confirm-status-badge pending">รอยืนยัน</span>}
-                      </td>
-                      <td>{conf ? conf.confirmed_by : "—"}</td>
-                      <td className="muted-text">{conf ? new Date(conf.confirmed_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
-                    </tr>
-                  );
-                })}
-                {(reportData.deptRows ?? []).length === 0 && (
-                  <tr><td colSpan={9}>ไม่มีข้อมูลหน่วยงาน</td></tr>
+      {(() => {
+        const totalDepts = (reportData?.deptRows ?? []).length;
+        const confirmedCount = reportData ? deptConfirmations.size : 0;
+        const pendingCount = totalDepts - confirmedCount;
+        const pctConf = totalDepts ? Math.round((confirmedCount / totalDepts) * 100) : 0;
+        const allConfirmed = totalDepts > 0 && pendingCount === 0;
+        return (
+          <section className="panel sup-check-panel">
+            <div className="panel-collapse-trigger" onClick={() => setConfirmPanelCollapsed(c => !c)}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <ClipboardCheck size={16} />
+                <h3>สถานะการตรวจสอบการเข้างานรายหน่วยงาน</h3>
+                {isoDate && <span className="table-count">{new Date(isoDate + "T00:00:00").toLocaleDateString("th-TH", { dateStyle: "medium" })}</span>}
+              </div>
+              <ChevronDown size={16} className="panel-collapse-chevron" style={{ transform: confirmPanelCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }} />
+            </div>
+            {!confirmPanelCollapsed && (
+              <>
+                <div className="sup-check-header" style={{ marginTop: "12px" }}>
+                  <div className="sup-check-title">
+                    <p>ตรวจสอบว่าหัวหน้าหน่วยงานได้ยืนยันข้อมูลการเข้างานครบทุกหน่วยงานแล้วหรือยัง</p>
+                  </div>
+                  {reportData && (
+                    <div className="sup-check-summary">
+                      <div className="sup-check-stat">
+                        <span className="sup-stat-value success">{confirmedCount}</span>
+                        <span className="sup-stat-label">ยืนยันแล้ว</span>
+                      </div>
+                      <div className="sup-check-divider" />
+                      <div className="sup-check-stat">
+                        <span className="sup-stat-value muted">{totalDepts}</span>
+                        <span className="sup-stat-label">ทั้งหมด</span>
+                      </div>
+                      <div className="sup-check-divider" />
+                      <div className="sup-check-stat">
+                        <span className={`sup-stat-value ${pendingCount > 0 ? "danger" : "success"}`}>{pendingCount}</span>
+                        <span className="sup-stat-label">ยังค้าง</span>
+                      </div>
+                      <span className={`sup-overall-badge ${allConfirmed ? "done" : "pending"}`}>
+                        {allConfirmed ? "✓ ครบแล้ว" : `⚠ ยังค้าง ${pendingCount} หน่วยงาน`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                {reportData && (
+                  <div className="sup-progress-wrap">
+                    <div className="sup-progress-bar">
+                      <div className="sup-progress-fill" style={{ width: `${pctConf}%` }} />
+                    </div>
+                    <span className="sup-progress-pct">{pctConf}%</span>
+                  </div>
                 )}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td><strong>รวมทั้งหมด</strong></td>
-                  <td className="num"><strong>{reportData.totalEmployees}</strong></td>
-                  <td className="num"><strong>{reportData.present}</strong></td>
-                  <td className="num"><strong>{reportData.late}</strong></td>
-                  <td className="num"><strong>{reportData.absent}</strong></td>
-                  <td className="num"><strong>{reportData.dayoff}</strong></td>
-                  <td colSpan={3}>
-                    <span className="confirm-summary-count">
-                      {deptConfirmations.size}/{(reportData.deptRows ?? []).length} หน่วยงานยืนยันแล้ว
-                    </span>
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-      </section>
+                {!reportData ? (
+                  <p className="muted-text">กด โหลดข้อมูล เพื่อดูสถานะ</p>
+                ) : (
+                  <div className="sup-check-table-wrap">
+                <table className="table compact-table">
+                  <thead>
+                    <tr>
+                      <th>หน่วยงาน</th>
+                      <th className="num">รวม</th>
+                      <th className="num">ตรงเวลา</th>
+                      <th className="num">มาสาย</th>
+                      <th className="num">ขาด/ลา</th>
+                      <th className="num">วันหยุด</th>
+                      <th>สถานะ</th>
+                      <th>ยืนยันโดย</th>
+                      <th>เวลาที่ยืนยัน</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(reportData.deptRows ?? []).map(dept => {
+                      const conf = deptConfirmations.get(dept.dept);
+                      const done = !!conf;
+                      return (
+                        <tr key={dept.dept} className={done ? "sup-row-done" : "sup-row-pending"}>
+                          <td><span className="dept-chip">{dept.dept}</span></td>
+                          <td className="num">{dept.total}</td>
+                          <td className="num">{dept.present}</td>
+                          <td className="num">{dept.late > 0 ? <span className="csb late">{dept.late}</span> : "—"}</td>
+                          <td className="num">{dept.absent > 0 ? <span className="csb absent">{dept.absent}</span> : "—"}</td>
+                          <td className="num">{dept.dayoff > 0 ? dept.dayoff : "—"}</td>
+                          <td>
+                            {conf
+                              ? <span className="confirm-status-badge confirmed"><CheckCircle2 size={12} />ยืนยันแล้ว</span>
+                              : <span className="confirm-status-badge pending">รอยืนยัน</span>}
+                          </td>
+                          <td>{conf ? conf.confirmed_by : "—"}</td>
+                          <td className="muted-text">{conf ? new Date(conf.confirmed_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                    {(reportData.deptRows ?? []).length === 0 && (
+                      <tr><td colSpan={9}>ไม่มีข้อมูลหน่วยงาน</td></tr>
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td><strong>รวมทั้งหมด</strong></td>
+                      <td className="num"><strong>{reportData.totalEmployees}</strong></td>
+                      <td className="num"><strong>{reportData.present}</strong></td>
+                      <td className="num"><strong>{reportData.late}</strong></td>
+                      <td className="num"><strong>{reportData.absent}</strong></td>
+                      <td className="num"><strong>{reportData.dayoff}</strong></td>
+                      <td colSpan={3}>
+                        <span className="confirm-summary-count">
+                          {deptConfirmations.size}/{(reportData.deptRows ?? []).length} หน่วยงานยืนยันแล้ว
+                        </span>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+                </div>
+                )}
+              </>
+            )}
+          </section>
+        );
+      })()}
     </section>
   );
 }

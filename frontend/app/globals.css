@@ -307,7 +307,7 @@ button {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(0, 0.62fr);
   gap: 12px;
 }
 
@@ -318,9 +318,54 @@ button {
 .kpi-card.kpi-donut {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 14px;
-  padding: 20px;
+  gap: 8px;
+  padding: 10px 0;
+  overflow: hidden;
+}
+
+.kpi-donut-header {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0 12px;
+}
+
+.kpi-donut-header .kpi-stacked-bar {
+  margin: 0 -12px;
+  width: calc(100% + 24px);
+  height: 16px;
+  border-radius: 0;
+}
+
+.kpi-donut-legend {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  padding: 0 12px;
+}
+
+.kpi-donut-legend .legend-row {
+  display: grid;
+  grid-template-columns: 10px 1fr auto auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.kpi-donut-legend .legend-row strong {
+  text-align: right;
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 32px;
+}
+
+.kpi-donut-legend .legend-row em {
+  text-align: right;
+  font-style: normal;
+  font-size: 12px;
+  color: #64748b;
+  min-width: 44px;
 }
 
 .kpi-bar-chart {
@@ -333,8 +378,8 @@ button {
 
 .kpi-stacked-bar {
   display: flex;
-  height: 14px;
-  border-radius: 7px;
+  height: 10px;
+  border-radius: 5px;
   overflow: hidden;
   width: 100%;
 }
@@ -350,9 +395,9 @@ button {
 .kpi-bar-fill.dayoff  { background: #94a3b8; }
 
 .kpi-bar-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #64748b;
+  font-size: 14px;
+  font-weight: 700;
+  color: #334155;
   text-align: center;
 }
 
@@ -367,10 +412,10 @@ button {
 .kpi-card {
   min-height: 110px;
   display: grid;
-  grid-template-columns: 52px 1fr;
-  gap: 10px;
+  grid-template-columns: 46px 1fr;
+  gap: 8px;
   align-items: center;
-  padding: 14px 16px;
+  padding: 14px 12px;
   border-top: 3px solid transparent;
   transition: box-shadow 0.15s;
 }
@@ -593,11 +638,13 @@ button {
 }
 
 .legend.compact {
-  gap: 4px;
+  gap: 3px;
 }
 
 .legend.compact .legend-row {
-  font-size: 12px;
+  font-size: 13px;
+  grid-template-columns: 10px 1fr 38px 48px;
+  gap: 5px;
 }
 
 .dot {
@@ -2139,6 +2186,7 @@ button {
   min-height: 0;
 }
 
+
 .report-overview-card h3 {
   font-size: 15px;
   font-weight: 700;
@@ -2514,9 +2562,25 @@ button.stacked-row {
   justify-items: center;
 }
 
-.dashboard-late-card,
-.dept-panel {
+.dashboard-right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   height: 440px;
+}
+
+.dashboard-right-col .kpi-donut {
+  flex: 1;
+  min-height: 0;
+}
+
+.dashboard-late-card {
+  height: 440px;
+  overflow: hidden;
+}
+
+.dept-panel {
+  height: 220px;
   overflow: hidden;
 }
 
@@ -3484,6 +3548,22 @@ button.stacked-row {
 .sup-check-panel {
   margin-top: 20px;
 }
+
+.panel-collapse-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  gap: 8px;
+}
+.panel-collapse-trigger:hover { opacity: 0.75; }
+.panel-collapse-chevron {
+  color: #94a3b8;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+.panel-collapse-trigger h3 { margin: 0; }
 
 .sup-check-header {
   display: flex;
