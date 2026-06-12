@@ -1747,12 +1747,12 @@ function DonutKpiCard({
     <article className="kpi-card kpi-donut">
       <div className="kpi-donut-header">
         <span className="kpi-bar-label">{totalActive} คน</span>
-        <div className="kpi-stacked-bar">
-          <div className="kpi-bar-fill present" style={{ width: `${presentPct}%` }} />
-          <div className="kpi-bar-fill late" style={{ width: `${latePct}%` }} />
-          <div className="kpi-bar-fill absent" style={{ width: `${absentPct}%` }} />
-          <div className="kpi-bar-fill dayoff" style={{ width: `${dayoffPct}%` }} />
-        </div>
+      </div>
+      <div className="kpi-stacked-bar">
+        <div className="kpi-bar-fill present" style={{ width: `${presentPct}%` }} />
+        <div className="kpi-bar-fill late" style={{ width: `${latePct}%` }} />
+        <div className="kpi-bar-fill absent" style={{ width: `${absentPct}%` }} />
+        <div className="kpi-bar-fill dayoff" style={{ width: `${dayoffPct}%` }} />
       </div>
       <div className="kpi-donut-legend">
         <LegendRow color="green" label="ตรงเวลา" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />

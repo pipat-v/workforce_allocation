@@ -368,11 +368,10 @@ button {
   padding: 0 12px;
 }
 
-.kpi-donut-header .kpi-stacked-bar {
-  margin: 0 -12px;
-  width: calc(100% + 24px);
-  height: 16px;
+.kpi-card.kpi-donut > .kpi-stacked-bar {
+  height: 10px;
   border-radius: 0;
+  width: 100%;
 }
 
 .kpi-donut-legend {
