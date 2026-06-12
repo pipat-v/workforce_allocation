@@ -91,6 +91,9 @@ button {
 .nav-list {
   display: grid;
   gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .nav-item,
