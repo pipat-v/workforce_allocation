@@ -266,7 +266,8 @@ export default function Home() {
   const pctAbsent = totalEmployees ? Math.round((absentPeople / totalEmployees) * 100) : 0;
   const pctDayoff = totalEmployees ? Math.round((dayoffPeople / totalEmployees) * 100) : 0;
   const todayDate = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
-  const workDateBase = latestRun?.target_date ? new Date(latestRun.target_date) : new Date();
+  const workDateKey = latestRun ? (latestRun.target_date ?? latestRun.created_at.slice(0, 10)) : null;
+  const workDateBase = workDateKey ? new Date(workDateKey + "T00:00:00") : new Date();
   const workDate = workDateBase.toLocaleDateString("th-TH", {
     day: "numeric",
     month: "long",
