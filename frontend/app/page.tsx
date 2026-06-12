@@ -264,6 +264,7 @@ export default function Home() {
   const pctLate = totalEmployees ? Math.round((latePeople / totalEmployees) * 100) : 0;
   const pctAbsent = totalEmployees ? Math.round((absentPeople / totalEmployees) * 100) : 0;
   const pctDayoff = totalEmployees ? Math.round((dayoffPeople / totalEmployees) * 100) : 0;
+  const todayDate = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
   const workDateBase = latestRun?.target_date ? new Date(latestRun.target_date) : new Date();
   const workDate = workDateBase.toLocaleDateString("th-TH", {
     day: "numeric",
@@ -927,13 +928,21 @@ export default function Home() {
             <p className="subtitle">ระบบจัดสรรตำแหน่งงานอัตโนมัติ</p>
           </div>
           <div className="top-actions">
-            <div className="date-picker-wrap" ref={datePickerRef}>
+            <div className="topbar-date-group">
+              <div className="today-chip">
+                <Clock size={14} />
+                <div>
+                  <span className="today-chip-label">วันนี้</span>
+                  <strong>{todayDate}</strong>
+                  <span className="work-time">{workTime} น.</span>
+                </div>
+              </div>
+              <div className="date-picker-wrap" ref={datePickerRef}>
               <div className="date-picker" style={{ cursor: "pointer" }} onClick={() => setShowRunPicker(v => !v)}>
                 <CalendarDays size={19} />
                 <div>
                   <div className="date-picker-label-row">
-                    <span>วันที่ทำงาน</span>
-                    <span className="work-time">{workTime} น.</span>
+                    <span>ข้อมูลวันที่</span>
                   </div>
                   <strong>{workDate}</strong>
                 </div>
@@ -951,6 +960,7 @@ export default function Home() {
                   />
                 </div>
               )}
+            </div>
             </div>
             <div className="admin-chip">
               <div className="avatar">A</div>

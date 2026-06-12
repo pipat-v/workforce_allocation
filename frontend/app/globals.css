@@ -3935,6 +3935,43 @@ button.stacked-row {
 .table tfoot td { background: #f8fafc; font-size: 12px; padding: 6px 10px; }
 .num { text-align: center; }
 
+/* ── Topbar date group ── */
+.topbar-date-group {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.today-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: #475569;
+}
+.today-chip-label {
+  display: block;
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+.today-chip strong {
+  display: block;
+  font-size: 14px;
+  color: #1e293b;
+  white-space: nowrap;
+}
+.today-chip .work-time {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
 /* ── Custom Calendar Picker ── */
 .cal-picker-dropdown {
   padding: 0;
