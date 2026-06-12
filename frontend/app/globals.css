@@ -3930,3 +3930,188 @@ button.stacked-row {
 }
 .table tfoot td { background: #f8fafc; font-size: 12px; padding: 6px 10px; }
 .num { text-align: center; }
+
+/* ── Holiday Master Page ── */
+.holiday-master-panel {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.holiday-master-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.holiday-master-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #1e293b;
+}
+.holiday-master-title h2 { margin: 0; font-size: 18px; font-weight: 700; }
+
+.holiday-total-badge {
+  background: #e0f2fe;
+  color: #0369a1;
+  border-radius: 99px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.holiday-seed-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.holiday-seed-btn {
+  font-size: 12px;
+  padding: 0 10px;
+  min-height: 28px;
+  border-radius: 6px;
+}
+
+.holiday-add-form {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.holiday-add-form-fields {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.holiday-input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 14px;
+  background: #fff;
+  color: #1e293b;
+  min-height: 34px;
+}
+.holiday-input-name { flex: 1; min-width: 200px; }
+
+.holiday-type-select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 14px;
+  background: #fff;
+  color: #1e293b;
+  min-height: 34px;
+}
+
+.holiday-year-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.holiday-year-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 13px;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.holiday-year-tab:hover { background: #f1f5f9; }
+.holiday-year-tab.active {
+  background: #0f172a;
+  color: #fff;
+  border-color: #0f172a;
+}
+
+.holiday-year-count {
+  background: rgba(255,255,255,0.2);
+  border-radius: 99px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+.holiday-year-tab:not(.active) .holiday-year-count {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.holiday-table-wrap {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.holiday-table { min-width: 600px; width: 100%; }
+.holiday-table th, .holiday-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.holiday-table th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #475569;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.holiday-table tr:last-child td { border-bottom: none; }
+.holiday-table tr:hover td { background: #f8fafc; }
+
+.holiday-date-cell { font-weight: 500; color: #1e293b; }
+
+.holiday-type-badge {
+  display: inline-block;
+  border-radius: 99px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.holiday-badge-buddhist  { background: #fef3c7; color: #92400e; }
+.holiday-badge-public    { background: #dcfce7; color: #15803d; }
+.holiday-badge-company   { background: #ede9fe; color: #6d28d9; }
+
+.holiday-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+  background: #fff5f5;
+  color: #ef4444;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.holiday-delete-btn:hover { background: #fee2e2; }
+
+.holiday-empty-row {
+  text-align: center;
+  color: #94a3b8;
+  padding: 32px 16px !important;
+  font-size: 14px;
+}
+
+.holiday-loading {
+  text-align: center;
+  color: #94a3b8;
+  padding: 24px;
+}

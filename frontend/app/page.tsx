@@ -65,6 +65,13 @@ type SkillMatrixSaveRow = {
   level: number;
 };
 
+type HolidayRow = {
+  id: string;
+  date: string;
+  name: string;
+  type: "buddhist_holy_day" | "public_holiday" | "company_holiday";
+};
+
 type SkillFlatRow = {
   id: string;
   empId: string;
@@ -126,6 +133,7 @@ type TabId =
   | "master"
   | "skill"
   | "report"
+  | "holiday"
   | "setting";
 
 const navItems = [
@@ -136,6 +144,7 @@ const navItems = [
   { id: "master", label: "Master Data", icon: FileSpreadsheet },
   { id: "skill", label: "Skill Matrix", icon: LayoutGrid },
   { id: "report", label: "Report & Dashboard", icon: BarChart3 },
+  { id: "holiday", label: "วันหยุด", icon: CalendarDays },
   { id: "setting", label: "Setting", icon: Settings },
 ];
 
@@ -184,6 +193,11 @@ export default function Home() {
   const [prevMonthLateCounts, setPrevMonthLateCounts] = useState<Record<string, number>>({});
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [showRunPicker, setShowRunPicker] = useState(false);
+  const [holidayDates, setHolidayDates] = useState<Set<string>>(() => {
+    const all = new Set<string>();
+    for (const s of Object.values(buddhistHolyDaysByYear)) for (const d of s) all.add(d);
+    return all;
+  });
 
   const isoTargetDate = reportData?.isoTargetDate ?? "";
 
@@ -297,6 +311,17 @@ export default function Home() {
   useEffect(() => {
     void loadWarnCountMap();
   }, [reportData?.targetMonthKey]);
+
+  useEffect(() => {
+    supabase
+      .from("holidays")
+      .select("date")
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setHolidayDates(new Set(data.map((r: { date: string }) => r.date)));
+        }
+      });
+  }, []);
 
   async function loadDashboard() {
     await Promise.all([loadRuns(), loadActiveMasters()]);
@@ -669,7 +694,7 @@ export default function Home() {
           : Promise.resolve([]),
       ]);
 
-      const latestReport = buildReportData(employeeRows, scanRows, manpowerRows, dayoffShiftRows);
+      const latestReport = buildReportData(employeeRows, scanRows, manpowerRows, dayoffShiftRows, holidayDates);
       try {
         await saveTimestampWithDeptRows(latestRun.id, latestReport);
       } catch (saveError) {
@@ -702,7 +727,7 @@ export default function Home() {
       );
 
       for (const rows of monthlyScanRows) {
-        const dayReport = buildReportData(employeeRows, rows, manpowerRows, dayoffShiftRows);
+        const dayReport = buildReportData(employeeRows, rows, manpowerRows, dayoffShiftRows, holidayDates);
 
         if (dayReport.targetMonthKey === latestReport.targetMonthKey) {
           for (const lateRow of dayReport.lateRows) {
@@ -1128,7 +1153,13 @@ export default function Home() {
           />
         ) : null}
 
-        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report", "skill"].includes(activeTab) ? (
+        {activeTab === "holiday" ? (
+          <HolidayMasterPage
+            onHolidaysChanged={(dates) => setHolidayDates(dates)}
+          />
+        ) : null}
+
+        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report", "skill", "holiday"].includes(activeTab) ? (
           <section className="panel empty-page">
             <h3>{activeNav?.label}</h3>
             <p>แท็บนี้จะเชื่อมข้อมูลจริงในขั้นถัดไป</p>
@@ -1199,6 +1230,7 @@ function buildReportData(
   scanRows: Record<string, unknown>[],
   manpowerRows: Record<string, unknown>[],
   dayoffShiftRows: Record<string, unknown>[] = [],
+  holidaySet?: Set<string>,
 ): ReportData {
   const employees = employeeRows.map((row) => {
     const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
@@ -1261,7 +1293,7 @@ function buildReportData(
       deptShiftStart.get(makeDeptShiftKey(employee.dept, "")) ??
       "07:00";
     const isScheduledOff = latestTimestamp
-      ? isEmployeeDayOff(dayoffShift?.dayoff, latestTimestamp)
+      ? isEmployeeDayOff(dayoffShift?.dayoff, latestTimestamp, holidaySet)
       : false;
     if (isScheduledOff) return [{
       empId: employee.empId,
@@ -1420,13 +1452,18 @@ function addHoursToTime(timeStr: string, hours: number): string {
   return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
 }
 
-function isEmployeeDayOff(dayoff: string | undefined, targetDate: Date) {
+function isHolidayDate(date: Date, holidaySet?: Set<string>) {
+  if (holidaySet) return holidaySet.has(toDateKey(date));
+  return isBuddhistHolyDay(date);
+}
+
+function isEmployeeDayOff(dayoff: string | undefined, targetDate: Date, holidaySet?: Set<string>) {
   const value = String(dayoff ?? "").trim();
   if (!value) return false;
   const todayCode = getThaiWeekdayCode(targetDate);
   // split by comma / slash / space / pipe to support "ส,อา" "ส/อา" "ส อา" etc.
   const parts = value.split(/[,/|\s]+/).map((s) => s.trim()).filter(Boolean);
-  return parts.some((part) => part === "พระ" ? isBuddhistHolyDay(targetDate) : part === todayCode);
+  return parts.some((part) => part === "พระ" ? isHolidayDate(targetDate, holidaySet) : part === todayCode);
 }
 
 function getThaiWeekdayCode(date: Date) {
@@ -2374,6 +2411,215 @@ function MasterDataPage({
         employeeMasterFile={activeMasterMap.employee_master}
         saveDayoffShiftRows={saveDayoffShiftRows}
       />
+    </section>
+  );
+}
+
+function HolidayMasterPage({
+  onHolidaysChanged,
+}: {
+  onHolidaysChanged: (dates: Set<string>) => void;
+}) {
+  const [holidays, setHolidays] = useState<HolidayRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [newDate, setNewDate] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<HolidayRow["type"]>("buddhist_holy_day");
+  const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
+  const [seedYear, setSeedYear] = useState<string | null>(null);
+
+  useEffect(() => {
+    void loadHolidays();
+  }, []);
+
+  async function loadHolidays() {
+    setLoading(true);
+    const { data } = await supabase.from("holidays").select("*").order("date");
+    if (data) {
+      setHolidays(data as HolidayRow[]);
+      onHolidaysChanged(new Set(data.map((r: HolidayRow) => r.date)));
+    }
+    setLoading(false);
+  }
+
+  async function addHoliday() {
+    if (!newDate || !newName.trim()) return;
+    setSaving(true);
+    const { error } = await supabase
+      .from("holidays")
+      .upsert({ date: newDate, name: newName.trim(), type: newType }, { onConflict: "date" });
+    if (!error) {
+      setNewDate("");
+      setNewName("");
+      await loadHolidays();
+    }
+    setSaving(false);
+  }
+
+  async function deleteHoliday(id: string) {
+    await supabase.from("holidays").delete().eq("id", id);
+    await loadHolidays();
+  }
+
+  async function seedBuddhistHolyDays(year: string) {
+    const dates = buddhistHolyDaysByYear[year];
+    if (!dates) return;
+    setSeedYear(year);
+    const existingDates = new Set(holidays.map((h) => h.date));
+    const toInsert = Array.from(dates)
+      .filter((d) => !existingDates.has(d))
+      .map((d) => ({ date: d, name: "วันพระ", type: "buddhist_holy_day" as const }));
+    if (toInsert.length > 0) {
+      await supabase.from("holidays").insert(toInsert);
+    }
+    await loadHolidays();
+    setSeedYear(null);
+  }
+
+  const existingYears = Array.from(new Set(holidays.map((h) => h.date.substring(0, 4)))).sort();
+  const allYears = Array.from(new Set([...existingYears, yearFilter])).sort();
+  const seedableYears = Object.keys(buddhistHolyDaysByYear).sort();
+  const filtered = holidays.filter((h) => h.date.startsWith(yearFilter));
+
+  const typeLabel: Record<HolidayRow["type"], string> = {
+    buddhist_holy_day: "วันพระ",
+    public_holiday: "วันหยุดราชการ",
+    company_holiday: "วันหยุดบริษัท",
+  };
+  const typeBadgeClass: Record<HolidayRow["type"], string> = {
+    buddhist_holy_day: "holiday-badge-buddhist",
+    public_holiday: "holiday-badge-public",
+    company_holiday: "holiday-badge-company",
+  };
+
+  return (
+    <section className="panel holiday-master-panel">
+      <div className="holiday-master-header">
+        <div className="holiday-master-title">
+          <CalendarDays size={20} />
+          <h2>จัดการวันหยุด</h2>
+          <span className="holiday-total-badge">{holidays.length} วัน</span>
+        </div>
+        <div className="holiday-seed-actions">
+          <span style={{ fontSize: 13, color: "var(--muted)", marginRight: 4 }}>เพิ่มวันพระอัตโนมัติ:</span>
+          {seedableYears.map((yr) => (
+            <button
+              key={yr}
+              className="ghost-button holiday-seed-btn"
+              onClick={() => seedBuddhistHolyDays(yr)}
+              disabled={seedYear !== null}
+            >
+              {seedYear === yr ? "กำลังเพิ่ม…" : `Seed ${yr}`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="holiday-add-form">
+        <div className="holiday-add-form-fields">
+          <input
+            type="date"
+            className="holiday-input"
+            value={newDate}
+            onChange={(e) => setNewDate(e.target.value)}
+          />
+          <input
+            type="text"
+            className="holiday-input holiday-input-name"
+            placeholder="ชื่อวันหยุด เช่น วันสงกรานต์"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void addHoliday()}
+          />
+          <select
+            className="holiday-type-select"
+            value={newType}
+            onChange={(e) => setNewType(e.target.value as HolidayRow["type"])}
+          >
+            <option value="buddhist_holy_day">วันพระ</option>
+            <option value="public_holiday">วันหยุดราชการ</option>
+            <option value="company_holiday">วันหยุดบริษัท</option>
+          </select>
+          <button
+            className="primary-button"
+            onClick={addHoliday}
+            disabled={saving || !newDate || !newName.trim()}
+          >
+            + เพิ่มวันหยุด
+          </button>
+        </div>
+      </div>
+
+      <div className="holiday-year-tabs">
+        {allYears.map((yr) => (
+          <button
+            key={yr}
+            className={`holiday-year-tab${yearFilter === yr ? " active" : ""}`}
+            onClick={() => setYearFilter(yr)}
+          >
+            {yr}
+            <span className="holiday-year-count">
+              {holidays.filter((h) => h.date.startsWith(yr)).length}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="holiday-table-wrap">
+        {loading ? (
+          <p className="holiday-loading">กำลังโหลด…</p>
+        ) : (
+          <table className="table holiday-table">
+            <thead>
+              <tr>
+                <th>วันที่</th>
+                <th>วันในสัปดาห์</th>
+                <th>ชื่อวันหยุด</th>
+                <th>ประเภท</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((h) => {
+                const d = new Date(h.date + "T00:00:00");
+                return (
+                  <tr key={h.id}>
+                    <td className="holiday-date-cell">
+                      {d.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}
+                    </td>
+                    <td>
+                      {["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"][d.getDay()]}
+                    </td>
+                    <td>{h.name}</td>
+                    <td>
+                      <span className={`holiday-type-badge ${typeBadgeClass[h.type]}`}>
+                        {typeLabel[h.type]}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        className="holiday-delete-btn"
+                        onClick={() => deleteHoliday(h.id)}
+                        title="ลบวันหยุดนี้"
+                      >
+                        <X size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="holiday-empty-row">
+                    ไม่มีวันหยุดสำหรับปี {yearFilter} — กด Seed หรือเพิ่มเองด้านบน
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
     </section>
   );
 }
