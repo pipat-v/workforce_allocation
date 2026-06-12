@@ -273,7 +273,7 @@ export default function Home() {
   const [workTime, setWorkTime] = useState(() =>
     new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
   );
-  const dateInputRef = useRef<HTMLInputElement>(null);
+  const datePickerRef = useRef<HTMLDivElement>(null);
   const selectedDateKey = latestRun?.target_date ?? latestRun?.created_at?.slice(0, 10) ?? "";
   const availableRunsByDate = useMemo(() => {
     const map = new Map<string, AllocationRun>();
@@ -284,6 +284,17 @@ export default function Home() {
     }
     return map;
   }, [runs]);
+
+  useEffect(() => {
+    if (!showRunPicker) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (datePickerRef.current && !datePickerRef.current.contains(e.target as Node)) {
+        setShowRunPicker(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showRunPicker]);
 
   useEffect(() => {
     const tick = () =>
@@ -916,8 +927,8 @@ export default function Home() {
             <p className="subtitle">ระบบจัดสรรตำแหน่งงานอัตโนมัติ</p>
           </div>
           <div className="top-actions">
-            <div className="date-picker-wrap">
-              <div className="date-picker" style={{ cursor: "pointer", position: "relative" }} onClick={() => dateInputRef.current?.showPicker?.()}>
+            <div className="date-picker-wrap" ref={datePickerRef}>
+              <div className="date-picker" style={{ cursor: "pointer" }} onClick={() => setShowRunPicker(v => !v)}>
                 <CalendarDays size={19} />
                 <div>
                   <div className="date-picker-label-row">
@@ -926,18 +937,20 @@ export default function Home() {
                   </div>
                   <strong>{workDate}</strong>
                 </div>
-                <ChevronDown size={17} />
-                <input
-                  ref={dateInputRef}
-                  type="date"
-                  value={selectedDateKey}
-                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }}
-                  onChange={(e) => {
-                    const run = availableRunsByDate.get(e.target.value);
-                    if (run) { setSelectedRunId(run.id); setLoadedReportKey(""); }
-                  }}
-                />
+                <ChevronDown size={17} style={{ transition: "transform 0.2s", transform: showRunPicker ? "rotate(180deg)" : "rotate(0deg)" }} />
               </div>
+              {showRunPicker && (
+                <div className="run-picker-dropdown cal-picker-dropdown">
+                  <CalendarPicker
+                    value={selectedDateKey}
+                    availableDates={availableRunsByDate}
+                    onChange={(dateStr) => {
+                      const run = availableRunsByDate.get(dateStr);
+                      if (run) { setSelectedRunId(run.id); setLoadedReportKey(""); setShowRunPicker(false); }
+                    }}
+                  />
+                </div>
+              )}
             </div>
             <div className="admin-chip">
               <div className="avatar">A</div>
@@ -2455,6 +2468,69 @@ function MasterDataPage({
       />
       </>) : null}
     </section>
+  );
+}
+
+function CalendarPicker({
+  value,
+  availableDates,
+  onChange,
+}: {
+  value: string;
+  availableDates: Map<string, AllocationRun>;
+  onChange: (date: string) => void;
+}) {
+  const [view, setView] = useState<{ year: number; month: number }>(() => {
+    const d = value ? new Date(value + "T00:00:00") : new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+
+  const prevMonth = () => setView(v => v.month === 0 ? { year: v.year - 1, month: 11 } : { ...v, month: v.month - 1 });
+  const nextMonth = () => setView(v => v.month === 11 ? { year: v.year + 1, month: 0 } : { ...v, month: v.month + 1 });
+
+  const monthLabel = new Date(view.year, view.month, 1)
+    .toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+
+  const firstDay = new Date(view.year, view.month, 1).getDay();
+  const daysInMonth = new Date(view.year, view.month + 1, 0).getDate();
+
+  const cells: Array<{ day: number; dateStr: string; hasData: boolean } | null> = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${view.year}-${String(view.month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    cells.push({ day: d, dateStr, hasData: availableDates.has(dateStr) });
+  }
+
+  return (
+    <div className="cal-picker">
+      <div className="cal-picker-header">
+        <button className="cal-nav-btn" onClick={prevMonth}>‹</button>
+        <span className="cal-month-label">{monthLabel}</span>
+        <button className="cal-nav-btn" onClick={nextMonth}>›</button>
+      </div>
+      <div className="cal-weekdays">
+        {["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"].map((d) => (
+          <span key={d}>{d}</span>
+        ))}
+      </div>
+      <div className="cal-grid">
+        {cells.map((cell, i) =>
+          cell === null ? (
+            <span key={`e-${i}`} />
+          ) : (
+            <button
+              key={cell.dateStr}
+              className={`cal-day${cell.hasData ? "" : " no-data"}${cell.dateStr === value ? " selected" : ""}`}
+              onClick={() => cell.hasData && onChange(cell.dateStr)}
+              disabled={!cell.hasData}
+              title={cell.hasData ? cell.dateStr : undefined}
+            >
+              {cell.day}
+            </button>
+          )
+        )}
+      </div>
+    </div>
   );
 }
 

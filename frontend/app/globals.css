@@ -3935,6 +3935,95 @@ button.stacked-row {
 .table tfoot td { background: #f8fafc; font-size: 12px; padding: 6px 10px; }
 .num { text-align: center; }
 
+/* ── Custom Calendar Picker ── */
+.cal-picker-dropdown {
+  padding: 0;
+  min-width: unset;
+  width: auto;
+}
+
+.cal-picker {
+  padding: 14px;
+  min-width: 260px;
+  user-select: none;
+}
+
+.cal-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.cal-month-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.cal-nav-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: #475569;
+  font-size: 16px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  line-height: 1;
+}
+.cal-nav-btn:hover { background: #f1f5f9; }
+
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 4px;
+}
+.cal-weekdays span {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  padding: 2px 0;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.cal-day {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.1s;
+}
+.cal-day:hover:not(:disabled) { background: #e0f2fe; color: #0369a1; }
+
+.cal-day.no-data {
+  color: #cbd5e1;
+  font-weight: 400;
+  cursor: default;
+}
+
+.cal-day.selected {
+  background: #0f172a;
+  color: #fff !important;
+  font-weight: 700;
+}
+.cal-day.selected:hover { background: #1e293b; }
+
 /* ── Master Data sub-tabs ── */
 .master-sub-tabs {
   display: flex;
