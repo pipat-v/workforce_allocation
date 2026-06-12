@@ -3934,6 +3934,36 @@ button.stacked-row {
 .table tfoot td { background: #f8fafc; font-size: 12px; padding: 6px 10px; }
 .num { text-align: center; }
 
+/* ── Master Data sub-tabs ── */
+.master-sub-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 4px;
+  margin-bottom: 20px;
+}
+
+.master-sub-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+  margin-bottom: -1px;
+}
+.master-sub-tab:hover { color: #1e293b; }
+.master-sub-tab.active {
+  color: #059669;
+  border-bottom-color: #059669;
+}
+
 /* ── Holiday Master Page ── */
 .holiday-master-panel {
   padding: 24px;

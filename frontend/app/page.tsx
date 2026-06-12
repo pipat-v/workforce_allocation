@@ -133,7 +133,6 @@ type TabId =
   | "master"
   | "skill"
   | "report"
-  | "holiday"
   | "setting";
 
 const navItems = [
@@ -144,7 +143,6 @@ const navItems = [
   { id: "master", label: "Master Data", icon: FileSpreadsheet },
   { id: "skill", label: "Skill Matrix", icon: LayoutGrid },
   { id: "report", label: "Report & Dashboard", icon: BarChart3 },
-  { id: "holiday", label: "วันหยุด", icon: CalendarDays },
   { id: "setting", label: "Setting", icon: Settings },
 ];
 
@@ -1083,6 +1081,7 @@ export default function Home() {
             masterFileHistory={masterFileHistory}
             masterUploads={masterUploads}
             onDeleteMasterFile={deleteMasterFile}
+            onHolidaysChanged={(dates) => setHolidayDates(dates)}
             saveDayoffShiftRows={saveDayoffShiftRows}
             saveMasterFiles={saveMasterFiles}
             setMasterUploads={setMasterUploads}
@@ -1153,13 +1152,7 @@ export default function Home() {
           />
         ) : null}
 
-        {activeTab === "holiday" ? (
-          <HolidayMasterPage
-            onHolidaysChanged={(dates) => setHolidayDates(dates)}
-          />
-        ) : null}
-
-        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report", "skill", "holiday"].includes(activeTab) ? (
+        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report", "skill"].includes(activeTab) ? (
           <section className="panel empty-page">
             <h3>{activeNav?.label}</h3>
             <p>แท็บนี้จะเชื่อมข้อมูลจริงในขั้นถัดไป</p>
@@ -2281,6 +2274,7 @@ function MasterDataPage({
   masterFileHistory,
   masterUploads,
   onDeleteMasterFile,
+  onHolidaysChanged,
   saveDayoffShiftRows,
   saveMasterFiles,
   setMasterUploads,
@@ -2291,12 +2285,37 @@ function MasterDataPage({
   masterFileHistory: MasterFile[];
   masterUploads: MasterUploadState;
   onDeleteMasterFile: (file: MasterFile) => Promise<void>;
+  onHolidaysChanged: (dates: Set<string>) => void;
   saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
   saveMasterFiles: () => Promise<void>;
   setMasterUploads: Dispatch<SetStateAction<MasterUploadState>>;
 }) {
+  const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays">("files");
+
   return (
     <section className="md-page">
+      <div className="master-sub-tabs">
+        <button
+          className={`master-sub-tab${masterSubTab === "files" ? " active" : ""}`}
+          onClick={() => setMasterSubTab("files")}
+        >
+          <FileSpreadsheet size={15} />
+          Master Files
+        </button>
+        <button
+          className={`master-sub-tab${masterSubTab === "holidays" ? " active" : ""}`}
+          onClick={() => setMasterSubTab("holidays")}
+        >
+          <CalendarDays size={15} />
+          วันหยุด
+        </button>
+      </div>
+
+      {masterSubTab === "holidays" ? (
+        <HolidayMasterPage onHolidaysChanged={onHolidaysChanged} />
+      ) : null}
+
+      {masterSubTab === "files" ? (<>
       <div className="md-columns-bar">
         <div>
           <h3>Master Data</h3>
@@ -2411,6 +2430,7 @@ function MasterDataPage({
         employeeMasterFile={activeMasterMap.employee_master}
         saveDayoffShiftRows={saveDayoffShiftRows}
       />
+      </>) : null}
     </section>
   );
 }
