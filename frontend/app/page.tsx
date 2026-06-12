@@ -222,6 +222,7 @@ export default function Home() {
   const reportSourceKey =
     activeMasterMap.employee_master?.file_path && latestRun?.scan_file_path
       ? [
+          latestRun.id,
           activeMasterMap.employee_master.file_path,
           activeMasterMap.manpower_plan?.file_path,
           activeMasterMap.dayoff_shift?.file_path,
@@ -779,6 +780,7 @@ export default function Home() {
         monthlyLateCounts,
       });
       setLoadedReportKey([
+        latestRun.id,
         employeeMaster.file_path,
         activeMasterMap.manpower_plan?.file_path,
         activeMasterMap.dayoff_shift?.file_path,
