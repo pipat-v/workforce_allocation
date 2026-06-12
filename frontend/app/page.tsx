@@ -1839,15 +1839,17 @@ function DashboardPanels({
       .filter((r: { status: string }) => r.status === "Absent")
       .map((r: { empId: string }) => r.empId);
     supabase.from("leave_records").select("emp_id, leave_type").eq("leave_date", isoTargetDate)
-      .then(async ({ data: rows }) => {
+      .then(async ({ data: rows, error }) => {
+        if (error) { console.error("leave_records load error:", error.message); return; }
         const map = new Map((rows ?? []).map((r: { emp_id: string; leave_type: string }) => [r.emp_id, r.leave_type]));
         const missing = absentIds.filter((id: string) => !map.has(id));
         if (missing.length) {
-          await supabase.from("leave_records").upsert(
+          const { error: upsertError } = await supabase.from("leave_records").upsert(
             missing.map((empId: string) => ({ emp_id: empId, leave_date: isoTargetDate, leave_type: "ขาดงาน" })),
             { onConflict: "emp_id,leave_date" }
           );
-          missing.forEach((id: string) => map.set(id, "ขาดงาน"));
+          if (upsertError) { console.error("leave_records upsert error:", upsertError.message); }
+          else { missing.forEach((id: string) => map.set(id, "ขาดงาน")); }
         }
         setLeaveMap(map);
       });
@@ -1874,7 +1876,10 @@ function DashboardPanels({
       .eq("confirm_date", isoTargetDate)
       .eq("dept", deptKey)
       .maybeSingle()
-      .then(({ data }) => setConfirmation(data ?? null));
+      .then(({ data, error }) => {
+        if (error) { console.error("daily_confirmations load error:", error.message); setConfirmation(null); return; }
+        setConfirmation(data ?? null);
+      });
   }, [isoTargetDate, dashboardDeptFilter]);
 
   const handleConfirm = async () => {
@@ -4694,7 +4699,7 @@ function KpiCard({
   progress,
 }: {
   icon: ReactNode;
-  tone: "green" | "blue" | "amber" | "purple" | "gray";
+  tone: "green" | "blue" | "amber" | "purple" | "gray" | "red";
   label: string;
   value: string;
   unit: string;
