@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -273,6 +273,17 @@ export default function Home() {
   const [workTime, setWorkTime] = useState(() =>
     new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
   );
+  const dateInputRef = useRef<HTMLInputElement>(null);
+  const selectedDateKey = latestRun?.target_date ?? latestRun?.created_at?.slice(0, 10) ?? "";
+  const availableRunsByDate = useMemo(() => {
+    const map = new Map<string, AllocationRun>();
+    for (const run of runs) {
+      if (!run.scan_file_path) continue;
+      const key = run.target_date ?? run.created_at.slice(0, 10);
+      if (!map.has(key)) map.set(key, run);
+    }
+    return map;
+  }, [runs]);
 
   useEffect(() => {
     const tick = () =>
@@ -906,7 +917,7 @@ export default function Home() {
           </div>
           <div className="top-actions">
             <div className="date-picker-wrap">
-              <div className="date-picker" style={{ cursor: "pointer" }} onClick={() => setShowRunPicker(v => !v)}>
+              <div className="date-picker" style={{ cursor: "pointer", position: "relative" }} onClick={() => dateInputRef.current?.showPicker?.()}>
                 <CalendarDays size={19} />
                 <div>
                   <div className="date-picker-label-row">
@@ -915,34 +926,18 @@ export default function Home() {
                   </div>
                   <strong>{workDate}</strong>
                 </div>
-                <ChevronDown size={17} style={{ transition: "transform 0.2s", transform: showRunPicker ? "rotate(180deg)" : "rotate(0deg)" }} />
+                <ChevronDown size={17} />
+                <input
+                  ref={dateInputRef}
+                  type="date"
+                  value={selectedDateKey}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }}
+                  onChange={(e) => {
+                    const run = availableRunsByDate.get(e.target.value);
+                    if (run) { setSelectedRunId(run.id); setLoadedReportKey(""); }
+                  }}
+                />
               </div>
-              {showRunPicker && runs.length > 0 && (
-                <div className="run-picker-dropdown">
-                  {((() => {
-                    const seen = new Map<string, AllocationRun>();
-                    for (const run of runs) {
-                      if (!run.scan_file_path) continue;
-                      const key = run.target_date ?? run.created_at.slice(0, 10);
-                      if (!seen.has(key)) seen.set(key, run);
-                    }
-                    return Array.from(seen.values());
-                  })()).map(run => {
-                    const dateKey = run.target_date ?? run.created_at.slice(0, 10);
-                    const displayDate = new Date(dateKey).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
-                    const isSelected = (selectedRunId ?? runs[0]?.id) === run.id;
-                    return (
-                      <div
-                        key={run.id}
-                        className={`run-picker-item${isSelected ? " active" : ""}`}
-                        onClick={() => { setSelectedRunId(run.id); setLoadedReportKey(""); setShowRunPicker(false); }}
-                      >
-                        <span className="run-picker-date">{displayDate}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
             <div className="admin-chip">
               <div className="avatar">A</div>
