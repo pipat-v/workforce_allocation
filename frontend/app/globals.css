@@ -94,6 +94,7 @@ button {
   overflow-y: auto;
   flex: 1;
   min-height: 0;
+  align-content: start;
 }
 
 .nav-item,
