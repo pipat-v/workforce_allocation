@@ -370,8 +370,9 @@ button {
 
 .kpi-card.kpi-donut > .kpi-stacked-bar {
   height: 10px;
-  border-radius: 0;
-  width: 100%;
+  border-radius: 4px;
+  width: calc(100% - 24px);
+  margin: 0 12px;
 }
 
 .kpi-donut-legend {
