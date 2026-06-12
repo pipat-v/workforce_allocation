@@ -4395,6 +4395,7 @@ function ReportDashboard({
             })}
             {supDeptRows.length === 0 && <p className="empty-copy">ไม่มีพนักงานมาสาย</p>}
           </div>
+        </div>
 
         {absTotalAbsent > 0 && (
         <div className="panel report-overview-card">
@@ -4447,7 +4448,6 @@ function ReportDashboard({
           </div>
         </div>
         )}
-        </div>
       </section>
 
       <section className="panel report-table-panel">
