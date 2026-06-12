@@ -2307,7 +2307,7 @@ function MasterDataPage({
           onClick={() => setMasterSubTab("holidays")}
         >
           <CalendarDays size={15} />
-          วันหยุด
+          วันพระ
         </button>
       </div>
 
@@ -2518,7 +2518,7 @@ function HolidayMasterPage({
       <div className="holiday-master-header">
         <div className="holiday-master-title">
           <CalendarDays size={20} />
-          <h2>จัดการวันหยุด</h2>
+          <h2>จัดการวันพระ</h2>
           <span className="holiday-total-badge">{holidays.length} วัน</span>
         </div>
         <div className="holiday-seed-actions">
