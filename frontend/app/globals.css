@@ -3935,9 +3935,6 @@ button.stacked-row {
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
   color: #475569;
 }
 .today-chip-label {

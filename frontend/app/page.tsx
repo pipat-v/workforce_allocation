@@ -932,14 +932,6 @@ export default function Home() {
           </div>
           <div className="top-actions">
             <div className="topbar-date-group">
-              <div className="today-chip">
-                <Clock size={14} />
-                <div>
-                  <span className="today-chip-label">วันนี้</span>
-                  <strong>{todayDate}</strong>
-                  <span className="work-time">{workTime} น.</span>
-                </div>
-              </div>
               <div className="date-picker-wrap" ref={datePickerRef}>
               <div className="date-picker" style={{ cursor: "pointer" }} onClick={() => setShowRunPicker(v => !v)}>
                 <CalendarDays size={19} />
@@ -964,6 +956,14 @@ export default function Home() {
                 </div>
               )}
             </div>
+              <div className="today-chip">
+                <Clock size={14} />
+                <div>
+                  <span className="today-chip-label">วันนี้</span>
+                  <strong>{todayDate}</strong>
+                  <span className="work-time">{workTime} น.</span>
+                </div>
+              </div>
             </div>
           </div>
         </header>
