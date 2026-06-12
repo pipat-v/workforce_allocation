@@ -2549,25 +2549,9 @@ function HolidayMasterPage({
           <h2>จัดการวันพระ</h2>
           <span className="holiday-total-badge">{holidays.length} วัน</span>
         </div>
-        <div className="holiday-seed-actions">
-          <span style={{ fontSize: 13, color: "var(--muted)" }}>เพิ่มวันพระอัตโนมัติ:</span>
-          <select
-            className="holiday-type-select"
-            defaultValue=""
-            disabled={seedYear !== null}
-            onChange={(e) => {
-              if (e.target.value) {
-                void seedBuddhistHolyDays(e.target.value);
-                e.target.value = "";
-              }
-            }}
-          >
-            <option value="" disabled>{seedYear ? "กำลังเพิ่ม…" : "เลือกปี"}</option>
-            {seedableYears.map((yr) => (
-              <option key={yr} value={yr}>{yr}</option>
-            ))}
-          </select>
-        </div>
+        <span style={{ fontSize: 13, color: "var(--muted)" }}>
+          ข้อมูลอัพเดทถึงปี {seedableYears[seedableYears.length - 1]}
+        </span>
       </div>
 
       <div className="holiday-add-form">

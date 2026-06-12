@@ -3998,19 +3998,6 @@ button.stacked-row {
   font-weight: 600;
 }
 
-.holiday-seed-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.holiday-seed-btn {
-  font-size: 12px;
-  padding: 0 10px;
-  min-height: 28px;
-  border-radius: 6px;
-}
 
 .holiday-add-form {
   background: #f8fafc;
