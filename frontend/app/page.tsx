@@ -965,14 +965,6 @@ export default function Home() {
               )}
             </div>
             </div>
-            <div className="admin-chip">
-              <div className="avatar">A</div>
-              <div>
-                <strong>Admin</strong>
-                <span>Administrator</span>
-              </div>
-              <ChevronDown size={17} />
-            </div>
           </div>
         </header>
 
