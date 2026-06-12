@@ -4106,7 +4106,6 @@ function ReportDashboard({
   const [deptConfirmations, setDeptConfirmations] = useState<Map<string, { confirmed_by: string; confirmed_at: string }>>(new Map());
   const [confirmPanelCollapsed, setConfirmPanelCollapsed] = useState(true);
   const [warnPanelCollapsed, setWarnPanelCollapsed] = useState(true);
-  const [absentPanelCollapsed, setAbsentPanelCollapsed] = useState(false);
   const [lateAbsentCollapsed, setLateAbsentCollapsed] = useState(true);
 
   useEffect(() => {
@@ -4191,6 +4190,22 @@ function ReportDashboard({
   const supTotalLate = scopedLateRows.length;
   const supTotalWarned = scopedLateRows.filter((r) => warnedOnDate.has(r.empId)).length;
   const supPct = supTotalLate ? Math.round((supTotalWarned / supTotalLate) * 100) : 0;
+  const absentRecords = scopedRecords.filter((r) => r.status === "Absent");
+  const absTotalAbsent = absentRecords.length;
+  const absConfirmed = absentRecords.filter((r) => { const lt = leaveMap.get(r.empId); return lt && lt !== "ขาดงาน"; }).length;
+  const absPending = absTotalAbsent - absConfirmed;
+  const absPct = absTotalAbsent > 0 ? Math.round((absConfirmed / absTotalAbsent) * 100) : 0;
+  const absDeptMap = new Map<string, { total: number; confirmed: number }>();
+  for (const r of absentRecords) {
+    const s = absDeptMap.get(r.dept) ?? { total: 0, confirmed: 0 };
+    s.total++;
+    const lt = leaveMap.get(r.empId);
+    if (lt && lt !== "ขาดงาน") s.confirmed++;
+    absDeptMap.set(r.dept, s);
+  }
+  const absDeptRows = Array.from(absDeptMap.entries())
+    .map(([dept, s]) => ({ dept, ...s, pending: s.total - s.confirmed }))
+    .sort((a, b) => b.pending - a.pending);
   const lateDeptRows = Array.from(
     data.lateRows.reduce((map, row) => {
       map.set(row.dept, (map.get(row.dept) ?? 0) + 1);
@@ -4380,6 +4395,58 @@ function ReportDashboard({
             })}
             {supDeptRows.length === 0 && <p className="empty-copy">ไม่มีพนักงานมาสาย</p>}
           </div>
+
+        {absTotalAbsent > 0 && (
+        <div className="panel report-overview-card">
+          <div className="sup-report-header">
+            <h3>สถานะการขาดงาน{selectedDept !== "all" ? ` · ${selectedDept}` : ""}</h3>
+            <span className={`sup-overall-badge ${absPending === 0 ? "done" : "pending"}`}>
+              {absPending === 0 ? "✓ ครบแล้ว" : `⚠ ค้าง ${absPending}`}
+            </span>
+          </div>
+          <div className="sup-report-progress">
+            <div className="sup-progress-bar">
+              <div className="sup-progress-fill" style={{ width: `${absPct}%`, background: "#ef4444" }} />
+            </div>
+            <span className="sup-progress-pct">{absPct}%</span>
+          </div>
+          <div className="sup-report-stats">
+            <div className="sup-report-stat-item">
+              <span className="sup-report-stat-val" style={{ color: "#10b981" }}>{absConfirmed}</span>
+              <span className="sup-report-stat-lbl">บันทึกแล้ว</span>
+            </div>
+            <div className="sup-report-stat-item">
+              <span className="sup-report-stat-val" style={{ color: "#ef4444" }}>{absTotalAbsent}</span>
+              <span className="sup-report-stat-lbl">ขาดงานทั้งหมด</span>
+            </div>
+            <div className="sup-report-stat-item">
+              <span className="sup-report-stat-val" style={{ color: absPending > 0 ? "#ef4444" : "#94a3b8" }}>{absPending}</span>
+              <span className="sup-report-stat-lbl">ยังค้าง</span>
+            </div>
+          </div>
+          <div className="sup-report-dept-list">
+            {absDeptRows.map((row) => {
+              const dPct = row.total > 0 ? Math.round((row.confirmed / row.total) * 100) : 100;
+              const done = row.pending === 0;
+              return (
+                <div key={row.dept} className={`sup-dept-row ${done ? "done" : "pending"}`}>
+                  <span className="sup-dept-name">{row.dept}</span>
+                  <div className="sup-dept-bar-wrap">
+                    <div className="sup-mini-bar">
+                      <div className="sup-mini-fill" style={{ width: `${dPct}%`, background: "#ef4444" }} />
+                    </div>
+                    <span className="sup-mini-pct">{dPct}%</span>
+                  </div>
+                  <span className="sup-dept-counts">{row.confirmed}/{row.total}</span>
+                  <span className={`sup-status-badge ${done ? "done" : "pending"}`}>
+                    {done ? "✓" : `${row.pending}`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        )}
         </div>
       </section>
 
@@ -4533,122 +4600,6 @@ function ReportDashboard({
         </div>
         </>)}
       </section>
-
-      {/* ── Absent status panel ── */}
-      {(() => {
-        const absentRecords = scopedRecords.filter((r) => r.status === "Absent");
-        if (absentRecords.length === 0) return null;
-        const totalAbsent = absentRecords.length;
-        const confirmedAbsent = absentRecords.filter((r) => {
-          const lt = leaveMap.get(r.empId);
-          return lt && lt !== "ขาดงาน";
-        }).length;
-        const pendingAbsent = totalAbsent - confirmedAbsent;
-        const pct = totalAbsent > 0 ? Math.round((confirmedAbsent / totalAbsent) * 100) : 0;
-        const deptAbsentMap = new Map<string, { total: number; confirmed: number }>();
-        for (const r of absentRecords) {
-          const s = deptAbsentMap.get(r.dept) ?? { total: 0, confirmed: 0 };
-          s.total++;
-          const lt = leaveMap.get(r.empId);
-          if (lt && lt !== "ขาดงาน") s.confirmed++;
-          deptAbsentMap.set(r.dept, s);
-        }
-        const absentDeptRows = Array.from(deptAbsentMap.entries())
-          .map(([dept, s]) => ({ dept, ...s, pending: s.total - s.confirmed }))
-          .sort((a, b) => b.pending - a.pending);
-        return (
-          <section className="panel sup-check-panel">
-            <div className="panel-collapse-trigger" onClick={() => setAbsentPanelCollapsed((c) => !c)}>
-              <h3>สถานะการขาดงาน</h3>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                {pendingAbsent > 0 && (
-                  <span className="sup-overall-badge pending">⚠ ยังค้าง {pendingAbsent} คน</span>
-                )}
-                <ChevronDown size={16} className="panel-collapse-chevron" style={{ transform: absentPanelCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }} />
-              </div>
-            </div>
-            {!absentPanelCollapsed && (
-              <>
-                <div className="sup-check-header" style={{ marginTop: "12px" }}>
-                  <div className="sup-check-title">
-                    <p>ตรวจสอบว่าได้บันทึกสาเหตุการขาดงานครบทุกคนแล้วหรือยัง</p>
-                  </div>
-                  <div className="sup-check-summary">
-                    <div className="sup-check-stat">
-                      <span className="sup-stat-value" style={{ color: "#10b981" }}>{confirmedAbsent}</span>
-                      <span className="sup-stat-label">บันทึกแล้ว</span>
-                    </div>
-                    <div className="sup-check-divider" />
-                    <div className="sup-check-stat">
-                      <span className="sup-stat-value muted">{totalAbsent}</span>
-                      <span className="sup-stat-label">ขาดงานทั้งหมด</span>
-                    </div>
-                    <div className="sup-check-divider" />
-                    <div className="sup-check-stat">
-                      <span className={`sup-stat-value ${pendingAbsent > 0 ? "danger" : "success"}`}>{pendingAbsent}</span>
-                      <span className="sup-stat-label">ยังค้าง</span>
-                    </div>
-                    <span className={`sup-overall-badge ${pendingAbsent === 0 ? "done" : "pending"}`}>
-                      {pendingAbsent === 0 ? "✓ ครบแล้ว" : `⚠ ค้าง ${pendingAbsent}`}
-                    </span>
-                  </div>
-                </div>
-                <div className="sup-progress-wrap">
-                  <div className="sup-progress-bar">
-                    <div className="sup-progress-fill" style={{ width: `${pct}%`, background: "#ef4444" }} />
-                  </div>
-                  <span className="sup-progress-pct">{pct}%</span>
-                </div>
-                <div className="sup-check-table-wrap">
-                  <table className="table compact-table">
-                    <thead>
-                      <tr>
-                        <th>หน่วยงาน</th>
-                        <th style={{ textAlign: "center" }}>ขาดงาน</th>
-                        <th style={{ textAlign: "center" }}>บันทึกแล้ว</th>
-                        <th style={{ textAlign: "center" }}>ยังค้าง</th>
-                        <th>ความคืบหน้า</th>
-                        <th style={{ textAlign: "center" }}>สถานะ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {absentDeptRows.map((row) => {
-                        const deptPct = row.total > 0 ? Math.round((row.confirmed / row.total) * 100) : 100;
-                        const done = row.pending === 0;
-                        return (
-                          <tr key={row.dept} className={done ? "sup-row-done" : "sup-row-pending"}>
-                            <td><span className="dept-chip">{row.dept}</span></td>
-                            <td style={{ textAlign: "center" }}>{row.total}</td>
-                            <td style={{ textAlign: "center" }}><strong style={{ color: "#10b981" }}>{row.confirmed}</strong></td>
-                            <td style={{ textAlign: "center" }}>
-                              {row.pending > 0
-                                ? <strong style={{ color: "#ef4444" }}>{row.pending}</strong>
-                                : <span style={{ color: "#94a3b8" }}>—</span>}
-                            </td>
-                            <td>
-                              <div className="sup-mini-bar-wrap">
-                                <div className="sup-mini-bar">
-                                  <div className="sup-mini-fill" style={{ width: `${deptPct}%`, background: "#ef4444" }} />
-                                </div>
-                                <span className="sup-mini-pct">{deptPct}%</span>
-                              </div>
-                            </td>
-                            <td style={{ textAlign: "center" }}>
-                              <span className={`sup-status-badge ${done ? "done" : "pending"}`}>
-                                {done ? "✓ ครบ" : `ค้าง ${row.pending}`}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </section>
-        );
-      })()}
 
       {/* ── Supervisor Confirmation Summary ── */}
       {(() => {
