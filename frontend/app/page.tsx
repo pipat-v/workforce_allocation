@@ -4310,36 +4310,6 @@ function ReportDashboard({
         />
       </section>
 
-      {data.unmatchedScanIds.length > 0 ? (
-        <section className="panel report-card">
-          <div className="panel-title-row">
-            <h3>พบรหัสที่ scan แล้วแต่ไม่มีใน master ({data.unmatchedScanIds.length} คน)</h3>
-          </div>
-          <p className="empty-copy">
-            คนเหล่านี้ scan เข้าออกจริง แต่รหัสพนักงานไม่ตรงกับไฟล์ master ที่ใช้อยู่ —
-            ตรวจสอบว่าเป็นรหัสใหม่ที่ยังไม่ sync เข้า master หรือรูปแบบรหัสไม่ตรงกัน
-          </p>
-          <table className="table data-table">
-            <thead>
-              <tr>
-                <th>รหัสพนักงาน</th>
-                <th>ชื่อ (จากไฟล์ scan)</th>
-                <th>เวลา scan แรกสุด</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.unmatchedScanIds.map((row) => (
-                <tr key={row.empId}>
-                  <td>{row.empId}</td>
-                  <td>{row.name}</td>
-                  <td>{row.scanIn}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      ) : null}
-
       <section className="report-grid">
         <div className="panel report-card">
           <div className="panel-title-row">
@@ -4776,6 +4746,36 @@ function ReportDashboard({
           </section>
         );
       })()}
+
+      {data.unmatchedScanIds.length > 0 ? (
+        <section className="panel report-card">
+          <div className="panel-title-row">
+            <h3>พบรหัสที่ scan แล้วแต่ไม่มีใน master ({data.unmatchedScanIds.length} คน)</h3>
+          </div>
+          <p className="empty-copy">
+            คนเหล่านี้ scan เข้าออกจริง แต่รหัสพนักงานไม่ตรงกับไฟล์ master ที่ใช้อยู่ —
+            ตรวจสอบว่าเป็นรหัสใหม่ที่ยังไม่ sync เข้า master หรือรูปแบบรหัสไม่ตรงกัน
+          </p>
+          <table className="table data-table">
+            <thead>
+              <tr>
+                <th>รหัสพนักงาน</th>
+                <th>ชื่อ (จากไฟล์ scan)</th>
+                <th>เวลา scan แรกสุด</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.unmatchedScanIds.map((row) => (
+                <tr key={row.empId}>
+                  <td>{row.empId}</td>
+                  <td>{row.name}</td>
+                  <td>{row.scanIn}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
     </section>
   );
 }
