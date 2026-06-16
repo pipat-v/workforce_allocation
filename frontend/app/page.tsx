@@ -1422,17 +1422,26 @@ function findRowCol(row: Record<string, unknown>, ...targets: string[]): string 
 // Writes `value` into whichever existing key in `row` matches one of `targets`
 // (case/whitespace-insensitive), so edits land on the same column findRowCol
 // reads from instead of creating a duplicate column under a new key name.
+// Also drops any other keys matching the same targets, since some master
+// files already carry duplicate columns (e.g. a header with \r\n vs \n)
+// from earlier saves — without this, findRowCol could keep reading the
+// other stale duplicate instead of the one just written.
 function setRowCol(row: Record<string, unknown>, value: string, ...targets: string[]): Record<string, unknown> {
   const norm = (s: string) => s.replace(/[\s\r\n]+/g, "").toLowerCase();
   const normedTargets = targets.map(norm);
-  const next = { ...row };
-  for (const key of Object.keys(row)) {
+  const next: Record<string, unknown> = {};
+  let written = false;
+  for (const [key, val] of Object.entries(row)) {
     if (normedTargets.some((t) => norm(key) === t)) {
-      next[key] = value;
-      return next;
+      if (!written) {
+        next[key] = value;
+        written = true;
+      }
+      continue;
     }
+    next[key] = val;
   }
-  next[targets[0]] = value;
+  if (!written) next[targets[0]] = value;
   return next;
 }
 
