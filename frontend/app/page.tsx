@@ -1840,7 +1840,6 @@ function DashboardPanels({
   const setDetailSort = setDetailSort_ as (sort: SortState) => void;
   const [leaveMap, setLeaveMap] = useState<Map<string, string>>(new Map());
   const [warnPanelCollapsed, setWarnPanelCollapsed] = useState(true);
-  const [detailPanelCollapsed, setDetailPanelCollapsed] = useState(true);
 
   useEffect(() => {
     if (!isoTargetDate) return;
@@ -2215,14 +2214,12 @@ function DashboardPanels({
 
       {/* Employee detail table */}
       <section className="panel detail-attendance-panel">
-        <div className="panel-collapse-trigger" onClick={() => setDetailPanelCollapsed(c => !c)}>
+        <div className="panel-title-row">
           <h3>
             สถานะพนักงานรายคน
             {dashboardDeptFilter !== "all" ? ` · ${dashboardDeptFilter}` : ""}
           </h3>
-          <ChevronDown size={16} className="panel-collapse-chevron" style={{ transform: detailPanelCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }} />
         </div>
-        {!detailPanelCollapsed && (<>
         <div className="panel-title-row" style={{ marginTop: "12px" }}>
           <div />
           <div className="table-actions">
@@ -2315,7 +2312,6 @@ function DashboardPanels({
           <span className="risk-badge" style={{ marginRight: 6 }}>เสี่ยง</span>
           = มาสายสะสม ≥ 3 ครั้งในเดือนนี้ · Export จะรวมเฉพาะ Late และ Absent
         </p>
-        </>)}
       </section>
 
     </>
