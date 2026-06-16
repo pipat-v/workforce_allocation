@@ -20,7 +20,6 @@ import {
   Settings,
   TrendingUp,
   UploadCloud,
-  UserSearch,
   UserX,
   UsersRound,
   X,
@@ -4299,14 +4298,6 @@ function ReportDashboard({
           value={riskCount.toLocaleString()}
           unit="คน"
           note="สายสะสม ≥3 ครั้ง/เดือน"
-        />
-        <KpiCard
-          icon={<UserSearch size={34} />}
-          tone="gray"
-          label="ไม่พบในระบบ"
-          value={data.unmatchedScanIds.length.toLocaleString()}
-          unit="คน"
-          note="สแกนเข้ามาแต่ไม่มีใน master"
         />
       </section>
 
