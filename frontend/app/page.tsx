@@ -20,6 +20,7 @@ import {
   Settings,
   TrendingUp,
   UploadCloud,
+  UserSearch,
   UserX,
   UsersRound,
   X,
@@ -116,6 +117,7 @@ type ReportData = {
   records: AttendanceRecord[];
   timestampRows: AttendanceRecord[];
   monthlyLateCounts: Record<string, number>;
+  unmatchedScanIds: Array<{ empId: string; name: string; scanIn: string }>;
 };
 
 const masterFileTypes = [
@@ -1289,6 +1291,20 @@ function buildReportData(
         position: "พนักงาน",
       }));
 
+  const unmatchedScanIds = employees.length
+    ? Array.from(scanByEmp.entries())
+        .filter(([empId]) => !employeeMap.has(empId))
+        .map(([empId, entry]) => {
+          const earliest = entry.times.sort((a, b) => a.getTime() - b.getTime())[0];
+          return {
+            empId,
+            name: entry.name || "-",
+            scanIn: earliest ? toTimeText(earliest) : "-",
+          };
+        })
+        .sort((a, b) => a.empId.localeCompare(b.empId))
+    : [];
+
   const records: AttendanceRecord[] = baseEmployees.flatMap((employee): AttendanceRecord[] => {
     const dayoffShift = dayoffShiftMap.get(employee.empId);
     const scans = scanByEmp.get(employee.empId)?.times ?? [];
@@ -1364,6 +1380,7 @@ function buildReportData(
     records,
     timestampRows: records,
     monthlyLateCounts: {},
+    unmatchedScanIds,
   };
 }
 
@@ -4145,6 +4162,7 @@ function ReportDashboard({
     records: [],
     timestampRows: [],
     monthlyLateCounts: {},
+    unmatchedScanIds: [],
     isoTargetDate: "",
     targetMonthKey: "",
   };
@@ -4282,8 +4300,45 @@ function ReportDashboard({
           unit="คน"
           note="สายสะสม ≥3 ครั้ง/เดือน"
         />
+        <KpiCard
+          icon={<UserSearch size={34} />}
+          tone="gray"
+          label="ไม่พบในระบบ"
+          value={data.unmatchedScanIds.length.toLocaleString()}
+          unit="คน"
+          note="สแกนเข้ามาแต่ไม่มีใน master"
+        />
       </section>
 
+      {data.unmatchedScanIds.length > 0 ? (
+        <section className="panel report-card">
+          <div className="panel-title-row">
+            <h3>พบรหัสที่ scan แล้วแต่ไม่มีใน master ({data.unmatchedScanIds.length} คน)</h3>
+          </div>
+          <p className="empty-copy">
+            คนเหล่านี้ scan เข้าออกจริง แต่รหัสพนักงานไม่ตรงกับไฟล์ master ที่ใช้อยู่ —
+            ตรวจสอบว่าเป็นรหัสใหม่ที่ยังไม่ sync เข้า master หรือรูปแบบรหัสไม่ตรงกัน
+          </p>
+          <table className="table data-table">
+            <thead>
+              <tr>
+                <th>รหัสพนักงาน</th>
+                <th>ชื่อ (จากไฟล์ scan)</th>
+                <th>เวลา scan แรกสุด</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.unmatchedScanIds.map((row) => (
+                <tr key={row.empId}>
+                  <td>{row.empId}</td>
+                  <td>{row.name}</td>
+                  <td>{row.scanIn}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       <section className="report-grid">
         <div className="panel report-card">
