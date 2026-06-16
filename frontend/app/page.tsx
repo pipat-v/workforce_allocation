@@ -457,14 +457,17 @@ export default function Home() {
 
     const fileId = crypto.randomUUID();
     const path = `${publicWorkspace}/masters/dayoff_shift/${fileId}.xlsx`;
-    const workbookRows = rows.map((row) => ({
-      ...row.raw,
-      "User ID (Job Information)": row.empId,
-      "ชื่อ นามสกุล": row.name,
-      "วันหยุด\nประจำสัปดาห์": row.dayoff,
-      "อยู่กะไหน": row.shift,
-      "เวลาเข้างาน": row.shiftStart,
-    }));
+    const workbookRows = rows.map((row) => {
+      let raw: Record<string, unknown> = {
+        ...row.raw,
+        "User ID (Job Information)": row.empId,
+        "ชื่อ นามสกุล": row.name,
+      };
+      raw = setRowCol(raw, row.dayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
+      raw = setRowCol(raw, row.shift, "อยู่กะไหน", "shift", "กะ", "Shift");
+      raw = setRowCol(raw, row.shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+      return raw;
+    });
     const worksheet = XLSX.utils.json_to_sheet(workbookRows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Dayoffandshift");
@@ -1414,6 +1417,23 @@ function findRowCol(row: Record<string, unknown>, ...targets: string[]): string 
     if (normedTargets.some((t) => k === t)) return String(val ?? "").trim();
   }
   return "";
+}
+
+// Writes `value` into whichever existing key in `row` matches one of `targets`
+// (case/whitespace-insensitive), so edits land on the same column findRowCol
+// reads from instead of creating a duplicate column under a new key name.
+function setRowCol(row: Record<string, unknown>, value: string, ...targets: string[]): Record<string, unknown> {
+  const norm = (s: string) => s.replace(/[\s\r\n]+/g, "").toLowerCase();
+  const normedTargets = targets.map(norm);
+  const next = { ...row };
+  for (const key of Object.keys(row)) {
+    if (normedTargets.some((t) => norm(key) === t)) {
+      next[key] = value;
+      return next;
+    }
+  }
+  next[targets[0]] = value;
+  return next;
 }
 
 function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
@@ -2914,11 +2934,16 @@ function DayoffShiftEditor({
   }, [activeFile?.file_path, employeeMasterFile?.file_path]);
 
   function updateRow(id: string, field: "dayoff" | "shift" | "shiftStart", value: string) {
-    const rawKey = field === "dayoff" ? "วันหยุด\nประจำสัปดาห์" : field === "shift" ? "อยู่กะไหน" : "เวลาเข้างาน";
+    const targets =
+      field === "dayoff"
+        ? ["วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"]
+        : field === "shift"
+        ? ["อยู่กะไหน", "shift", "กะ", "Shift"]
+        : ["เวลาเข้างาน", "เวลาเข้า", "shift_start"];
     setRows((current) =>
       current.map((row) =>
         row.id === id
-          ? { ...row, [field]: value, raw: { ...row.raw, [rawKey]: value } }
+          ? { ...row, [field]: value, raw: setRowCol(row.raw, value, ...targets) }
           : row,
       ),
     );
@@ -2953,15 +2978,14 @@ function DayoffShiftEditor({
     setRows((current) =>
       current.map((row) => {
         if (!selectedIds.has(row.id)) return row;
+        let raw = row.raw;
+        if (bulkDayoff) raw = setRowCol(raw, bulkDayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
+        if (bulkShift) raw = setRowCol(raw, bulkShift, "อยู่กะไหน", "shift", "กะ", "Shift");
         return {
           ...row,
           dayoff: bulkDayoff || row.dayoff,
           shift: bulkShift || row.shift,
-          raw: {
-            ...row.raw,
-            ...(bulkDayoff ? { "วันหยุด\nประจำสัปดาห์": bulkDayoff } : {}),
-            ...(bulkShift ? { "อยู่กะไหน": bulkShift } : {}),
-          },
+          raw,
         };
       }),
     );
