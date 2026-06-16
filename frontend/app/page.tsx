@@ -1411,13 +1411,21 @@ function buildDeptShiftStart(rows: Record<string, unknown>[]) {
 }
 
 function findRowCol(row: Record<string, unknown>, ...targets: string[]): string {
+  const val = findRowColRaw(row, ...targets);
+  return val === undefined ? "" : String(val).trim();
+}
+
+// Like findRowCol but returns the original value (Date/number/string) instead
+// of stringifying it, so callers like normalizeTimeText can still tell a
+// Date or Excel serial number apart from plain text.
+function findRowColRaw(row: Record<string, unknown>, ...targets: string[]): unknown {
   const norm = (s: string) => s.replace(/[\s\r\n]+/g, "").toLowerCase();
   const normedTargets = targets.map(norm);
   for (const [key, val] of Object.entries(row)) {
     const k = norm(key);
-    if (normedTargets.some((t) => k === t)) return String(val ?? "").trim();
+    if (normedTargets.some((t) => k === t)) return val;
   }
-  return "";
+  return undefined;
 }
 
 // Writes `value` into whichever existing key in `row` matches one of `targets`
@@ -1467,7 +1475,7 @@ function toDayoffShiftEditorRow(row: Record<string, unknown>, index: number): Da
   const firstName = String(row["First Name (Local)"] ?? "").trim();
   const lastName = String(row["Last Name (Local)"] ?? "").trim();
   const fallbackName = String(row["ชื่อ นามสกุล"] ?? row["Employee Name"] ?? row["Name"] ?? "").trim();
-  const shiftStartRaw = row["เวลาเข้างาน"] ?? row["เวลาเข้า"] ?? row["shift_start"];
+  const shiftStartRaw = findRowColRaw(row, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
   return {
     id: `${empId || "row"}-${index}`,
     empId,
