@@ -1313,8 +1313,9 @@ function buildReportData(
     const scanIn = scans.sort((a, b) => a.getTime() - b.getTime())[0];
     const shift = normalizeShiftLabel(dayoffShift?.shift) || "กะ 1";
     const shiftStart =
-      deptShiftStart.get(makeDeptShiftKey(employee.dept, shift)) ??
-      deptShiftStart.get(makeDeptShiftKey(employee.dept, "")) ??
+      dayoffShift?.shiftStart ||
+      deptShiftStart.get(makeDeptShiftKey(employee.dept, shift)) ||
+      deptShiftStart.get(makeDeptShiftKey(employee.dept, "")) ||
       "07:00";
     const isScheduledOff = latestTimestamp
       ? isEmployeeDayOff(dayoffShift?.dayoff, latestTimestamp, holidaySet)
@@ -1446,7 +1447,7 @@ function setRowCol(row: Record<string, unknown>, value: string, ...targets: stri
 }
 
 function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
-  const map = new Map<string, { dayoff: string; shift: string }>();
+  const map = new Map<string, { dayoff: string; shift: string; shiftStart: string }>();
   for (const row of rows) {
     const empId = cleanEmpId(
       row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]
@@ -1455,6 +1456,7 @@ function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
     map.set(empId, {
       dayoff: findRowCol(row, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"),
       shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
+      shiftStart: normalizeTimeText(findRowCol(row, "เวลาเข้างาน", "เวลาเข้า", "shift_start")),
     });
   }
   return map;
