@@ -2863,10 +2863,12 @@ function PublicHolidayPage({
       if (insertError) console.error("[PublicHolidayPage] auto-seed failed:", insertError.message);
     }
 
+    // fetch public/company holidays + Buddhist holy days that overlap with CPF dates
+    const cpfDatesList = Object.values(cpfPublicHolidaysByYear).flat().map((e) => e.date);
     const { data } = await supabase
       .from("holidays")
       .select("*")
-      .in("type", ["public_holiday", "company_holiday"])
+      .or(`type.in.(public_holiday,company_holiday),date.in.(${cpfDatesList.join(",")})`)
       .order("date");
 
     if (data) {
@@ -2896,17 +2898,26 @@ function PublicHolidayPage({
     await loadHolidays();
   }
 
+  const cpfDateNameMap = new Map<string, string>(
+    Object.values(cpfPublicHolidaysByYear).flat().map((e) => [e.date, e.name])
+  );
+  const cpfDateSet = new Set(cpfDateNameMap.keys());
+
   const existingYears = Array.from(new Set(holidays.map((h) => h.date.substring(0, 4)))).sort();
   const allYears = Array.from(new Set([...existingYears, yearFilter])).sort();
-  const filtered = holidays.filter((h) => h.date.startsWith(yearFilter));
+  // show only CPF dates (exclude Buddhist-only rows that don't match CPF)
+  const filtered = holidays
+    .filter((h) => h.date.startsWith(yearFilter) && (h.type !== "buddhist_holy_day" || cpfDateSet.has(h.date)));
 
-  const typeLabel: Record<"public_holiday" | "company_holiday", string> = {
+  const typeLabel: Record<string, string> = {
     public_holiday: "วันหยุดราชการ",
     company_holiday: "วันหยุดบริษัท",
+    buddhist_holy_day: "วันหยุดราชการ",
   };
-  const typeBadgeClass: Record<"public_holiday" | "company_holiday", string> = {
+  const typeBadgeClass: Record<string, string> = {
     public_holiday: "holiday-badge-public",
     company_holiday: "holiday-badge-company",
+    buddhist_holy_day: "holiday-badge-public",
   };
 
   return (
@@ -2986,8 +2997,10 @@ function PublicHolidayPage({
             <tbody>
               {filtered.map((h) => {
                 const d = new Date(h.date + "T00:00:00");
-                const t = h.type as "public_holiday" | "company_holiday";
                 const isBuddhist = isBuddhistHolyDay(d);
+                const displayName = h.type === "buddhist_holy_day"
+                  ? (cpfDateNameMap.get(h.date) ?? h.name)
+                  : h.name;
                 return (
                   <tr key={h.id}>
                     <td className="holiday-date-cell">
@@ -2996,10 +3009,10 @@ function PublicHolidayPage({
                     <td>
                       {["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"][d.getDay()]}
                     </td>
-                    <td>{h.name}</td>
+                    <td>{displayName}</td>
                     <td>
-                      <span className={`holiday-type-badge ${typeBadgeClass[t]}`}>
-                        {typeLabel[t]}
+                      <span className={`holiday-type-badge ${typeBadgeClass[h.type]}`}>
+                        {typeLabel[h.type]}
                       </span>
                     </td>
                     <td>
