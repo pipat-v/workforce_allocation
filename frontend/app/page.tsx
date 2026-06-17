@@ -1604,6 +1604,29 @@ const buddhistHolyDaysByYear: Record<string, Set<string>> = {
   ]),
 };
 
+const cpfPublicHolidaysByYear: Record<string, Array<{ date: string; name: string }>> = {
+  "2026": [
+    { date: "2026-01-01", name: "วันขึ้นปีใหม่" },
+    { date: "2026-03-03", name: "วันมาฆบูชา" },
+    { date: "2026-04-06", name: "วันจักรี" },
+    { date: "2026-04-13", name: "วันสงกรานต์" },
+    { date: "2026-04-14", name: "วันสงกรานต์" },
+    { date: "2026-04-15", name: "วันสงกรานต์" },
+    { date: "2026-05-01", name: "วันแรงงานแห่งชาติ" },
+    { date: "2026-05-04", name: "วันฉัตรมงคล" },
+    { date: "2026-06-01", name: "วันหยุดชดเชยวันวิสาขบูชา" },
+    { date: "2026-06-03", name: "วันเฉลิมพระชนมพรรษา สมเด็จพระนางเจ้าฯ พระบรมราชินี" },
+    { date: "2026-07-28", name: "วันเฉลิมพระชนมพรรษา พระบาทสมเด็จพระเจ้าอยู่หัว" },
+    { date: "2026-07-29", name: "วันอาสาฬหบูชา" },
+    { date: "2026-07-30", name: "วันเข้าพรรษา" },
+    { date: "2026-08-12", name: "วันแม่แห่งชาติ" },
+    { date: "2026-10-13", name: "วันคล้ายวันสวรรคต ร.9" },
+    { date: "2026-10-23", name: "วันปิยมหาราช" },
+    { date: "2026-12-05", name: "วันพ่อแห่งชาติ" },
+    { date: "2026-12-31", name: "วันสิ้นปี" },
+  ],
+};
+
 function isBuddhistHolyDay(date: Date) {
   const yearKey = String(date.getFullYear());
   return buddhistHolyDaysByYear[yearKey]?.has(toDateKey(date)) ?? false;
@@ -2388,7 +2411,7 @@ function MasterDataPage({
   saveMasterFiles: () => Promise<void>;
   setMasterUploads: Dispatch<SetStateAction<MasterUploadState>>;
 }) {
-  const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays">("files");
+  const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays" | "public_holidays">("files");
 
   return (
     <section className="md-page">
@@ -2407,10 +2430,21 @@ function MasterDataPage({
           <CalendarDays size={15} />
           วันพระ
         </button>
+        <button
+          className={`master-sub-tab${masterSubTab === "public_holidays" ? " active" : ""}`}
+          onClick={() => setMasterSubTab("public_holidays")}
+        >
+          <CalendarDays size={15} />
+          วันหยุดประจำปี
+        </button>
       </div>
 
       {masterSubTab === "holidays" ? (
         <HolidayMasterPage onHolidaysChanged={onHolidaysChanged} />
+      ) : null}
+
+      {masterSubTab === "public_holidays" ? (
+        <PublicHolidayPage onHolidaysChanged={onHolidaysChanged} />
       ) : null}
 
       {masterSubTab === "files" ? (<>
@@ -2766,6 +2800,218 @@ function HolidayMasterPage({
                     <td>
                       <span className={`holiday-type-badge ${typeBadgeClass[h.type]}`}>
                         {typeLabel[h.type]}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        className="holiday-delete-btn"
+                        onClick={() => deleteHoliday(h.id)}
+                        title="ลบวันหยุดนี้"
+                      >
+                        <X size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="holiday-empty-row">
+                    ไม่มีวันหยุดสำหรับปี {yearFilter} — กด Seed หรือเพิ่มเองด้านบน
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PublicHolidayPage({
+  onHolidaysChanged,
+}: {
+  onHolidaysChanged: (dates: Set<string>) => void;
+}) {
+  const [holidays, setHolidays] = useState<HolidayRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [newDate, setNewDate] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<"public_holiday" | "company_holiday">("public_holiday");
+  const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
+  const [seeding, setSeeding] = useState(false);
+
+  useEffect(() => {
+    void loadHolidays();
+  }, []);
+
+  async function loadHolidays() {
+    setLoading(true);
+    const { data } = await supabase
+      .from("holidays")
+      .select("*")
+      .in("type", ["public_holiday", "company_holiday"])
+      .order("date");
+    if (data) {
+      setHolidays(data as HolidayRow[]);
+      const { data: all } = await supabase.from("holidays").select("date");
+      if (all) onHolidaysChanged(new Set(all.map((r: { date: string }) => r.date)));
+    }
+    setLoading(false);
+  }
+
+  async function addHoliday() {
+    if (!newDate || !newName.trim()) return;
+    setSaving(true);
+    const { error } = await supabase
+      .from("holidays")
+      .upsert({ date: newDate, name: newName.trim(), type: newType }, { onConflict: "date" });
+    if (!error) {
+      setNewDate("");
+      setNewName("");
+      await loadHolidays();
+    }
+    setSaving(false);
+  }
+
+  async function deleteHoliday(id: string) {
+    await supabase.from("holidays").delete().eq("id", id);
+    await loadHolidays();
+  }
+
+  async function seedCpfHolidays(year: string) {
+    const entries = cpfPublicHolidaysByYear[year];
+    if (!entries) return;
+    setSeeding(true);
+    const existingDates = new Set(holidays.map((h) => h.date));
+    const toInsert = entries
+      .filter((e) => !existingDates.has(e.date))
+      .map((e) => ({ date: e.date, name: e.name, type: "public_holiday" as const }));
+    if (toInsert.length > 0) {
+      await supabase.from("holidays").insert(toInsert);
+    }
+    await loadHolidays();
+    setSeeding(false);
+  }
+
+  const existingYears = Array.from(new Set(holidays.map((h) => h.date.substring(0, 4)))).sort();
+  const allYears = Array.from(new Set([...existingYears, yearFilter])).sort();
+  const seedableYears = Object.keys(cpfPublicHolidaysByYear).sort();
+  const filtered = holidays.filter((h) => h.date.startsWith(yearFilter));
+
+  const typeLabel: Record<"public_holiday" | "company_holiday", string> = {
+    public_holiday: "วันหยุดราชการ",
+    company_holiday: "วันหยุดบริษัท",
+  };
+  const typeBadgeClass: Record<"public_holiday" | "company_holiday", string> = {
+    public_holiday: "holiday-badge-public",
+    company_holiday: "holiday-badge-company",
+  };
+
+  return (
+    <section className="panel holiday-master-panel">
+      <div className="holiday-master-header">
+        <div className="holiday-master-title">
+          <CalendarDays size={20} />
+          <h2>วันหยุดประจำปี</h2>
+          <span className="holiday-total-badge">{holidays.length} วัน</span>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {seedableYears.map((yr) => (
+            <button
+              key={yr}
+              className="primary-button small"
+              disabled={seeding}
+              onClick={() => void seedCpfHolidays(yr)}
+              type="button"
+            >
+              Seed CPF {Number(yr) + 543}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="holiday-add-form">
+        <div className="holiday-add-form-fields">
+          <input
+            type="date"
+            className="holiday-input"
+            value={newDate}
+            onChange={(e) => setNewDate(e.target.value)}
+          />
+          <input
+            type="text"
+            className="holiday-input holiday-input-name"
+            placeholder="ชื่อวันหยุด เช่น วันสงกรานต์"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void addHoliday()}
+          />
+          <select
+            className="holiday-type-select"
+            value={newType}
+            onChange={(e) => setNewType(e.target.value as "public_holiday" | "company_holiday")}
+          >
+            <option value="public_holiday">วันหยุดราชการ</option>
+            <option value="company_holiday">วันหยุดบริษัท</option>
+          </select>
+          <button
+            className="primary-button"
+            onClick={addHoliday}
+            disabled={saving || !newDate || !newName.trim()}
+          >
+            + เพิ่มวันหยุด
+          </button>
+        </div>
+      </div>
+
+      <div className="holiday-year-tabs">
+        {allYears.map((yr) => (
+          <button
+            key={yr}
+            className={`holiday-year-tab${yearFilter === yr ? " active" : ""}`}
+            onClick={() => setYearFilter(yr)}
+          >
+            {yr}
+            <span className="holiday-year-count">
+              {holidays.filter((h) => h.date.startsWith(yr)).length}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="holiday-table-wrap">
+        {loading ? (
+          <p className="holiday-loading">กำลังโหลด…</p>
+        ) : (
+          <table className="table holiday-table">
+            <thead>
+              <tr>
+                <th>วันที่</th>
+                <th>วันในสัปดาห์</th>
+                <th>ชื่อวันหยุด</th>
+                <th>ประเภท</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((h) => {
+                const d = new Date(h.date + "T00:00:00");
+                const t = h.type as "public_holiday" | "company_holiday";
+                return (
+                  <tr key={h.id}>
+                    <td className="holiday-date-cell">
+                      {d.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}
+                    </td>
+                    <td>
+                      {["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"][d.getDay()]}
+                    </td>
+                    <td>{h.name}</td>
+                    <td>
+                      <span className={`holiday-type-badge ${typeBadgeClass[t]}`}>
+                        {typeLabel[t]}
                       </span>
                     </td>
                     <td>
