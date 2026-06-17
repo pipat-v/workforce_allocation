@@ -1099,8 +1099,11 @@ export default function Home() {
             masterUploads={masterUploads}
             onDeleteMasterFile={deleteMasterFile}
             onHolidaysChanged={(dates) => setHolidayDates(dates)}
+            onMastersSaved={loadActiveMasters}
             saveDayoffShiftRows={saveDayoffShiftRows}
             saveMasterFiles={saveMasterFiles}
+            setError={setError}
+            setMessage={setMessage}
             setMasterUploads={setMasterUploads}
           />
         ) : null}
@@ -2396,8 +2399,11 @@ function MasterDataPage({
   masterUploads,
   onDeleteMasterFile,
   onHolidaysChanged,
+  onMastersSaved,
   saveDayoffShiftRows,
   saveMasterFiles,
+  setError,
+  setMessage,
   setMasterUploads,
 }: {
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
@@ -2407,11 +2413,62 @@ function MasterDataPage({
   masterUploads: MasterUploadState;
   onDeleteMasterFile: (file: MasterFile) => Promise<void>;
   onHolidaysChanged: (dates: Set<string>) => void;
+  onMastersSaved: () => Promise<void>;
   saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
   saveMasterFiles: () => Promise<void>;
+  setError: (msg: string) => void;
+  setMessage: (msg: string) => void;
   setMasterUploads: Dispatch<SetStateAction<MasterUploadState>>;
 }) {
   const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays" | "public_holidays">("files");
+  const [combinedFile, setCombinedFile] = useState<File | null>(null);
+  const [isSavingCombined, setIsSavingCombined] = useState(false);
+
+  function downloadCombinedTemplate() {
+    const headers = [
+      "Employee ID",
+      "First Name (Local)",
+      "Last Name (Local)",
+      "หน่วยงาน",
+      "Title (Position)",
+      "กะ",
+      "เวลาเข้างาน",
+      "วันหยุดประจำสัปดาห์",
+    ];
+    const examples = [
+      ["EMP001", "สมชาย", "ใจดี", "งานเครื่องใน", "พนักงานผลิต", "กะ 1", "07:00", "อาทิตย์"],
+      ["EMP002", "สมหญิง", "รักดี", "งานแยกชิ้นส่วน", "พนักงานผลิต", "กะ 1", "07:00", "เสาร์-อาทิตย์"],
+      ["EMP003", "มานพ", "สุขใจ", "งานควบคุมคุณภาพ", "หัวหน้างาน", "กะ 2", "13:00", "อาทิตย์"],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...examples]);
+    ws["!cols"] = [14, 18, 18, 22, 20, 8, 14, 24].map((w) => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "พนักงาน");
+    XLSX.writeFile(wb, "template-master-พนักงาน.xlsx");
+  }
+
+  async function saveCombinedFile() {
+    if (!combinedFile) return;
+    setIsSavingCombined(true);
+    setError("");
+    setMessage("");
+    for (const fileType of ["employee_master", "dayoff_shift"] as const) {
+      const fileId = crypto.randomUUID();
+      const ext = getSafeFileExtension(combinedFile.name);
+      const path = `${publicWorkspace}/masters/${fileType}/${fileId}${ext}`;
+      const { error: uploadError } = await supabase.storage.from("workforce-inputs").upload(path, combinedFile, { upsert: true });
+      if (uploadError) { setError(uploadError.message); setIsSavingCombined(false); return; }
+      await supabase.from("master_data_files").update({ is_active: false }).is("owner_id", null).eq("file_type", fileType);
+      const { error: insertError } = await supabase.from("master_data_files").insert({
+        owner_id: null, file_type: fileType, file_path: path, original_filename: combinedFile.name, is_active: true,
+      });
+      if (insertError) { setError(insertError.message); setIsSavingCombined(false); return; }
+    }
+    setCombinedFile(null);
+    setMessage("บันทึกไฟล์รวมเรียบร้อย — อัพเดท รายชื่อพนักงาน และ Dayoff & Shift แล้ว");
+    setIsSavingCombined(false);
+    await onMastersSaved();
+  }
 
   return (
     <section className="md-page">
@@ -2448,10 +2505,47 @@ function MasterDataPage({
       ) : null}
 
       {masterSubTab === "files" ? (<>
+
+      {/* Combined template section */}
+      <div className="combined-upload-bar panel">
+        <div className="combined-upload-info">
+          <FileSpreadsheet size={18} />
+          <div>
+            <strong>ไฟล์รวมพนักงาน</strong>
+            <span>1 ไฟล์ครอบคลุม รายชื่อพนักงาน + กะ + วันหยุด + เวลาเข้างาน — ดาวน์โหลดเทมเพลต กรอกข้อมูล แล้วอัพโหลดครั้งเดียว</span>
+          </div>
+        </div>
+        <div className="combined-upload-actions">
+          <button className="secondary-button small" onClick={downloadCombinedTemplate} type="button">
+            <Download size={14} />
+            ดาวน์โหลดเทมเพลต
+          </button>
+          <label className={`secondary-button small ${combinedFile ? "has-file" : ""}`}>
+            <UploadCloud size={14} />
+            {combinedFile ? combinedFile.name : "เลือกไฟล์รวม"}
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              style={{ display: "none" }}
+              onChange={(e) => setCombinedFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          <button
+            className="primary-button small"
+            disabled={!combinedFile || isSavingCombined}
+            onClick={saveCombinedFile}
+            type="button"
+          >
+            <UploadCloud size={14} />
+            {isSavingCombined ? "กำลังบันทึก..." : "อัพโหลดไฟล์รวม"}
+          </button>
+        </div>
+      </div>
+
       <div className="md-columns-bar">
         <div>
-          <h3>Master Data</h3>
-          <p>อัปโหลดไฟล์หลัก 4 ไฟล์ ระบบจะใช้ชุดล่าสุดกับ daily run อัตโนมัติ</p>
+          <h3>Master Data (แยกไฟล์)</h3>
+          <p>อัปโหลดแยกตามประเภท สำหรับ Manpower Plan และ Skill Matrix หรืออัพเดทแค่บางส่วน</p>
         </div>
         <button
           className="primary-button"

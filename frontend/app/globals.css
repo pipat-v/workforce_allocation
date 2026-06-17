@@ -1364,6 +1364,71 @@ button {
   min-width: 190px;
 }
 
+/* Combined upload bar */
+.combined-upload-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-left: 4px solid var(--blue);
+  flex-wrap: wrap;
+}
+
+.combined-upload-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--blue);
+  flex: 1;
+  min-width: 0;
+}
+
+.combined-upload-info div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.combined-upload-info strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.combined-upload-info span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.combined-upload-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.secondary-button:hover { background: #f1f5f9; border-color: #94a3b8; }
+.secondary-button.small { padding: 5px 10px; font-size: 12px; }
+.secondary-button.has-file { border-color: var(--blue); color: var(--blue); background: #eff6ff; }
+
 /* Master Data Page */
 .md-page {
   display: flex;
