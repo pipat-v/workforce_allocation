@@ -2865,13 +2865,20 @@ function PublicHolidayPage({
         .map((e) => ({ date: e.date, name: e.name, type: "public_holiday" as const }));
 
       if (toInsert.length > 0) {
-        await supabase.from("holidays").insert(toInsert);
-        const { data: refreshed } = await supabase
-          .from("holidays")
-          .select("*")
-          .in("type", ["public_holiday", "company_holiday"])
-          .order("date");
-        if (refreshed) setHolidays(refreshed as HolidayRow[]);
+        const { error: insertError } = await supabase.from("holidays").insert(toInsert);
+        if (insertError) {
+          console.error("[PublicHolidayPage] auto-seed failed:", insertError.message, insertError);
+          setHolidays(existing);
+        } else {
+          const { data: refreshed, error: fetchError } = await supabase
+            .from("holidays")
+            .select("*")
+            .in("type", ["public_holiday", "company_holiday"])
+            .order("date");
+          if (fetchError) console.error("[PublicHolidayPage] refresh failed:", fetchError.message);
+          if (refreshed) setHolidays(refreshed as HolidayRow[]);
+          else setHolidays(existing);
+        }
       } else {
         setHolidays(existing);
       }
