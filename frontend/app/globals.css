@@ -1410,7 +1410,7 @@ button {
 
 .md-column-header {
   border-top: 3px solid var(--blue);
-  padding: 18px 20px 0;
+  padding: 10px 20px 0;
 }
 
 .md-column-title {
@@ -1422,8 +1422,8 @@ button {
 
 .compact-dropzone {
   margin: 0 20px;
-  padding: 20px 12px;
-  gap: 6px;
+  padding: 10px 12px;
+  gap: 4px;
 }
 
 .compact-dropzone strong {
@@ -1432,10 +1432,10 @@ button {
 }
 
 .md-col-history {
-  padding: 0 20px 20px;
+  padding: 0 20px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
 }
 
@@ -1448,6 +1448,7 @@ button {
 
 .md-col-history .ts-history-list {
   border-top: 1px solid var(--line);
+  max-height: 200px;
 }
 
 .md-upload-section {

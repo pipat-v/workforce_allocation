@@ -1188,7 +1188,9 @@ async function downloadMasterFile(filePath: string, filename: string) {
   const a = document.createElement("a");
   a.href = data.signedUrl;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
 }
 
 async function downloadSheetRows(path: string): Promise<Record<string, unknown>[]> {
@@ -2497,7 +2499,7 @@ function MasterDataPage({
                         <div className="ts-history-actions">
                           <button
                             className="icon-button"
-                            onClick={() => downloadMasterFile(file.file_path, file.original_filename ?? "download.xlsx")}
+                            onClick={() => void downloadMasterFile(file.file_path, file.original_filename ?? "download.xlsx")}
                             title="ดาวน์โหลด"
                             type="button"
                           >
