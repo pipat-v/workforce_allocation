@@ -2841,7 +2841,6 @@ function PublicHolidayPage({
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<"public_holiday" | "company_holiday">("public_holiday");
   const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
-  const [seeding, setSeeding] = useState(false);
 
   useEffect(() => {
     void loadHolidays();
@@ -2854,8 +2853,29 @@ function PublicHolidayPage({
       .select("*")
       .in("type", ["public_holiday", "company_holiday"])
       .order("date");
+
     if (data) {
-      setHolidays(data as HolidayRow[]);
+      const existing = data as HolidayRow[];
+      const existingDates = new Set(existing.map((h) => h.date));
+
+      // auto-seed any CPF year that has no data yet
+      const toInsert = Object.values(cpfPublicHolidaysByYear)
+        .flat()
+        .filter((e) => !existingDates.has(e.date))
+        .map((e) => ({ date: e.date, name: e.name, type: "public_holiday" as const }));
+
+      if (toInsert.length > 0) {
+        await supabase.from("holidays").insert(toInsert);
+        const { data: refreshed } = await supabase
+          .from("holidays")
+          .select("*")
+          .in("type", ["public_holiday", "company_holiday"])
+          .order("date");
+        if (refreshed) setHolidays(refreshed as HolidayRow[]);
+      } else {
+        setHolidays(existing);
+      }
+
       const { data: all } = await supabase.from("holidays").select("date");
       if (all) onHolidaysChanged(new Set(all.map((r: { date: string }) => r.date)));
     }
@@ -2881,24 +2901,8 @@ function PublicHolidayPage({
     await loadHolidays();
   }
 
-  async function seedCpfHolidays(year: string) {
-    const entries = cpfPublicHolidaysByYear[year];
-    if (!entries) return;
-    setSeeding(true);
-    const existingDates = new Set(holidays.map((h) => h.date));
-    const toInsert = entries
-      .filter((e) => !existingDates.has(e.date))
-      .map((e) => ({ date: e.date, name: e.name, type: "public_holiday" as const }));
-    if (toInsert.length > 0) {
-      await supabase.from("holidays").insert(toInsert);
-    }
-    await loadHolidays();
-    setSeeding(false);
-  }
-
   const existingYears = Array.from(new Set(holidays.map((h) => h.date.substring(0, 4)))).sort();
   const allYears = Array.from(new Set([...existingYears, yearFilter])).sort();
-  const seedableYears = Object.keys(cpfPublicHolidaysByYear).sort();
   const filtered = holidays.filter((h) => h.date.startsWith(yearFilter));
 
   const typeLabel: Record<"public_holiday" | "company_holiday", string> = {
@@ -2917,19 +2921,6 @@ function PublicHolidayPage({
           <CalendarDays size={20} />
           <h2>วันหยุดประจำปี</h2>
           <span className="holiday-total-badge">{holidays.length} วัน</span>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {seedableYears.map((yr) => (
-            <button
-              key={yr}
-              className="primary-button small"
-              disabled={seeding}
-              onClick={() => void seedCpfHolidays(yr)}
-              type="button"
-            >
-              Seed CPF {Number(yr) + 543}
-            </button>
-          ))}
         </div>
       </div>
 
