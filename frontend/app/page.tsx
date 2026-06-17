@@ -2848,6 +2848,21 @@ function PublicHolidayPage({
 
   async function loadHolidays() {
     setLoading(true);
+
+    // fetch ALL dates to avoid overwriting Buddhist holy days
+    const { data: allDates } = await supabase.from("holidays").select("date");
+    const allExistingDates = new Set((allDates ?? []).map((r: { date: string }) => r.date));
+
+    const toInsert = Object.values(cpfPublicHolidaysByYear)
+      .flat()
+      .filter((e) => !allExistingDates.has(e.date))
+      .map((e) => ({ date: e.date, name: e.name, type: "public_holiday" as const }));
+
+    if (toInsert.length > 0) {
+      const { error: insertError } = await supabase.from("holidays").insert(toInsert);
+      if (insertError) console.error("[PublicHolidayPage] auto-seed failed:", insertError.message);
+    }
+
     const { data } = await supabase
       .from("holidays")
       .select("*")
@@ -2855,35 +2870,7 @@ function PublicHolidayPage({
       .order("date");
 
     if (data) {
-      const existing = data as HolidayRow[];
-      const existingDates = new Set(existing.map((h) => h.date));
-
-      // auto-seed any CPF year that has no data yet
-      const toInsert = Object.values(cpfPublicHolidaysByYear)
-        .flat()
-        .filter((e) => !existingDates.has(e.date))
-        .map((e) => ({ date: e.date, name: e.name, type: "public_holiday" as const }));
-
-      if (toInsert.length > 0) {
-        const { error: upsertError } = await supabase
-          .from("holidays")
-          .upsert(toInsert, { onConflict: "date" });
-        if (upsertError) {
-          console.error("[PublicHolidayPage] auto-seed failed:", upsertError.message);
-          setHolidays(existing);
-        } else {
-          const { data: refreshed } = await supabase
-            .from("holidays")
-            .select("*")
-            .in("type", ["public_holiday", "company_holiday"])
-            .order("date");
-          if (refreshed) setHolidays(refreshed as HolidayRow[]);
-          else setHolidays(existing);
-        }
-      } else {
-        setHolidays(existing);
-      }
-
+      setHolidays(data as HolidayRow[]);
       const { data: all } = await supabase.from("holidays").select("date");
       if (all) onHolidaysChanged(new Set(all.map((r: { date: string }) => r.date)));
     }
@@ -2992,6 +2979,7 @@ function PublicHolidayPage({
                 <th>วันในสัปดาห์</th>
                 <th>ชื่อวันหยุด</th>
                 <th>ประเภท</th>
+                <th>หมายเหตุ</th>
                 <th></th>
               </tr>
             </thead>
@@ -2999,6 +2987,7 @@ function PublicHolidayPage({
               {filtered.map((h) => {
                 const d = new Date(h.date + "T00:00:00");
                 const t = h.type as "public_holiday" | "company_holiday";
+                const isBuddhist = isBuddhistHolyDay(d);
                 return (
                   <tr key={h.id}>
                     <td className="holiday-date-cell">
@@ -3014,6 +3003,11 @@ function PublicHolidayPage({
                       </span>
                     </td>
                     <td>
+                      {isBuddhist && (
+                        <span className="holiday-type-badge holiday-badge-buddhist">วันพระ</span>
+                      )}
+                    </td>
+                    <td>
                       <button
                         className="holiday-delete-btn"
                         onClick={() => deleteHoliday(h.id)}
@@ -3027,8 +3021,8 @@ function PublicHolidayPage({
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="holiday-empty-row">
-                    ไม่มีวันหยุดสำหรับปี {yearFilter} — กด Seed หรือเพิ่มเองด้านบน
+                  <td colSpan={6} className="holiday-empty-row">
+                    ไม่มีวันหยุดสำหรับปี {yearFilter} — เพิ่มเองด้านบน
                   </td>
                 </tr>
               )}
