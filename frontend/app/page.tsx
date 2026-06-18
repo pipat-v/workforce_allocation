@@ -82,6 +82,32 @@ type SkillFlatRow = {
   origLevel: number;
 };
 
+type CombinedEmployeeRow = {
+  empId: string;
+  firstName: string;
+  lastName: string;
+  dept: string;
+  position: string;
+  shift: string;
+  shiftStart: string;
+  dayoff: string;
+  skills: Record<string, number>;
+};
+
+type EmployeeDiff = {
+  added: CombinedEmployeeRow[];
+  removed: CombinedEmployeeRow[];
+  changed: Array<{
+    empId: string;
+    name: string;
+    dept: string;
+    fields: Array<{ field: string; from: string; to: string }>;
+  }>;
+  unchangedCount: number;
+  newRows: CombinedEmployeeRow[];
+  newManpowerRows: Record<string, unknown>[];
+};
+
 type AttendanceRecord = {
   empId: string;
   name: string;
@@ -219,7 +245,7 @@ export default function Home() {
     [masterUploads],
   );
 
-  const latestRun = (selectedRunId ? runs.find(r => r.id === selectedRunId) : null) ?? runs[0];
+  const latestRun = (selectedRunId ? runs.find(r => r.id === selectedRunId) : null) ?? runs.find(r => !!r.scan_file_path);
   const reportSourceKey =
     activeMasterMap.employee_master?.file_path && latestRun?.scan_file_path
       ? [
@@ -323,6 +349,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!isoTargetDate) return;
+    setWarnedIds(new Set());
     supabase
       .from("employee_warnings")
       .select("emp_id")
@@ -395,60 +422,51 @@ export default function Home() {
     setMessage("");
     setIsSavingMasters(true);
 
-    for (const item of masterFileTypes) {
-      const file = masterUploads[item.key];
-      if (!file) continue;
+    try {
+      for (const item of masterFileTypes) {
+        const file = masterUploads[item.key];
+        if (!file) continue;
 
-      const fileId = crypto.randomUUID();
-      const path = `${publicWorkspace}/masters/${item.key}/${fileId}${getSafeFileExtension(file.name)}`;
-      const { error: uploadError } = await supabase.storage
-        .from("workforce-inputs")
-        .upload(path, file, { upsert: true });
+        const fileId = crypto.randomUUID();
+        const path = `${publicWorkspace}/masters/${item.key}/${fileId}${getSafeFileExtension(file.name)}`;
+        const { error: uploadError } = await supabase.storage
+          .from("workforce-inputs")
+          .upload(path, file, { upsert: true });
 
-      if (uploadError) {
-        setError(uploadError.message);
-        setIsSavingMasters(false);
-        return;
+        if (uploadError) { setError(uploadError.message); return; }
+
+        const { error: deactivateError } = await supabase
+          .from("master_data_files")
+          .update({ is_active: false })
+          .is("owner_id", null)
+          .eq("file_type", item.key);
+
+        if (deactivateError) { setError(deactivateError.message); return; }
+
+        const { error: insertError } = await supabase
+          .from("master_data_files")
+          .insert({
+            owner_id: null,
+            file_type: item.key,
+            file_path: path,
+            original_filename: file.name,
+            is_active: true,
+          });
+
+        if (insertError) { setError(insertError.message); return; }
       }
 
-      const { error: deactivateError } = await supabase
-        .from("master_data_files")
-        .update({ is_active: false })
-        .is("owner_id", null)
-        .eq("file_type", item.key);
-
-      if (deactivateError) {
-        setError(deactivateError.message);
-        setIsSavingMasters(false);
-        return;
-      }
-
-      const { error: insertError } = await supabase
-        .from("master_data_files")
-        .insert({
-          owner_id: null,
-          file_type: item.key,
-          file_path: path,
-          original_filename: file.name,
-          is_active: true,
-        });
-
-      if (insertError) {
-        setError(insertError.message);
-        setIsSavingMasters(false);
-        return;
-      }
+      setMasterUploads({
+        employee_master: null,
+        manpower_plan: null,
+        skill_matrix: null,
+        dayoff_shift: null,
+      });
+      setMessage("บันทึก master files แล้ว");
+      await loadActiveMasters();
+    } finally {
+      setIsSavingMasters(false);
     }
-
-    setMasterUploads({
-      employee_master: null,
-      manpower_plan: null,
-      skill_matrix: null,
-      dayoff_shift: null,
-    });
-    setMessage("บันทึก master files แล้ว");
-    setIsSavingMasters(false);
-    await loadActiveMasters();
   }
 
   async function saveDayoffShiftRows(rows: DayoffShiftEditorRow[]) {
@@ -482,7 +500,7 @@ export default function Home() {
 
     if (uploadError) {
       setError(uploadError.message);
-      return;
+      throw new Error(uploadError.message);
     }
 
     const { error: deactivateError } = await supabase
@@ -493,7 +511,7 @@ export default function Home() {
 
     if (deactivateError) {
       setError(deactivateError.message);
-      return;
+      throw new Error(deactivateError.message);
     }
 
     const { error: insertError } = await supabase
@@ -508,7 +526,7 @@ export default function Home() {
 
     if (insertError) {
       setError(insertError.message);
-      return;
+      throw new Error(insertError.message);
     }
 
     setMessage("บันทึก Dayoff & Shift master แล้ว");
@@ -541,7 +559,7 @@ export default function Home() {
 
     if (uploadError) {
       setError(uploadError.message);
-      return;
+      throw new Error(uploadError.message);
     }
 
     const { error: deactivateError } = await supabase
@@ -552,7 +570,7 @@ export default function Home() {
 
     if (deactivateError) {
       setError(deactivateError.message);
-      return;
+      throw new Error(deactivateError.message);
     }
 
     const { error: insertError } = await supabase
@@ -567,7 +585,7 @@ export default function Home() {
 
     if (insertError) {
       setError(insertError.message);
-      return;
+      throw new Error(insertError.message);
     }
 
     setMessage("บันทึก Skill Matrix master แล้ว");
@@ -589,15 +607,7 @@ export default function Home() {
   async function deleteRun(run: AllocationRun) {
     const label = run.original_filename ?? run.scan_file_path?.split("/").pop() ?? run.id;
     if (!window.confirm(`ต้องการลบไฟล์ "${label}" ใช่ไหม?\nการลบไม่สามารถย้อนกลับได้`)) return;
-    if (run.scan_file_path) {
-      const { error: storageError } = await supabase.storage
-        .from("workforce-inputs")
-        .remove([run.scan_file_path]);
-      if (storageError) {
-        setError(storageError.message);
-        return;
-      }
-    }
+    setError("");
     const { error: deleteError } = await supabase
       .from("allocation_runs")
       .delete()
@@ -606,20 +616,19 @@ export default function Home() {
       setError(deleteError.message);
       return;
     }
+    if (run.scan_file_path) {
+      await supabase.storage.from("workforce-inputs").remove([run.scan_file_path]);
+    }
     await loadRuns();
   }
 
   async function deleteMasterFile(file: MasterFile) {
     const label = file.original_filename ?? file.file_type;
-    if (!window.confirm(`ต้องการลบ "${label}" ใช่ไหม?\nการลบไม่สามารถย้อนกลับได้`)) return;
+    const activeWarning = file.is_active ? "\n⚠️ ไฟล์นี้กำลัง Active อยู่ — หลังลบระบบจะไม่มีข้อมูล Master สำหรับประเภทนี้" : "";
+    if (!window.confirm(`ต้องการลบ "${label}" ใช่ไหม?\nการลบไม่สามารถย้อนกลับได้${activeWarning}`)) return;
     setError("");
-    const { error: storageError } = await supabase.storage
-      .from("workforce-inputs")
-      .remove([file.file_path]);
-    if (storageError) {
-      setError(storageError.message);
-      return;
-    }
+    // Delete DB record first — if storage fails the record is gone (clean UI) but file is orphaned (harmless)
+    // Reverse order risks: storage gone but DB record remains → user sees entry that 404s on download
     const { error: deleteError } = await supabase
       .from("master_data_files")
       .delete()
@@ -628,6 +637,7 @@ export default function Home() {
       setError(deleteError.message);
       return;
     }
+    await supabase.storage.from("workforce-inputs").remove([file.file_path]);
     await loadActiveMasters();
   }
 
@@ -636,63 +646,47 @@ export default function Home() {
     setMessage("");
     setIsCreatingRun(true);
 
-    if (!timestampFile) {
-      setError("กรุณาเลือกไฟล์ timestamp");
-      setIsCreatingRun(false);
-      return;
-    }
-
-    if (!hasAllActiveMasters) {
-      setError("กรุณา upload master files ให้ครบก่อนสร้าง daily run");
-      setIsCreatingRun(false);
-      return;
-    }
-
-    let recordCount: number | null = null;
     try {
-      const buffer = await timestampFile.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      recordCount = XLSX.utils.sheet_to_json(firstSheet).length;
-    } catch {
-      // ignore count error
-    }
+      if (!timestampFile) { setError("กรุณาเลือกไฟล์ timestamp"); return; }
+      if (!hasAllActiveMasters) { setError("กรุณา upload master files ให้ครบก่อนสร้าง daily run"); return; }
 
-    const runId = crypto.randomUUID();
-    const scanPath = `${publicWorkspace}/runs/${runId}/timestamp${getSafeFileExtension(timestampFile.name)}`;
-    const { error: uploadError } = await supabase.storage
-      .from("workforce-inputs")
-      .upload(scanPath, timestampFile, { upsert: true });
+      let recordCount: number | null = null;
+      try {
+        const buffer = await timestampFile.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array" });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        recordCount = XLSX.utils.sheet_to_json(firstSheet).length;
+      } catch { /* ignore count error */ }
 
-    if (uploadError) {
-      setError(uploadError.message);
+      const runId = crypto.randomUUID();
+      const scanPath = `${publicWorkspace}/runs/${runId}/timestamp${getSafeFileExtension(timestampFile.name)}`;
+      const { error: uploadError } = await supabase.storage
+        .from("workforce-inputs")
+        .upload(scanPath, timestampFile, { upsert: true });
+      if (uploadError) { setError(uploadError.message); return; }
+
+      const { error: insertError } = await supabase.from("allocation_runs").insert({
+        id: runId,
+        owner_id: null,
+        status: "uploaded",
+        scan_file_path: scanPath,
+        original_filename: timestampFile.name,
+        record_count: recordCount,
+        master_file_path: activeMasterMap.employee_master?.file_path,
+        manpower_file_path: activeMasterMap.manpower_plan?.file_path,
+        skill_file_path: activeMasterMap.skill_matrix?.file_path,
+        dayoff_shift_file_path: activeMasterMap.dayoff_shift?.file_path,
+      });
+      if (insertError) { setError(insertError.message); return; }
+
+      setTimestampFile(null);
+      setMessage("สร้าง daily run แล้ว รอ worker ประมวลผล");
+      await loadRuns();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
+    } finally {
       setIsCreatingRun(false);
-      return;
     }
-
-    const { error: insertError } = await supabase.from("allocation_runs").insert({
-      id: runId,
-      owner_id: null,
-      status: "uploaded",
-      scan_file_path: scanPath,
-      original_filename: timestampFile.name,
-      record_count: recordCount,
-      master_file_path: activeMasterMap.employee_master?.file_path,
-      manpower_file_path: activeMasterMap.manpower_plan?.file_path,
-      skill_file_path: activeMasterMap.skill_matrix?.file_path,
-      dayoff_shift_file_path: activeMasterMap.dayoff_shift?.file_path,
-    });
-
-    if (insertError) {
-      setError(insertError.message);
-      setIsCreatingRun(false);
-      return;
-    }
-
-    setTimestampFile(null);
-    setMessage("สร้าง daily run แล้ว รอ worker ประมวลผล");
-    setIsCreatingRun(false);
-    await loadRuns();
   }
 
   async function loadReportDashboard() {
@@ -702,7 +696,7 @@ export default function Home() {
 
     try {
       const employeeMaster = activeMasterMap.employee_master;
-      const latestRun = (selectedRunId ? runs.find(r => r.id === selectedRunId) : null) ?? runs.find((run) => run.scan_file_path);
+      const latestRun = (selectedRunId ? runs.find(r => r.id === selectedRunId) : null) ?? runs.find(r => !!r.scan_file_path);
 
       if (!employeeMaster || !latestRun?.scan_file_path) {
         setError("ต้องมีไฟล์รายชื่อพนักงานและ timestamp ล่าสุดก่อนสร้าง Report & Dashboard");
@@ -909,7 +903,7 @@ export default function Home() {
               <button
                 className={`nav-item ${activeTab === item.id ? "active" : ""}`}
                 key={item.label}
-                onClick={() => setActiveTab(item.id as TabId)}
+                onClick={() => { setActiveTab(item.id as TabId); setError(""); setMessage(""); }}
                 type="button"
               >
                 <Icon size={19} />
@@ -922,10 +916,14 @@ export default function Home() {
           })}
         </nav>
 
-        <div className="logout">
+        <button
+          className="logout"
+          type="button"
+          onClick={() => { if (window.confirm("ต้องการออกจากระบบ?")) window.location.reload(); }}
+        >
           <LogOut size={19} />
           <span>ออกจากระบบ</span>
-        </div>
+        </button>
       </aside>
 
       <section className="main">
@@ -1093,7 +1091,6 @@ export default function Home() {
         {activeTab === "master" ? (
           <MasterDataPage
             activeMasterMap={activeMasterMap}
-            canSaveMasters={canSaveMasters}
             isSavingMasters={isSavingMasters}
             masterFileHistory={masterFileHistory}
             masterUploads={masterUploads}
@@ -1187,7 +1184,10 @@ async function downloadMasterFile(filePath: string, filename: string) {
   const { data, error } = await supabase.storage
     .from("workforce-inputs")
     .createSignedUrl(filePath, 120);
-  if (error || !data?.signedUrl) return;
+  if (error || !data?.signedUrl) {
+    alert(`ดาวน์โหลดไม่สำเร็จ: ${error?.message ?? "ไม่พบ URL"}`);
+    return;
+  }
   const a = document.createElement("a");
   a.href = data.signedUrl;
   a.download = filename;
@@ -1930,11 +1930,15 @@ function DashboardPanels({
 
   const saveLeave = async (empId: string, leaveType: string) => {
     if (!isoTargetDate || !leaveType) return;
-    setLeaveMap(prev => new Map(prev).set(empId, leaveType));
-    await supabase.from("leave_records").upsert(
+    const prev = leaveMap.get(empId);
+    setLeaveMap(m => new Map(m).set(empId, leaveType));
+    const { error } = await supabase.from("leave_records").upsert(
       { emp_id: empId, leave_date: isoTargetDate, leave_type: leaveType },
       { onConflict: "emp_id,leave_date" }
     );
+    if (error) {
+      setLeaveMap(m => { const n = new Map(m); prev === undefined ? n.delete(empId) : n.set(empId, prev); return n; });
+    }
   };
 
   const [confirmation, setConfirmation] = useState<{ confirmed_by: string; confirmed_at: string } | null | undefined>(undefined);
@@ -1942,7 +1946,9 @@ function DashboardPanels({
   const [isConfirming, setIsConfirming] = useState(false);
 
   useEffect(() => {
-    if (!isoTargetDate) { setConfirmation(undefined); return; }
+    if (!isoTargetDate) { setConfirmation(undefined); setConfirmName(""); return; }
+    setConfirmation(undefined);
+    setConfirmName("");
     const deptKey = dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter;
     supabase.from("daily_confirmations")
       .select("confirmed_by, confirmed_at")
@@ -1965,23 +1971,26 @@ function DashboardPanels({
     }
     if (!isoTargetDate) return;
     setIsConfirming(true);
-    const deptKey = dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter;
-    const leaveCounts: Record<string, number> = {};
-    for (const lt of leaveMap.values()) leaveCounts[lt] = (leaveCounts[lt] ?? 0) + 1;
-    const { data, error } = await supabase.from("daily_confirmations").upsert({
-      confirm_date: isoTargetDate,
-      dept: deptKey,
-      confirmed_by: confirmName.trim(),
-      late_count: reportData?.late ?? 0,
-      absent_count: reportData?.absent ?? 0,
-      leave_breakdown: leaveCounts,
-    }, { onConflict: "confirm_date,dept" }).select("confirmed_by, confirmed_at").single();
-    if (error) {
-      alert(`บันทึกไม่สำเร็จ: ${error.message}\n\nกรุณา run migration 008_daily_confirmations.sql ใน Supabase SQL Editor ก่อน`);
-    } else if (data) {
-      setConfirmation(data as { confirmed_by: string; confirmed_at: string });
+    try {
+      const deptKey = dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter;
+      const leaveCounts: Record<string, number> = {};
+      for (const lt of leaveMap.values()) leaveCounts[lt] = (leaveCounts[lt] ?? 0) + 1;
+      const { data, error } = await supabase.from("daily_confirmations").upsert({
+        confirm_date: isoTargetDate,
+        dept: deptKey,
+        confirmed_by: confirmName.trim(),
+        late_count: reportData?.late ?? 0,
+        absent_count: reportData?.absent ?? 0,
+        leave_breakdown: leaveCounts,
+      }, { onConflict: "confirm_date,dept" }).select("confirmed_by, confirmed_at").single();
+      if (error) {
+        alert(`บันทึกไม่สำเร็จ: ${error.message}\n\nกรุณา run migration 008_daily_confirmations.sql ใน Supabase SQL Editor ก่อน`);
+      } else if (data) {
+        setConfirmation(data as { confirmed_by: string; confirmed_at: string });
+      }
+    } finally {
+      setIsConfirming(false);
     }
-    setIsConfirming(false);
   };
 
   const total = reportData?.totalEmployees ?? 0;
@@ -2384,6 +2393,113 @@ function DashboardPanels({
   );
 }
 
+function buildCombinedExcelWorkbook(
+  empRows: Record<string, unknown>[],
+  dayoffMap: Map<string, { dayoff: string; shift: string; shiftStart: string }>,
+  skillFlatRows: SkillFlatRow[],
+  manpowerRows: Record<string, unknown>[],
+  skillNames: string[],
+): ReturnType<typeof XLSX.utils.book_new> {
+  const sheet1Rows = empRows.map((row) => {
+    const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+    if (!empId) return null;
+    const ds = dayoffMap.get(empId);
+    const empSkills = skillFlatRows.filter((s) => s.empId === empId);
+    const skillCols: Record<string, number> = {};
+    for (const name of skillNames) skillCols[name] = empSkills.find((s) => s.skill === name)?.level ?? 0;
+    return {
+      "Employee ID": empId,
+      "First Name (Local)": String(row["First Name (Local)"] ?? "").trim(),
+      "Last Name (Local)": String(row["Last Name (Local)"] ?? "").trim(),
+      "หน่วยงาน": String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim(),
+      "Title (Position)": String(row["Title (Position)"] ?? row["position"] ?? "").trim(),
+      "กะ": ds?.shift ?? "",
+      "เวลาเข้างาน": ds?.shiftStart ?? "",
+      "วันหยุดประจำสัปดาห์": ds?.dayoff ?? "",
+      ...skillCols,
+    };
+  }).filter(Boolean);
+  const ws1 = XLSX.utils.json_to_sheet(sheet1Rows as object[]);
+  ws1["!cols"] = [
+    { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 20 },
+    { wch: 8 }, { wch: 14 }, { wch: 24 },
+    ...skillNames.map(() => ({ wch: 14 })),
+  ];
+  const ws2 = XLSX.utils.json_to_sheet(
+    manpowerRows.length ? manpowerRows : [{ "หน่วยงาน": "", "กะ": "", "เวลาเข้า": "" }],
+  );
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws1, "พนักงาน");
+  XLSX.utils.book_append_sheet(wb, ws2, "Manpower Plan");
+  return wb;
+}
+
+function parseCombinedSheet1(rows: Record<string, unknown>[]): CombinedEmployeeRow[] {
+  const FIXED = new Set([
+    "employee id", "first name (local)", "last name (local)",
+    "หน่วยงาน", "title (position)", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
+  ]);
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  return rows.map((row) => {
+    const empId = cleanEmpId(row["Employee ID"] ?? "");
+    if (!empId) return null;
+    const skills: Record<string, number> = {};
+    for (const [key, val] of Object.entries(row)) {
+      if (!FIXED.has(norm(key)) && key.trim()) {
+        const level = Number(val);
+        if (!isNaN(level)) skills[key.trim()] = level;
+      }
+    }
+    return {
+      empId,
+      firstName: String(row["First Name (Local)"] ?? "").trim(),
+      lastName: String(row["Last Name (Local)"] ?? "").trim(),
+      dept: String(row["หน่วยงาน"] ?? "").trim(),
+      position: String(row["Title (Position)"] ?? "").trim(),
+      shift: String(row["กะ"] ?? "").trim(),
+      shiftStart: normalizeTimeText(row["เวลาเข้างาน"]),
+      dayoff: String(row["วันหยุดประจำสัปดาห์"] ?? "").trim(),
+      skills,
+    };
+  }).filter(Boolean) as CombinedEmployeeRow[];
+}
+
+function computeEmployeeDiff(
+  newRows: CombinedEmployeeRow[],
+  currentRows: CombinedEmployeeRow[],
+  newManpowerRows: Record<string, unknown>[],
+): EmployeeDiff {
+  const curMap = new Map(currentRows.map((r) => [r.empId, r]));
+  const newMap = new Map(newRows.map((r) => [r.empId, r]));
+  const added = newRows.filter((r) => !curMap.has(r.empId));
+  const removed = currentRows.filter((r) => !newMap.has(r.empId));
+  const changed: EmployeeDiff["changed"] = [];
+  let unchangedCount = 0;
+  for (const nr of newRows) {
+    const cur = curMap.get(nr.empId);
+    if (!cur) continue;
+    const fields: Array<{ field: string; from: string; to: string }> = [];
+    const chk = (field: string, from: string, to: string) => {
+      if (from.trim() !== to.trim()) fields.push({ field, from, to });
+    };
+    chk("ชื่อ", `${cur.firstName} ${cur.lastName}`.trim(), `${nr.firstName} ${nr.lastName}`.trim());
+    chk("หน่วยงาน", cur.dept, nr.dept);
+    chk("ตำแหน่ง", cur.position, nr.position);
+    chk("กะ", cur.shift, nr.shift);
+    chk("เวลาเข้างาน", cur.shiftStart, nr.shiftStart);
+    chk("วันหยุด", cur.dayoff, nr.dayoff);
+    const allSkills = new Set([...Object.keys(cur.skills), ...Object.keys(nr.skills)]);
+    for (const s of allSkills) {
+      const fl = cur.skills[s] ?? 0;
+      const tl = nr.skills[s] ?? 0;
+      if (fl !== tl) chk(`ทักษะ: ${s}`, String(fl), String(tl));
+    }
+    if (fields.length) changed.push({ empId: nr.empId, name: `${nr.firstName} ${nr.lastName}`.trim(), dept: nr.dept, fields });
+    else unchangedCount++;
+  }
+  return { added, removed, changed, unchangedCount, newRows, newManpowerRows };
+}
+
 const masterColumnColors: Record<MasterFileKey, string> = {
   employee_master: "#2563eb",
   manpower_plan: "#d97706",
@@ -2391,9 +2507,131 @@ const masterColumnColors: Record<MasterFileKey, string> = {
   dayoff_shift: "#7c3aed",
 };
 
+function DiffPreviewModal({
+  diff,
+  onConfirm,
+  onCancel,
+  isSaving,
+}: {
+  diff: EmployeeDiff;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isSaving: boolean;
+}) {
+  const [deletionConfirmed, setDeletionConfirmed] = useState(false);
+  const canConfirm = diff.removed.length === 0 || deletionConfirmed;
+  const defaultSection = diff.removed.length > 0 ? "removed" : diff.added.length > 0 ? "added" : diff.changed.length > 0 ? "changed" : null;
+  const [expandSection, setExpandSection] = useState<"added" | "removed" | "changed" | null>(defaultSection);
+  const toggle = (s: "added" | "removed" | "changed") => setExpandSection((prev) => (prev === s ? null : s));
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-panel diff-modal">
+        <div className="modal-header">
+          <h3>ยืนยันการอัพเดทข้อมูลพนักงาน</h3>
+          <button className="icon-button" onClick={onCancel} disabled={isSaving} type="button">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="diff-summary-row">
+          {diff.added.length > 0 && (
+            <button className={`diff-badge added${expandSection === "added" ? " active" : ""}`} onClick={() => toggle("added")} type="button">
+              + เพิ่ม {diff.added.length} คน
+            </button>
+          )}
+          {diff.removed.length > 0 && (
+            <button className={`diff-badge removed${expandSection === "removed" ? " active" : ""}`} onClick={() => toggle("removed")} type="button">
+              − ลบ {diff.removed.length} คน
+            </button>
+          )}
+          {diff.changed.length > 0 && (
+            <button className={`diff-badge changed${expandSection === "changed" ? " active" : ""}`} onClick={() => toggle("changed")} type="button">
+              ≈ แก้ไข {diff.changed.length} คน
+            </button>
+          )}
+          <span className="diff-badge unchanged">= ไม่เปลี่ยน {diff.unchangedCount} คน</span>
+        </div>
+
+        <div className="diff-body">
+          {expandSection === "added" && (
+            <div className="diff-section added">
+              <div className="diff-section-title">เพิ่มใหม่</div>
+              {diff.added.map((r) => (
+                <div key={r.empId} className="diff-row">
+                  <span className="diff-empid">{r.empId}</span>
+                  <span className="diff-name">{`${r.firstName} ${r.lastName}`.trim() || "—"}</span>
+                  <span className="dept-chip">{r.dept || "—"}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {expandSection === "removed" && (
+            <div className="diff-section removed">
+              <div className="diff-section-title">ลบออก</div>
+              {diff.removed.map((r) => (
+                <div key={r.empId} className="diff-row">
+                  <span className="diff-empid">{r.empId}</span>
+                  <span className="diff-name">{`${r.firstName} ${r.lastName}`.trim() || "—"}</span>
+                  <span className="dept-chip">{r.dept || "—"}</span>
+                </div>
+              ))}
+              <label className="diff-delete-confirm">
+                <input type="checkbox" checked={deletionConfirmed} onChange={(e) => setDeletionConfirmed(e.target.checked)} />
+                ฉันยืนยันว่าต้องการลบพนักงาน {diff.removed.length} คนนี้ออกจากระบบ
+              </label>
+            </div>
+          )}
+          {expandSection === "changed" && (
+            <div className="diff-section changed">
+              <div className="diff-section-title">เปลี่ยนแปลง</div>
+              {diff.changed.slice(0, 30).map((r) => (
+                <div key={r.empId} className="diff-changed-row">
+                  <div className="diff-row">
+                    <span className="diff-empid">{r.empId}</span>
+                    <span className="diff-name">{r.name || "—"}</span>
+                    <span className="dept-chip">{r.dept || "—"}</span>
+                  </div>
+                  {r.fields.map((f) => (
+                    <div key={f.field} className="diff-field-row">
+                      <span className="diff-field-label">{f.field}</span>
+                      <span className="diff-from">{f.from || "(ว่าง)"}</span>
+                      <span className="diff-arrow">→</span>
+                      <span className="diff-to">{f.to || "(ว่าง)"}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {diff.changed.length > 30 && (
+                <p style={{ color: "var(--muted)", fontSize: 13, margin: "8px 0 0" }}>
+                  ...และอีก {diff.changed.length - 30} คน
+                </p>
+              )}
+            </div>
+          )}
+          {diff.added.length === 0 && diff.removed.length === 0 && diff.changed.length === 0 && (
+            <p style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: "24px 0" }}>
+              ข้อมูลไม่มีการเปลี่ยนแปลง
+            </p>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button className="secondary-button" onClick={onCancel} disabled={isSaving} type="button">
+            ยกเลิก
+          </button>
+          <button className="primary-button" disabled={!canConfirm || isSaving} onClick={onConfirm} type="button">
+            <UploadCloud size={16} />
+            {isSaving ? "กำลังบันทึก..." : `ยืนยันอัพเดท → ${diff.newRows.length} คน`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MasterDataPage({
   activeMasterMap,
-  canSaveMasters,
   isSavingMasters,
   masterFileHistory,
   masterUploads,
@@ -2407,7 +2645,6 @@ function MasterDataPage({
   setMasterUploads,
 }: {
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
-  canSaveMasters: boolean;
   isSavingMasters: boolean;
   masterFileHistory: MasterFile[];
   masterUploads: MasterUploadState;
@@ -2423,51 +2660,192 @@ function MasterDataPage({
   const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays" | "public_holidays">("files");
   const [combinedFile, setCombinedFile] = useState<File | null>(null);
   const [isSavingCombined, setIsSavingCombined] = useState(false);
+  const [diffResult, setDiffResult] = useState<EmployeeDiff | null>(null);
+  const [showDiffModal, setShowDiffModal] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   function downloadCombinedTemplate() {
+    const skillExamples = ["Office", "QC คลังชิ้นส่วน", "QC เชื่อด", "คลัง Picking", "ผ่าซาก"];
     const headers = [
-      "Employee ID",
-      "First Name (Local)",
-      "Last Name (Local)",
-      "หน่วยงาน",
-      "Title (Position)",
-      "กะ",
-      "เวลาเข้างาน",
-      "วันหยุดประจำสัปดาห์",
+      "Employee ID", "First Name (Local)", "Last Name (Local)",
+      "หน่วยงาน", "Title (Position)", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
+      ...skillExamples,
     ];
     const examples = [
-      ["EMP001", "สมชาย", "ใจดี", "งานเครื่องใน", "พนักงานผลิต", "กะ 1", "07:00", "อาทิตย์"],
-      ["EMP002", "สมหญิง", "รักดี", "งานแยกชิ้นส่วน", "พนักงานผลิต", "กะ 1", "07:00", "เสาร์-อาทิตย์"],
-      ["EMP003", "มานพ", "สุขใจ", "งานควบคุมคุณภาพ", "หัวหน้างาน", "กะ 2", "13:00", "อาทิตย์"],
+      ["EMP001", "สมชาย", "ใจดี", "งานเครื่องใน", "พนักงานผลิต", "กะ 1", "07:00", "อาทิตย์", 0, 3, 0, 2, 0],
+      ["EMP002", "สมหญิง", "รักดี", "งานแยกชิ้นส่วน", "พนักงานผลิต", "กะ 1", "07:00", "เสาร์-อาทิตย์", 0, 0, 2, 0, 3],
+      ["EMP003", "มานพ", "สุขใจ", "งานควบคุมคุณภาพ", "หัวหน้างาน", "กะ 2", "13:00", "อาทิตย์", 3, 0, 0, 0, 0],
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers, ...examples]);
-    ws["!cols"] = [14, 18, 18, 22, 20, 8, 14, 24].map((w) => ({ wch: w }));
+    ws["!cols"] = [14, 18, 18, 22, 20, 8, 14, 24, ...skillExamples.map(() => 14)].map((w) => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "พนักงาน");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["หน่วยงาน", "กะ", "เวลาเข้า"], ["งานเครื่องใน", "กะ 1", "07:00"]]), "Manpower Plan");
     XLSX.writeFile(wb, "template-master-พนักงาน.xlsx");
   }
 
-  async function saveCombinedFile() {
+  async function exportCombinedMaster() {
+    setIsExporting(true);
+    setError("");
+    try {
+      const [empRows, dayoffRows, skillRawRows, manpowerRows] = await Promise.all([
+        activeMasterMap.employee_master ? downloadSheetRows(activeMasterMap.employee_master.file_path) : Promise.resolve([]),
+        activeMasterMap.dayoff_shift ? downloadSheetRows(activeMasterMap.dayoff_shift.file_path) : Promise.resolve([]),
+        activeMasterMap.skill_matrix ? downloadSheetRows(activeMasterMap.skill_matrix.file_path) : Promise.resolve([]),
+        activeMasterMap.manpower_plan ? downloadSheetRows(activeMasterMap.manpower_plan.file_path) : Promise.resolve([]),
+      ]);
+      const skillFlatRows: SkillFlatRow[] = skillRawRows
+        .map((row, i) => {
+          const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? "");
+          const skill = String(row["Skill"] ?? row["skill"] ?? "").trim();
+          const level = Number(row["Level"] ?? row["level"]) || 0;
+          return { id: `${i}-${empId}-${skill}`, empId, name: "", dept: "", skill, level, origLevel: level };
+        })
+        .filter((r) => r.empId && r.skill);
+      const skillNames = Array.from(new Set(skillFlatRows.map((r) => r.skill))).sort();
+      const dayoffMap = buildDayoffShiftMap(dayoffRows);
+      const wb = buildCombinedExcelWorkbook(empRows, dayoffMap, skillFlatRows, manpowerRows, skillNames);
+      const now = new Date().toLocaleDateString("th-TH").replace(/\//g, "-");
+      XLSX.writeFile(wb, `master-พนักงาน-${now}.xlsx`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export ไม่สำเร็จ");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  async function previewCombinedUpload() {
     if (!combinedFile) return;
     setIsSavingCombined(true);
     setError("");
-    setMessage("");
-    for (const fileType of ["employee_master", "dayoff_shift"] as const) {
-      const fileId = crypto.randomUUID();
-      const ext = getSafeFileExtension(combinedFile.name);
-      const path = `${publicWorkspace}/masters/${fileType}/${fileId}${ext}`;
-      const { error: uploadError } = await supabase.storage.from("workforce-inputs").upload(path, combinedFile, { upsert: true });
-      if (uploadError) { setError(uploadError.message); setIsSavingCombined(false); return; }
-      await supabase.from("master_data_files").update({ is_active: false }).is("owner_id", null).eq("file_type", fileType);
-      const { error: insertError } = await supabase.from("master_data_files").insert({
-        owner_id: null, file_type: fileType, file_path: path, original_filename: combinedFile.name, is_active: true,
-      });
-      if (insertError) { setError(insertError.message); setIsSavingCombined(false); return; }
+    try {
+      const buffer = await combinedFile.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array", cellDates: true });
+      const sheet1Name = wb.SheetNames.find((n) => n.includes("พนักงาน") || n.toLowerCase().includes("employee")) ?? wb.SheetNames[0];
+      const sheet1Rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[sheet1Name], { defval: "" });
+      const newCombinedRows = parseCombinedSheet1(sheet1Rows);
+      if (newCombinedRows.length === 0) {
+        setError("ไม่พบข้อมูลพนักงานในไฟล์ — ตรวจสอบว่าใช้ไฟล์ที่ Export จากระบบนี้ และ Sheet แรกมีคอลัมน์ Employee ID");
+        setIsSavingCombined(false);
+        return;
+      }
+      const empIdCounts = new Map<string, number>();
+      for (const r of newCombinedRows) empIdCounts.set(r.empId, (empIdCounts.get(r.empId) ?? 0) + 1);
+      const dupes = [...empIdCounts.entries()].filter(([, n]) => n > 1).map(([id]) => id);
+      if (dupes.length > 0) {
+        setError(`พบ Employee ID ซ้ำในไฟล์: ${dupes.slice(0, 5).join(", ")}${dupes.length > 5 ? ` และอีก ${dupes.length - 5} รายการ` : ""} — กรุณาตรวจสอบและแก้ไขก่อนอัพโหลด`);
+        setIsSavingCombined(false);
+        return;
+      }
+
+      const sheet2Name = wb.SheetNames.find((n) => n.toLowerCase().includes("manpower") || n.toLowerCase().includes("plan")) ?? wb.SheetNames[1];
+      const newManpowerRows = sheet2Name && wb.Sheets[sheet2Name]
+        ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[sheet2Name], { defval: "" })
+        : [];
+
+      const [curEmpRows, curDayoffRows, curSkillRows] = await Promise.all([
+        activeMasterMap.employee_master ? downloadSheetRows(activeMasterMap.employee_master.file_path) : Promise.resolve([]),
+        activeMasterMap.dayoff_shift ? downloadSheetRows(activeMasterMap.dayoff_shift.file_path) : Promise.resolve([]),
+        activeMasterMap.skill_matrix ? downloadSheetRows(activeMasterMap.skill_matrix.file_path) : Promise.resolve([]),
+      ]);
+      const curDayoffMap = buildDayoffShiftMap(curDayoffRows);
+      const curSkillFlat: SkillFlatRow[] = curSkillRows
+        .map((row, i) => {
+          const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? "");
+          const skill = String(row["Skill"] ?? "").trim();
+          const level = Number(row["Level"] ?? row["level"]) || 0;
+          return { id: `${i}-${empId}-${skill}`, empId, name: "", dept: "", skill, level, origLevel: level };
+        })
+        .filter((r) => r.empId && r.skill);
+      const currentCombined: CombinedEmployeeRow[] = curEmpRows.map((row) => {
+        const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+        if (!empId) return null;
+        const ds = curDayoffMap.get(empId);
+        const empSkills: Record<string, number> = {};
+        for (const s of curSkillFlat.filter((r) => r.empId === empId)) empSkills[s.skill] = s.level;
+        return {
+          empId,
+          firstName: String(row["First Name (Local)"] ?? "").trim(),
+          lastName: String(row["Last Name (Local)"] ?? "").trim(),
+          dept: String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim(),
+          position: String(row["Title (Position)"] ?? "").trim(),
+          shift: ds?.shift ?? "",
+          shiftStart: ds?.shiftStart ?? "",
+          dayoff: ds?.dayoff ?? "",
+          skills: empSkills,
+        };
+      }).filter(Boolean) as CombinedEmployeeRow[];
+
+      const diff = computeEmployeeDiff(newCombinedRows, currentCombined, newManpowerRows);
+      setDiffResult(diff);
+      setShowDiffModal(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "อ่านไฟล์ไม่สำเร็จ");
+    } finally {
+      setIsSavingCombined(false);
     }
-    setCombinedFile(null);
-    setMessage("บันทึกไฟล์รวมเรียบร้อย — อัพเดท รายชื่อพนักงาน และ Dayoff & Shift แล้ว");
-    setIsSavingCombined(false);
-    await onMastersSaved();
+  }
+
+  async function saveCombinedFromDiff() {
+    if (!diffResult || !combinedFile) return;
+    setIsSavingCombined(true);
+    setError("");
+    try {
+      for (const fileType of ["employee_master", "dayoff_shift"] as const) {
+        const fileId = crypto.randomUUID();
+        const ext = getSafeFileExtension(combinedFile.name);
+        const path = `${publicWorkspace}/masters/${fileType}/${fileId}${ext}`;
+        const { error: uploadError } = await supabase.storage.from("workforce-inputs").upload(path, combinedFile, { upsert: true });
+        if (uploadError) { setError(uploadError.message); return; }
+        const { error: deactivateError } = await supabase.from("master_data_files").update({ is_active: false }).is("owner_id", null).eq("file_type", fileType);
+        if (deactivateError) { setError(deactivateError.message); return; }
+        const { error: insertError } = await supabase.from("master_data_files").insert({
+          owner_id: null, file_type: fileType, file_path: path, original_filename: combinedFile.name, is_active: true,
+        });
+        if (insertError) { setError(insertError.message); return; }
+      }
+      const skillRows = diffResult.newRows.flatMap((r) =>
+        Object.entries(r.skills)
+          .filter(([, level]) => level > 0)
+          .map(([skill, level]) => ({ "Employee ID": r.empId, Skill: skill, Level: level, "Can Do": 1 })),
+      );
+      const wsSkill = XLSX.utils.json_to_sheet(skillRows.length ? skillRows : [{ "Employee ID": "", Skill: "", Level: 0, "Can Do": 0 }]);
+      const wbSkill = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wbSkill, wsSkill, "SkillMatrix");
+      const skillBlob = new Blob([XLSX.write(wbSkill, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const skillPath = `${publicWorkspace}/masters/skill_matrix/${crypto.randomUUID()}.xlsx`;
+      const { error: skillUpErr } = await supabase.storage.from("workforce-inputs").upload(skillPath, skillBlob, { upsert: true });
+      if (skillUpErr) { setError(skillUpErr.message); return; }
+      const { error: skillDeactErr } = await supabase.from("master_data_files").update({ is_active: false }).is("owner_id", null).eq("file_type", "skill_matrix");
+      if (skillDeactErr) { setError(skillDeactErr.message); return; }
+      const { error: skillInsErr } = await supabase.from("master_data_files").insert({ owner_id: null, file_type: "skill_matrix", file_path: skillPath, original_filename: "skill_matrix-from-combined.xlsx", is_active: true });
+      if (skillInsErr) { setError(skillInsErr.message); return; }
+
+      if (diffResult.newManpowerRows.length > 0) {
+        const wsMp = XLSX.utils.json_to_sheet(diffResult.newManpowerRows);
+        const wbMp = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wbMp, wsMp, "ManpowerPlan");
+        const mpBlob = new Blob([XLSX.write(wbMp, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        const mpPath = `${publicWorkspace}/masters/manpower_plan/${crypto.randomUUID()}.xlsx`;
+        const { error: mpUpErr } = await supabase.storage.from("workforce-inputs").upload(mpPath, mpBlob, { upsert: true });
+        if (mpUpErr) { setError(mpUpErr.message); return; }
+        const { error: mpDeactErr } = await supabase.from("master_data_files").update({ is_active: false }).is("owner_id", null).eq("file_type", "manpower_plan");
+        if (mpDeactErr) { setError(mpDeactErr.message); return; }
+        const { error: mpInsErr } = await supabase.from("master_data_files").insert({ owner_id: null, file_type: "manpower_plan", file_path: mpPath, original_filename: "manpower_plan-from-combined.xlsx", is_active: true });
+        if (mpInsErr) { setError(mpInsErr.message); return; }
+      }
+
+      const mpNote = diffResult.newManpowerRows.length === 0 ? " (Manpower Plan: ไม่มีข้อมูลใน Sheet2 — ข้ามการอัพเดท)" : "";
+      setShowDiffModal(false);
+      setDiffResult(null);
+      setCombinedFile(null);
+      setMessage(`บันทึกไฟล์รวมเรียบร้อย — พนักงาน ${diffResult.newRows.length} คน${mpNote}`);
+      await onMastersSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setIsSavingCombined(false);
+    }
   }
 
   return (
@@ -2504,152 +2882,193 @@ function MasterDataPage({
         <PublicHolidayPage onHolidaysChanged={onHolidaysChanged} />
       ) : null}
 
+      {showDiffModal && diffResult && (
+        <DiffPreviewModal
+          diff={diffResult}
+          isSaving={isSavingCombined}
+          onCancel={() => { setShowDiffModal(false); setDiffResult(null); }}
+          onConfirm={() => void saveCombinedFromDiff()}
+        />
+      )}
+
       {masterSubTab === "files" ? (<>
 
+      <div className="md-two-col">
+
       {/* Combined template section */}
-      <div className="combined-upload-bar panel">
-        <div className="combined-upload-info">
-          <FileSpreadsheet size={18} />
-          <div>
-            <strong>ไฟล์รวมพนักงาน</strong>
-            <span>1 ไฟล์ครอบคลุม รายชื่อพนักงาน + กะ + วันหยุด + เวลาเข้างาน — ดาวน์โหลดเทมเพลต กรอกข้อมูล แล้วอัพโหลดครั้งเดียว</span>
+      <div className="master-card panel">
+        <div className="master-card-header">
+          <div className="combined-upload-info">
+            <FileSpreadsheet size={18} />
+            <div>
+              <strong>ไฟล์รวมพนักงาน</strong>
+              <span>Export ข้อมูลปัจจุบัน แก้ใน Excel แล้วอัพโหลดกลับ — ระบบจะแสดง diff ก่อน Save</span>
+            </div>
           </div>
         </div>
-        <div className="combined-upload-actions">
+        <label className={`ts-dropzone compact-dropzone ${combinedFile ? "has-file" : ""}`}>
+          <UploadCloud size={24} />
+          {combinedFile ? (
+            <>
+              <strong>{combinedFile.name}</strong>
+              <span>{(combinedFile.size / 1024).toFixed(0)} KB · คลิกเพื่อเปลี่ยนไฟล์</span>
+            </>
+          ) : (
+            <>
+              <strong>ลากไฟล์มาวางที่นี่ หรือ คลิกเพื่อเลือกไฟล์</strong>
+              <span>รองรับ .xlsx, .xls</span>
+            </>
+          )}
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: "none" }}
+            onChange={(e) => setCombinedFile(e.target.files?.[0] ?? null)}
+          />
+        </label>
+        <div className="master-card-history">
+          <h4>ประวัติการอัปโหลด</h4>
+          <div className="ts-history-list">
+            {masterFileHistory.filter((f) => f.file_type === "employee_master").length === 0 ? (
+              <p className="empty-copy" style={{ padding: "8px 0" }}>ยังไม่มีประวัติ</p>
+            ) : null}
+            {masterFileHistory
+              .filter((f) => f.file_type === "employee_master")
+              .map((file) => {
+                const dateText = new Date(file.created_at).toLocaleString("th-TH", {
+                  day: "numeric", month: "numeric", year: "2-digit",
+                  hour: "2-digit", minute: "2-digit", hour12: false,
+                });
+                return (
+                  <div className="ts-history-row" key={file.id}>
+                    <div className="ts-history-info">
+                      <div className="ts-history-name-row">
+                        <strong>{file.original_filename ?? "ไฟล์"}</strong>
+                        {file.is_active ? <span className="status-pill uploaded">Active</span> : null}
+                      </div>
+                      <span>{dateText}</span>
+                    </div>
+                    <div className="ts-history-actions">
+                      <button className="icon-button" onClick={() => downloadMasterFile(file.file_path, file.original_filename ?? "download.xlsx")} title="ดาวน์โหลด" type="button">
+                        <Download size={15} />
+                      </button>
+                      <button className="icon-button danger" onClick={() => void onDeleteMasterFile(file)} title="ลบ" type="button">
+                        <X size={15} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+        <div className="master-card-actions">
           <button className="secondary-button small" onClick={downloadCombinedTemplate} type="button">
             <Download size={14} />
-            ดาวน์โหลดเทมเพลต
+            เทมเพลตเปล่า
           </button>
-          <label className={`secondary-button small ${combinedFile ? "has-file" : ""}`}>
-            <UploadCloud size={14} />
-            {combinedFile ? combinedFile.name : "เลือกไฟล์รวม"}
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              style={{ display: "none" }}
-              onChange={(e) => setCombinedFile(e.target.files?.[0] ?? null)}
-            />
-          </label>
+          <button
+            className="secondary-button small"
+            disabled={isExporting || !activeMasterMap.employee_master}
+            onClick={() => void exportCombinedMaster()}
+            type="button"
+          >
+            <Download size={14} />
+            {isExporting ? "กำลัง Export..." : "Export ข้อมูลปัจจุบัน"}
+          </button>
           <button
             className="primary-button small"
             disabled={!combinedFile || isSavingCombined}
-            onClick={saveCombinedFile}
+            onClick={() => void previewCombinedUpload()}
             type="button"
           >
             <UploadCloud size={14} />
-            {isSavingCombined ? "กำลังบันทึก..." : "อัพโหลดไฟล์รวม"}
+            {isSavingCombined ? "กำลังอ่านไฟล์..." : "ตรวจสอบก่อนอัพโหลด"}
           </button>
         </div>
       </div>
 
-      <div className="md-columns-bar">
-        <div>
-          <h3>Master Data (แยกไฟล์)</h3>
-          <p>อัปโหลดแยกตามประเภท สำหรับ Manpower Plan และ Skill Matrix หรืออัพเดทแค่บางส่วน</p>
-        </div>
-        <button
-          className="primary-button"
-          disabled={!canSaveMasters || isSavingMasters}
-          onClick={saveMasterFiles}
-          type="button"
-        >
-          <UploadCloud size={17} />
-          {isSavingMasters ? "Saving..." : "Save Master Files"}
-        </button>
-      </div>
-
-      <div className="md-columns">
-        {masterFileTypes.map((item) => {
-          const pendingFile = masterUploads[item.key];
-          const fileHistory = masterFileHistory.filter((f) => f.file_type === item.key);
-          const inputId = `master-input-${item.key}`;
-          const color = masterColumnColors[item.key];
-
-          return (
-            <div className="md-column panel" key={item.key}>
-              <div className="md-column-header" style={{ borderTopColor: color }}>
-                <span className="md-column-title">{item.label}</span>
-              </div>
-
-              <label className={`ts-dropzone compact-dropzone ${pendingFile ? "has-file" : ""}`}>
-                <UploadCloud size={28} />
-                {pendingFile ? (
-                  <>
-                    <strong>{pendingFile.name}</strong>
-                    <span>{(pendingFile.size / 1024).toFixed(0)} KB · คลิกเพื่อเปลี่ยนไฟล์</span>
-                  </>
-                ) : (
-                  <>
-                    <strong>ลากไฟล์มาวางที่นี่ หรือ คลิกเพื่อเลือกไฟล์</strong>
-                    <span>รองรับ .xlsx, .xls, .csv</span>
-                  </>
-                )}
-                <input
-                  id={inputId}
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={(event) =>
-                    setMasterUploads((current) => ({
-                      ...current,
-                      [item.key]: event.target.files?.[0] ?? null,
-                    }))
-                  }
-                />
-              </label>
-
-              <div className="md-col-history">
-                <h4>ประวัติการอัปโหลด</h4>
-                <div className="ts-history-list">
-                  {fileHistory.length === 0 ? (
-                    <p className="empty-copy" style={{ padding: "8px 0" }}>ยังไม่มีประวัติ</p>
-                  ) : null}
-                  {fileHistory.map((file) => {
-                    const dateText = new Date(file.created_at).toLocaleString("th-TH", {
-                      day: "numeric",
-                      month: "numeric",
-                      year: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: false,
-                    });
-                    return (
-                      <div className="ts-history-row" key={file.id}>
-                        <div className="ts-history-info">
-                          <div className="ts-history-name-row">
-                            <strong>{file.original_filename ?? "ไฟล์"}</strong>
-                            {file.is_active ? (
-                              <span className="status-pill uploaded">Active</span>
-                            ) : null}
-                          </div>
-                          <span>{dateText}</span>
-                        </div>
-                        <div className="ts-history-actions">
-                          <button
-                            className="icon-button"
-                            onClick={() => downloadMasterFile(file.file_path, file.original_filename ?? "download.xlsx")}
-                            title="ดาวน์โหลด"
-                            type="button"
-                          >
-                            <Download size={15} />
-                          </button>
-                          <button
-                            className="icon-button danger"
-                            onClick={() => void onDeleteMasterFile(file)}
-                            title="ลบ"
-                            type="button"
-                          >
-                            <X size={15} />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+      {(() => {
+        const pendingFile = masterUploads.manpower_plan;
+        const fileHistory = masterFileHistory.filter((f) => f.file_type === "manpower_plan");
+        return (
+          <div className="master-card master-card--orange panel">
+            <div className="master-card-header">
+              <div className="combined-upload-info" style={{ color: "#d97706" }}>
+                <BarChart3 size={18} />
+                <div>
+                  <strong>Manpower Plan</strong>
+                  <span>อัพเดทกะและเวลาเข้างานของแต่ละหน่วยงาน — ไม่กระทบรายชื่อพนักงาน</span>
                 </div>
               </div>
             </div>
-          );
-        })}
-      </div>
+            <label className={`ts-dropzone compact-dropzone ${pendingFile ? "has-file" : ""}`}>
+              <UploadCloud size={24} />
+              {pendingFile ? (
+                <>
+                  <strong>{pendingFile.name}</strong>
+                  <span>{(pendingFile.size / 1024).toFixed(0)} KB · คลิกเพื่อเปลี่ยนไฟล์</span>
+                </>
+              ) : (
+                <>
+                  <strong>ลากไฟล์มาวางที่นี่ หรือ คลิกเพื่อเลือกไฟล์</strong>
+                  <span>รองรับ .xlsx, .xls, .csv</span>
+                </>
+              )}
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={(e) => setMasterUploads((cur) => ({ ...cur, manpower_plan: e.target.files?.[0] ?? null }))}
+              />
+            </label>
+            <div className="master-card-history">
+              <h4>ประวัติการอัปโหลด</h4>
+              <div className="ts-history-list">
+                {fileHistory.length === 0 ? (
+                  <p className="empty-copy" style={{ padding: "8px 0" }}>ยังไม่มีประวัติ</p>
+                ) : null}
+                {fileHistory.map((file) => {
+                  const dateText = new Date(file.created_at).toLocaleString("th-TH", {
+                    day: "numeric", month: "numeric", year: "2-digit",
+                    hour: "2-digit", minute: "2-digit", hour12: false,
+                  });
+                  return (
+                    <div className="ts-history-row" key={file.id}>
+                      <div className="ts-history-info">
+                        <div className="ts-history-name-row">
+                          <strong>{file.original_filename ?? "ไฟล์"}</strong>
+                          {file.is_active ? <span className="status-pill uploaded">Active</span> : null}
+                        </div>
+                        <span>{dateText}</span>
+                      </div>
+                      <div className="ts-history-actions">
+                        <button className="icon-button" onClick={() => downloadMasterFile(file.file_path, file.original_filename ?? "download.xlsx")} title="ดาวน์โหลด" type="button">
+                          <Download size={15} />
+                        </button>
+                        <button className="icon-button danger" onClick={() => void onDeleteMasterFile(file)} title="ลบ" type="button">
+                          <X size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="master-card-actions">
+              <button
+                className="primary-button small"
+                disabled={!pendingFile || isSavingMasters}
+                onClick={saveMasterFiles}
+                type="button"
+              >
+                <UploadCloud size={14} />
+                {isSavingMasters ? "Saving..." : "Save Manpower Plan"}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      </div>{/* md-two-col */}
 
       <DayoffShiftEditor
         activeFile={activeMasterMap.dayoff_shift}
@@ -2758,7 +3177,9 @@ function HolidayMasterPage({
     const { error } = await supabase
       .from("holidays")
       .upsert({ date: newDate, name: newName.trim(), type: newType }, { onConflict: "date" });
-    if (!error) {
+    if (error) {
+      alert(`เพิ่มไม่สำเร็จ: ${error.message}`);
+    } else {
       setNewDate("");
       setNewName("");
       await loadHolidays();
@@ -2767,7 +3188,8 @@ function HolidayMasterPage({
   }
 
   async function deleteHoliday(id: string) {
-    await supabase.from("holidays").delete().eq("id", id);
+    const { error } = await supabase.from("holidays").delete().eq("id", id);
+    if (error) { alert(`ลบไม่สำเร็จ: ${error.message}`); return; }
     await loadHolidays();
   }
 
@@ -2979,7 +3401,9 @@ function PublicHolidayPage({
     const { error } = await supabase
       .from("holidays")
       .upsert({ date: newDate, name: newName.trim(), type: newType }, { onConflict: "date" });
-    if (!error) {
+    if (error) {
+      alert(`เพิ่มไม่สำเร็จ: ${error.message}`);
+    } else {
       setNewDate("");
       setNewName("");
       await loadHolidays();
@@ -2988,7 +3412,8 @@ function PublicHolidayPage({
   }
 
   async function deleteHoliday(id: string) {
-    await supabase.from("holidays").delete().eq("id", id);
+    const { error } = await supabase.from("holidays").delete().eq("id", id);
+    if (error) { alert(`ลบไม่สำเร็จ: ${error.message}`); return; }
     await loadHolidays();
   }
 
@@ -3365,6 +3790,8 @@ function DayoffShiftEditor({
     try {
       await saveDayoffShiftRows(rows);
       setOriginalRows(rows);
+    } catch {
+      // error already set by saveDayoffShiftRows
     } finally {
       setIsSaving(false);
     }
@@ -3700,6 +4127,8 @@ function SkillMatrixPage({
         .map((r) => ({ empId: r.empId, skill: r.skill, level: r.level }));
       await saveSkillMatrixRows(flatRows);
       setRows((prev) => prev.map((r) => ({ ...r, origLevel: r.level })));
+    } catch {
+      // error already set by saveSkillMatrixRows
     } finally {
       setIsSaving(false);
     }
@@ -4528,11 +4957,15 @@ function ReportDashboard({
 
   const saveLeave = async (empId: string, leaveType: string) => {
     if (!isoDate || !leaveType) return;
-    setLeaveMap(prev => new Map(prev).set(empId, leaveType));
-    await supabase.from("leave_records").upsert(
+    const prev = leaveMap.get(empId);
+    setLeaveMap(m => new Map(m).set(empId, leaveType));
+    const { error } = await supabase.from("leave_records").upsert(
       { emp_id: empId, leave_date: isoDate, leave_type: leaveType },
       { onConflict: "emp_id,leave_date" }
     );
+    if (error) {
+      setLeaveMap(m => { const n = new Map(m); prev === undefined ? n.delete(empId) : n.set(empId, prev); return n; });
+    }
   };
 
   const data = reportData ?? {

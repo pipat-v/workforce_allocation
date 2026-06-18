@@ -1364,16 +1364,79 @@ button {
   min-width: 190px;
 }
 
-/* Combined upload bar */
-.combined-upload-bar {
+/* Master cards — subgrid for perfect row alignment */
+.md-two-col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr auto;
+  gap: 0 16px;
+}
+
+.master-card {
+  display: grid;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+  border-left: 4px solid var(--blue);
+}
+
+.master-card--orange {
+  border-left-color: #d97706;
+}
+
+.master-card-header {
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.master-card .compact-dropzone {
+  margin: 8px 20px 0;
+  padding: 40px 24px;
+}
+
+.master-card-history {
+  padding: 16px 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.master-card-history h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.master-card-history .ts-history-list {
+  border-top: 1px solid var(--line);
+  overflow-y: auto;
+  min-height: 0;
+  max-height: 120px;
+}
+
+.master-card-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 20px;
-  border-left: 4px solid var(--blue);
+  gap: 8px;
   flex-wrap: wrap;
+  padding: 12px 20px 16px;
 }
+
+@media (max-width: 900px) {
+  .md-two-col {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    gap: 16px;
+  }
+  .master-card {
+    grid-row: auto;
+    grid-template-rows: auto auto auto auto;
+  }
+}
+
 
 .combined-upload-info {
   display: flex;
@@ -1405,7 +1468,6 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
   flex-wrap: wrap;
 }
 
@@ -1487,22 +1549,34 @@ button {
 
 .compact-dropzone {
   margin: 0 20px;
-  padding: 10px 12px;
-  gap: 4px;
+  padding: 12px 20px;
+  flex-direction: row;
+  gap: 14px;
+  text-align: left;
+  justify-content: flex-start;
 }
 
 .compact-dropzone strong {
   font-size: 13px;
-  text-align: center;
+}
+
+.compact-dropzone span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.compact-dropzone svg {
+  flex-shrink: 0;
+  opacity: 0.6;
 }
 
 .md-col-history {
-  padding: 0 20px 12px;
+  padding: 0 20px 14px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  flex: 1;
 }
+
 
 .md-col-history h4 {
   font-size: 13px;
@@ -4312,4 +4386,185 @@ button.stacked-row {
   text-align: center;
   color: #94a3b8;
   padding: 24px;
+}
+
+/* ── Modal overlay ─────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.modal-panel {
+  background: var(--panel);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.22);
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  width: 100%;
+}
+
+.diff-modal {
+  max-width: 660px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.modal-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+/* ── Diff summary badges ───────────────────────────── */
+.diff-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.diff-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: default;
+}
+
+button.diff-badge { cursor: pointer; transition: opacity 0.12s; }
+button.diff-badge:hover { opacity: 0.8; }
+button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px; }
+
+.diff-badge.added    { background: #dcfce7; color: #16a34a; }
+.diff-badge.removed  { background: #fee2e2; color: #dc2626; }
+.diff-badge.changed  { background: #fef9c3; color: #ca8a04; }
+.diff-badge.unchanged { background: #f1f5f9; color: #64748b; }
+
+/* ── Diff body ─────────────────────────────────────── */
+.diff-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.diff-section {
+  padding: 14px 20px;
+}
+
+.diff-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.diff-section.added   .diff-section-title { color: #16a34a; }
+.diff-section.removed .diff-section-title { color: #dc2626; }
+.diff-section.changed .diff-section-title { color: #ca8a04; }
+
+.diff-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.diff-row:last-of-type { border-bottom: none; }
+
+.diff-empid {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 72px;
+}
+
+.diff-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.diff-changed-row {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+}
+.diff-changed-row:last-child { border-bottom: none; }
+
+.diff-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 2px 12px;
+  font-size: 12px;
+}
+
+.diff-field-label {
+  min-width: 110px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.diff-from {
+  color: #dc2626;
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+.diff-to   { color: #16a34a; font-weight: 500; }
+.diff-arrow { color: var(--muted); }
+
+.diff-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #fff5f5;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #dc2626;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.diff-delete-confirm input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #dc2626;
 }
