@@ -462,6 +462,15 @@ button {
   box-shadow: 0 4px 16px rgba(0,0,0,0.09);
 }
 
+.kpi-card.kpi-clickable {
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.kpi-card.kpi-clickable:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.13);
+  transform: translateY(-2px);
+}
+
 .kpi-green { border-top-color: #10b981; }
 .kpi-blue  { border-top-color: var(--blue); }
 .kpi-amber { border-top-color: var(--amber); }
@@ -1137,6 +1146,143 @@ button {
   gap: 2px;
   flex-shrink: 0;
 }
+
+/* Storage bar */
+.storage-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 10px 0;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.storage-bar-track {
+  flex: 1;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.storage-bar-fill {
+  height: 100%;
+  background: #10b981;
+  border-radius: 99px;
+  transition: width 0.3s;
+}
+.storage-bar-fill.warn { background: #f59e0b; }
+.storage-bar-fill.danger { background: #ef4444; }
+.storage-bar-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+/* Storage warning banner */
+.storage-warn-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #9a3412;
+  margin-bottom: 10px;
+}
+
+/* Oldest file highlight */
+.ts-history-row.ts-row-oldest {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+.ts-oldest-badge {
+  display: inline-block;
+  margin-left: 6px;
+  background: #fed7aa;
+  color: #9a3412;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 99px;
+}
+
+/* Modal overlay */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-box {
+  background: #fff;
+  border-radius: 14px;
+  padding: 28px 28px 24px;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+}
+.modal-box h3 { font-size: 17px; font-weight: 700; margin: 0; }
+.modal-desc { font-size: 14px; color: var(--muted); margin: 0; line-height: 1.6; }
+.modal-icon {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  display: grid; place-items: center;
+}
+.modal-icon.warn { background: #fff7ed; color: #f59e0b; }
+.modal-icon.danger { background: #fef2f2; color: #ef4444; }
+
+.modal-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #fafafa;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.modal-suggest-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.modal-suggest strong { font-size: 14px; }
+.modal-suggest span { font-size: 12px; color: var(--muted); }
+.modal-suggest .danger-button { margin-top: 8px; align-self: flex-start; }
+
+.modal-file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: #fafafa;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.modal-file-info strong { font-size: 14px; }
+.modal-file-info span { font-size: 12px; color: var(--muted); }
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 0 14px;
+  height: 34px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.danger-button:hover { background: #dc2626; }
+.danger-button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .upload-row {
   display: grid;
@@ -3188,10 +3334,46 @@ button.stacked-row {
   color: #065f46;
   border-color: #6ee7b7;
 }
+.leave-select.leave-prenatal {
+  background: #fdf2f8;
+  color: #9d174d;
+  border-color: #f9a8d4;
+}
+.leave-select.leave-maternity {
+  background: #fff1f2;
+  color: #be123c;
+  border-color: #fda4af;
+}
+.leave-select.leave-accident {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fdba74;
+}
+.leave-select.leave-ordain {
+  background: #faf5ff;
+  color: #7e22ce;
+  border-color: #d8b4fe;
+}
+.leave-select.leave-military {
+  background: #eef2ff;
+  color: #3730a3;
+  border-color: #a5b4fc;
+}
+.leave-select.leave-unpaid {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
 .leave-select option[value="ขาดงาน"] { color: #b91c1c; background: #fff1f2; }
 .leave-select option[value="ลาป่วย"] { color: #1d4ed8; background: #eff6ff; }
 .leave-select option[value="ลากิจ"] { color: #b45309; background: #fffbeb; }
 .leave-select option[value="ลาพักร้อน"] { color: #065f46; background: #ecfdf5; }
+.leave-select option[value="ลาตรวจครรภ์"] { color: #9d174d; background: #fdf2f8; }
+.leave-select option[value="ลาคลอด"] { color: #be123c; background: #fff1f2; }
+.leave-select option[value="ลาอุบัติเหตุจากการปฏิบัติงาน"] { color: #c2410c; background: #fff7ed; }
+.leave-select option[value="ลาบวช/ลาพิธีสำคัญทางศาสนา"] { color: #7e22ce; background: #faf5ff; }
+.leave-select option[value="ลาทหาร"] { color: #3730a3; background: #eef2ff; }
+.leave-select option[value="ลาพิเศษไม่จ่าย"] { color: #475569; background: #f1f5f9; }
 
 .pagination {
   display: flex;
@@ -3975,6 +4157,24 @@ button.stacked-row {
 .csb.present { background: #dcfce7; color: #15803d; }
 .csb.late    { background: #fef9c3; color: #92400e; }
 .csb.absent  { background: #fee2e2; color: #b91c1c; }
+.csb-absent-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  border: 1px solid #fca5a5;
+  border-radius: 14px;
+  padding: 2px 6px 2px 2px;
+  background: #fff8f8;
+}
+.csb-absent-divider {
+  display: inline-block;
+  width: 1px;
+  height: 14px;
+  background: #fca5a5;
+  margin: 0 2px;
+  border-radius: 1px;
+}
 .csb-leave {
   font-size: 11px;
   font-weight: 500;
@@ -3985,6 +4185,12 @@ button.stacked-row {
 .csb-leave.amber  { background: #fffbeb; color: #b45309; }
 .csb-leave.green  { background: #ecfdf5; color: #065f46; }
 .csb-leave.red    { background: #fff1f2; color: #be123c; }
+.csb-leave.pink   { background: #fdf2f8; color: #9d174d; }
+.csb-leave.rose   { background: #ffe4e6; color: #be123c; }
+.csb-leave.orange { background: #fff7ed; color: #c2410c; }
+.csb-leave.purple { background: #faf5ff; color: #7e22ce; }
+.csb-leave.indigo { background: #eef2ff; color: #3730a3; }
+.csb-leave.gray   { background: #f1f5f9; color: #475569; }
 .confirm-card-action { flex-shrink: 0; }
 .confirm-loading { color: #94a3b8; font-size: 13px; }
 .confirm-done-row {

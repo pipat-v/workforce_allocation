@@ -18,6 +18,7 @@ import {
   LayoutGrid,
   LogOut,
   Settings,
+  Trash2,
   TrendingUp,
   UploadCloud,
   UserX,
@@ -116,6 +117,7 @@ type AttendanceRecord = {
   shift: string;
   shiftStart: string;
   scanIn: string;
+  scanOut: string;
   status: "Present" | "Late" | "Absent" | "DayOff";
   minutesLate: number;
 };
@@ -209,6 +211,13 @@ export default function Home() {
   const [selectedReportDept, setSelectedReportDept] = useState("all");
   const [masterFileHistory, setMasterFileHistory] = useState<MasterFile[]>([]);
   const [dashboardDeptFilter, setDashboardDeptFilter] = useState("all");
+  const [detailStatusFilter, setDetailStatusFilter] = useState("all");
+  const scrollToDetail = (filter: string) => {
+    setDetailStatusFilter(filter);
+    setTimeout(() => {
+      document.getElementById("employee-detail-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  };
   const [warnedIds, setWarnedIds] = useState<Set<string>>(new Set());
   const [warnPending, setWarnPending] = useState<Set<string>>(new Set());
   const [warnCountMap, setWarnCountMap] = useState<Record<string, number>>({});
@@ -605,8 +614,6 @@ export default function Home() {
   }
 
   async function deleteRun(run: AllocationRun) {
-    const label = run.original_filename ?? run.scan_file_path?.split("/").pop() ?? run.id;
-    if (!window.confirm(`ต้องการลบไฟล์ "${label}" ใช่ไหม?\nการลบไม่สามารถย้อนกลับได้`)) return;
     setError("");
     const { error: deleteError } = await supabase
       .from("allocation_runs")
@@ -715,7 +722,42 @@ export default function Home() {
           : Promise.resolve([]),
       ]);
 
-      const latestReport = buildReportData(employeeRows, scanRows, manpowerRows, dayoffShiftRows, holidayDates);
+      // Find adjacent runs to supply night-shift clock-in/out times
+      const currentDateKey = latestRun.target_date ?? latestRun.created_at.slice(0, 10);
+      const prevRun = [...runs]
+        .filter(
+          (r) =>
+            r.id !== latestRun.id &&
+            !!r.scan_file_path &&
+            (r.target_date ?? r.created_at.slice(0, 10)) < currentDateKey,
+        )
+        .sort((a, b) =>
+          (b.target_date ?? b.created_at.slice(0, 10)).localeCompare(
+            a.target_date ?? a.created_at.slice(0, 10),
+          ),
+        )[0];
+      const nextRun = [...runs]
+        .filter(
+          (r) =>
+            r.id !== latestRun.id &&
+            !!r.scan_file_path &&
+            (r.target_date ?? r.created_at.slice(0, 10)) > currentDateKey,
+        )
+        .sort((a, b) =>
+          (a.target_date ?? a.created_at.slice(0, 10)).localeCompare(
+            b.target_date ?? b.created_at.slice(0, 10),
+          ),
+        )[0];
+      const [prevScanRows, nextScanRows] = await Promise.all([
+        prevRun?.scan_file_path
+          ? downloadSheetRows(prevRun.scan_file_path).catch(() => [])
+          : Promise.resolve([] as Record<string, unknown>[]),
+        nextRun?.scan_file_path
+          ? downloadSheetRows(nextRun.scan_file_path).catch(() => [])
+          : Promise.resolve([] as Record<string, unknown>[]),
+      ]);
+
+      const latestReport = buildReportData(employeeRows, scanRows, manpowerRows, dayoffShiftRows, holidayDates, prevScanRows, nextScanRows);
       try {
         await saveTimestampWithDeptRows(latestRun.id, latestReport);
       } catch (saveError) {
@@ -725,8 +767,18 @@ export default function Home() {
             : (saveError as { message?: string })?.message ?? JSON.stringify(saveError);
         setError(`โหลด report ได้ แต่บันทึก Timestamp With Dept ไม่สำเร็จ: ${errMsg}`);
       }
-      const scanPaths = Array.from(
-        new Set(runs.map((run) => run.scan_file_path).filter(Boolean) as string[]),
+      // Deduplicate runs by date key (keep latest upload per date) then sort ascending,
+      // so that monthlyScanRows[mi-1] and [mi+1] are guaranteed to be adjacent calendar days.
+      const runsByDate = new Map<string, typeof runs[0]>();
+      for (const r of runs.filter((r) => !!r.scan_file_path)) {
+        const dk = r.target_date ?? r.created_at.slice(0, 10);
+        const existing = runsByDate.get(dk);
+        if (!existing || r.created_at > existing.created_at) runsByDate.set(dk, r);
+      }
+      const sortedMonthlyRuns = [...runsByDate.values()].sort((a, b) =>
+        (a.target_date ?? a.created_at.slice(0, 10)).localeCompare(
+          b.target_date ?? b.created_at.slice(0, 10),
+        ),
       );
       const monthlyLateCounts: Record<string, number> = {};
       const lateMinutesAcc: Record<string, number> = {};
@@ -738,17 +790,20 @@ export default function Home() {
         : `${tY}-${String(tM - 1).padStart(2, "0")}`;
 
       const monthlyScanRows = await Promise.all(
-        scanPaths.map(async (path) => {
+        sortedMonthlyRuns.map(async (run) => {
           try {
-            return await downloadSheetRows(path);
+            return await downloadSheetRows(run.scan_file_path!);
           } catch {
             return [];
           }
         }),
       );
 
-      for (const rows of monthlyScanRows) {
-        const dayReport = buildReportData(employeeRows, rows, manpowerRows, dayoffShiftRows, holidayDates);
+      for (let mi = 0; mi < monthlyScanRows.length; mi++) {
+        const rows = monthlyScanRows[mi];
+        const prevRows = monthlyScanRows[mi - 1] ?? [];
+        const nextRows = monthlyScanRows[mi + 1] ?? [];
+        const dayReport = buildReportData(employeeRows, rows, manpowerRows, dayoffShiftRows, holidayDates, prevRows, nextRows);
 
         if (dayReport.targetMonthKey === latestReport.targetMonthKey) {
           for (const lateRow of dayReport.lateRows) {
@@ -872,6 +927,7 @@ export default function Home() {
         shift: row.shift,
         shift_start: row.shiftStart,
         scan_in: row.scanIn,
+        scan_out: row.scanOut,
         attendance_status: row.status,
         minutes_late: row.minutesLate,
       });
@@ -1038,6 +1094,7 @@ export default function Home() {
                 unit="คน"
                 note={`จากทั้งหมด ${totalEmployees.toLocaleString()} คน`}
                 progress={presentRate}
+                onClick={() => scrollToDetail("all")}
               />
               <KpiCard
                 icon={<ClipboardCheck size={34} />}
@@ -1046,6 +1103,7 @@ export default function Home() {
                 value={presentPeople.toLocaleString()}
                 unit="คน"
                 note={`${pctPresent}% ของพนักงานทั้งหมด`}
+                onClick={() => scrollToDetail("Present")}
               />
               <KpiCard
                 icon={<Clock size={34} />}
@@ -1054,14 +1112,16 @@ export default function Home() {
                 value={latePeople.toLocaleString()}
                 unit="คน"
                 note={`${pctLate}% ของพนักงานทั้งหมด`}
+                onClick={() => document.getElementById("late-people-section")?.scrollIntoView({ behavior: "smooth", block: "start" })}
               />
               <KpiCard
                 icon={<UserX size={34} />}
                 tone="purple"
-                label="ขาดงาน"
+                label="ขาด/ลา"
                 value={absentPeople.toLocaleString()}
                 unit="คน"
                 note={`${pctAbsent}% ของพนักงานทั้งหมด`}
+                onClick={() => scrollToDetail("Absent")}
               />
               <KpiCard
                 icon={<CalendarOff size={34} />}
@@ -1070,6 +1130,7 @@ export default function Home() {
                 value={dayoffPeople.toLocaleString()}
                 unit="คน"
                 note={`${pctDayoff}% ของพนักงานทั้งหมด`}
+                onClick={() => scrollToDetail("DayOff")}
               />
             </section>
 
@@ -1077,6 +1138,8 @@ export default function Home() {
               activeMasterMap={activeMasterMap}
               assignedPeople={presentPeople}
               dashboardDeptFilter={dashboardDeptFilter}
+              detailStatusFilter={detailStatusFilter}
+              setDetailStatusFilter={setDetailStatusFilter}
               isoTargetDate={isoTargetDate}
               reportData={dashboardReport}
               toggleWarning={toggleWarning}
@@ -1244,6 +1307,8 @@ function buildReportData(
   manpowerRows: Record<string, unknown>[],
   dayoffShiftRows: Record<string, unknown>[] = [],
   holidaySet?: Set<string>,
+  prevDayScanRows: Record<string, unknown>[] = [],
+  nextDayScanRows: Record<string, unknown>[] = [],
 ): ReportData {
   const employees = employeeRows.map((row) => {
     const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
@@ -1287,6 +1352,51 @@ function buildReportData(
     ? `${latestTimestamp.getFullYear()}-${String(latestTimestamp.getMonth() + 1).padStart(2, "0")}`
     : "";
 
+  // For night shift workers (e.g. 22:00–07:00) whose only scans today are early-morning
+  // clock-outs, pull in the previous day's evening scans (≥20:00) as the real clock-in.
+  // Only applied to employees whose entire current-day scan set is before 12:00, which
+  // distinguishes them from day/afternoon workers who also have afternoon scans today.
+  if (prevDayScanRows.length > 0) {
+    const prevEveningByEmp = new Map<string, Date[]>();
+    for (const row of prevDayScanRows) {
+      const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? row["รหัสพนักงาน"]);
+      const ts = parseTimestamp(row["Timestamp"]);
+      if (!empId || !ts || ts.getHours() < 20) continue;
+      const arr = prevEveningByEmp.get(empId) ?? [];
+      arr.push(ts);
+      prevEveningByEmp.set(empId, arr);
+    }
+    for (const [empId, entry] of scanByEmp.entries()) {
+      if (entry.times.length === 0 || !entry.times.every((t) => t.getHours() < 12)) continue;
+      const prevTimes = prevEveningByEmp.get(empId) ?? [];
+      if (prevTimes.length > 0) entry.times = [...prevTimes, ...entry.times];
+    }
+  }
+
+  // For night shift workers who clocked in this evening but have no early-morning
+  // clock-out in today's file, pull the next day's early-morning scans as clock-out.
+  // This lets the previous day's report show the correct scanOut even when the
+  // machine scan file only captures up to midnight.
+  if (nextDayScanRows.length > 0) {
+    const nextMorningByEmp = new Map<string, Date[]>();
+    for (const row of nextDayScanRows) {
+      const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? row["รหัสพนักงาน"]);
+      const ts = parseTimestamp(row["Timestamp"]);
+      if (!empId || !ts || ts.getHours() >= 12) continue; // early-morning only
+      const arr = nextMorningByEmp.get(empId) ?? [];
+      arr.push(ts);
+      nextMorningByEmp.set(empId, arr);
+    }
+    for (const [empId, entry] of scanByEmp.entries()) {
+      const hasEveningScan = entry.times.some((t) => t.getHours() >= 20);
+      const hasMorningScan = entry.times.some((t) => t.getHours() < 12);
+      if (!hasEveningScan || hasMorningScan) continue;
+      const nextMorning = nextMorningByEmp.get(empId) ?? [];
+      if (nextMorning.length > 0) entry.times = [...entry.times, ...nextMorning];
+    }
+  }
+
+
   const baseEmployees = employees.length
     ? employees
     : Array.from(scanByEmp.entries()).map(([empId, entry]) => ({
@@ -1313,13 +1423,16 @@ function buildReportData(
   const records: AttendanceRecord[] = baseEmployees.flatMap((employee): AttendanceRecord[] => {
     const dayoffShift = dayoffShiftMap.get(employee.empId);
     const scans = scanByEmp.get(employee.empId)?.times ?? [];
-    const scanIn = scans.sort((a, b) => a.getTime() - b.getTime())[0];
     const shift = normalizeShiftLabel(dayoffShift?.shift) || "กะ 1";
     const shiftStart =
       dayoffShift?.shiftStart ||
       deptShiftStart.get(makeDeptShiftKey(employee.dept, shift)) ||
       deptShiftStart.get(makeDeptShiftKey(employee.dept, "")) ||
       "07:00";
+    // Use the known shift start time to pick the correct clock-in timestamp.
+    // For night shifts (e.g. shiftStart=22:00) this selects the evening scan,
+    // not the early-morning clock-out that a plain min() would return.
+    const scanIn = findScanIn(scans, shiftStart, isoTargetDate);
     const isScheduledOff = latestTimestamp
       ? isEmployeeDayOff(dayoffShift?.dayoff, latestTimestamp, holidaySet)
       : false;
@@ -1331,10 +1444,12 @@ function buildReportData(
       shift,
       shiftStart,
       scanIn: "-",
+      scanOut: "-",
       status: "DayOff" as const,
       minutesLate: 0,
     }];
 
+    const scanOut = findScanOut(scans, scanIn);
     const minutesLate = scanIn ? Math.max(0, minutesBetween(shiftStart, scanIn)) : 0;
     const status = !scanIn ? "Absent" : minutesLate > 5 ? "Late" : "Present";
 
@@ -1346,6 +1461,7 @@ function buildReportData(
       shift,
       shiftStart,
       scanIn: scanIn ? toTimeText(scanIn) : "-",
+      scanOut: scanOut ? toTimeText(scanOut) : "-",
       status,
       minutesLate,
     }];
@@ -1780,7 +1896,101 @@ function minutesBetween(shiftStart: string, scanIn: Date) {
   const [hour, minute] = shiftStart.split(":").map(Number);
   const shift = new Date(scanIn);
   shift.setHours(hour || 0, minute || 0, 0, 0);
-  return Math.round((scanIn.getTime() - shift.getTime()) / 60000);
+  let diff = Math.round((scanIn.getTime() - shift.getTime()) / 60000);
+  // Night shifts: clock-in after midnight produces a large negative diff against
+  // a same-date reference (e.g. 00:30 − 22:00 = −1290 min). Add one day to correct.
+  if (diff < -720) diff += 1440;
+  return diff;
+}
+
+// Returns the clock-out timestamp: the latest scan that is NOT the chosen clock-in.
+//
+// When scanIn is undefined (no clock-in found — early-morning scans belong to the
+// previous night's shift), return undefined too. Those scans will be shown as
+// scanOut on the PREVIOUS day's record (via nextDayScanRows augmentation there).
+//
+// Returns undefined when there is only one scan (clock-in only, no clock-out).
+function findScanOut(scans: Date[], scanIn: Date | undefined): Date | undefined {
+  if (!scans.length || !scanIn) return undefined;
+  if (scans.length === 1) return undefined;
+  const sorted = [...scans].sort((a, b) => b.getTime() - a.getTime());
+  const latest = sorted[0];
+  if (latest.getTime() === scanIn.getTime()) return sorted[1];
+  return latest;
+}
+
+// Returns true when the time-of-day of `t` falls within the clock-in window:
+// [shiftStart - 2 h, shiftStart + 4 h], wrapping around midnight for night shifts.
+function isInClockInWindow(t: Date, shiftHour: number, shiftMin: number): boolean {
+  const tMin = t.getHours() * 60 + t.getMinutes();
+  const shiftTotal = shiftHour * 60 + shiftMin;
+  const windowStart = (shiftTotal - 120 + 1440) % 1440; // 2 h before
+  const windowEnd = (shiftTotal + 240) % 1440;           // 4 h after
+  return windowStart <= windowEnd
+    ? tMin >= windowStart && tMin <= windowEnd
+    : tMin >= windowStart || tMin <= windowEnd; // window crosses midnight
+}
+
+// Pick the scan timestamp that is most likely the clock-in for `shiftStart`.
+//
+// Night shifts (shiftStart ≥ 20:00): search across all dates using the clock-in
+// window only — the window (e.g. 20:00–02:00 for 22:00) naturally excludes the
+// next-morning clock-out.
+//
+// Day/afternoon shifts: walk dates in descending order (most recent ≤ isoTargetDate
+// first) and stop at the first date that has a timestamp inside the clock-in window.
+// This handles two edge cases:
+//   • overtime pushing the clock-out to the next calendar day (e.g. 01:00 on D+1)
+//     — D+1 has no window match so we fall through to D and pick 13:57 correctly.
+//   • multi-day scan files where previous-day clock-ins for the same shift would
+//     otherwise beat today's by being slightly closer to shiftStart.
+function findScanIn(scans: Date[], shiftStart: string, isoTargetDate: string): Date | undefined {
+  if (!scans.length) return undefined;
+  const [sh, sm] = shiftStart.split(":").map(Number);
+  if (isNaN(sh) || isNaN(sm)) return scans.sort((a, b) => a.getTime() - b.getTime())[0];
+
+  const shiftTotal = sh * 60 + sm;
+  const toIso = (t: Date) =>
+    `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+
+  const pickClosest = (pool: Date[]) =>
+    pool
+      .map((t) => {
+        const tMin = t.getHours() * 60 + t.getMinutes();
+        let diff = Math.abs(tMin - shiftTotal);
+        if (diff > 720) diff = 1440 - diff;
+        return { t, diff };
+      })
+      .sort((a, b) => a.diff - b.diff)[0].t;
+
+  if (sh >= 20) {
+    // Night shift — don't filter by date; window handles clock-out exclusion.
+    // If nothing lands in the window the available scans are early-morning
+    // clock-outs from the previous night (no matching evening entry in this
+    // file). Return undefined so the caller marks this day as Absent and
+    // surfaces the morning scan as scanOut instead of misidentifying it as scanIn.
+    const inWindow = scans.filter((t) => isInClockInWindow(t, sh, sm));
+    return inWindow.length ? pickClosest(inWindow) : undefined;
+  }
+
+  // Day / afternoon shift — group by date and walk backwards.
+  const byDate = new Map<string, Date[]>();
+  for (const t of scans) {
+    const d = toIso(t);
+    byDate.set(d, [...(byDate.get(d) ?? []), t]);
+  }
+  const sortedDates = [...byDate.keys()]
+    .filter((d) => !isoTargetDate || d <= isoTargetDate)
+    .sort((a, b) => b.localeCompare(a)); // descending — most recent first
+
+  for (const date of sortedDates) {
+    const inWindow = (byDate.get(date) ?? []).filter((t) => isInClockInWindow(t, sh, sm));
+    if (inWindow.length) return pickClosest(inWindow);
+  }
+
+  // Fallback: earliest timestamp on or before isoTargetDate.
+  const fallback = isoTargetDate ? scans.filter((t) => toIso(t) <= isoTargetDate) : scans;
+  return (fallback.length ? fallback : scans).sort((a, b) => a.getTime() - b.getTime())[0];
 }
 
 const STATUS_TH: Record<string, string> = {
@@ -1838,7 +2048,7 @@ function DonutKpiCard({
       <div className="kpi-donut-legend">
         <LegendRow color="green" label="ตรงเวลา" value={String(present)} percent={`${presentPct.toFixed(1)}%`} />
         <LegendRow color="amber" label="มาสาย" value={String(late)} percent={`${latePct.toFixed(1)}%`} />
-        <LegendRow color="red" label="ขาดงาน" value={String(absent)} percent={`${absentPct.toFixed(1)}%`} />
+        <LegendRow color="red" label="ขาด/ลา" value={String(absent)} percent={`${absentPct.toFixed(1)}%`} />
         <LegendRow color="gray" label="วันหยุด" value={String(dayoff)} percent={`${dayoffPct.toFixed(1)}%`} />
       </div>
     </article>
@@ -1865,6 +2075,7 @@ function exportLateAbsentToExcel(
       "กะ": r.shift,
       "เวลาเข้างาน": r.shiftStart,
       "Scan In": r.scanIn,
+      "Scan Out": r.scanOut,
       "สถานะ": STATUS_TH[r.status] ?? r.status,
       "สาย (นาที)": r.minutesLate,
       "สายสะสมเดือนนี้ (ครั้ง)": monthlyLateCounts[r.empId] ?? 0,
@@ -1881,6 +2092,8 @@ function DashboardPanels({
   activeMasterMap,
   assignedPeople,
   dashboardDeptFilter,
+  detailStatusFilter,
+  setDetailStatusFilter,
   isoTargetDate,
   reportData,
   toggleWarning,
@@ -1892,6 +2105,8 @@ function DashboardPanels({
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   assignedPeople: number;
   dashboardDeptFilter: string;
+  detailStatusFilter: string;
+  setDetailStatusFilter: (v: string) => void;
   isoTargetDate: string;
   reportData: ReportData | null;
   toggleWarning: (empId: string) => Promise<void>;
@@ -1900,7 +2115,6 @@ function DashboardPanels({
   warnedIds: Set<string>;
   warnPending: Set<string>;
 }) {
-  const [detailStatusFilter, setDetailStatusFilter] = useState("all");
   const [detailSort, setDetailSort_] = useState<SortState>(null);
   const setDetailSort = setDetailSort_ as (sort: SortState) => void;
   const [leaveMap, setLeaveMap] = useState<Map<string, string>>(new Map());
@@ -2038,16 +2252,20 @@ function DashboardPanels({
               <span className="confirm-title-dept">{dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter}</span>
             </div>
             <div className="confirm-summary-row">
-              <span className="csb present">ตรงเวลา {present}</span>
-              <span className="csb late">มาสาย {late}</span>
-              <span className="csb absent">ขาด/ลา {absent}</span>
-              {absent > 0 && (() => {
-                const deptAbsentIds = new Set(allRecords.filter(r => r.status === "Absent").map(r => r.empId));
-                return (["ลาป่วย", "ลากิจ", "ลาพักร้อน", "ขาดงาน"] as const).map(type => {
-                  const cnt = [...leaveMap.entries()].filter(([eid, lt]) => deptAbsentIds.has(eid) && lt === type).length;
-                  return cnt ? <span key={type} className={`csb-leave ${type === "ขาดงาน" ? "red" : type === "ลาพักร้อน" ? "green" : type === "ลากิจ" ? "amber" : "blue"}`}>{type} {cnt}</span> : null;
-                });
-              })()}
+              <span className="csb present" style={{ cursor: "pointer" }} onClick={() => { setDetailStatusFilter("Present"); setTimeout(() => document.getElementById("employee-detail-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }}>ตรงเวลา {present}</span>
+              <span className="csb late" style={{ cursor: "pointer" }} onClick={() => { setDetailStatusFilter("Late"); setTimeout(() => document.getElementById("employee-detail-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }}>มาสาย {late}</span>
+              <div className="csb-absent-group" style={{ cursor: "pointer" }} onClick={() => { setDetailStatusFilter("Absent"); setTimeout(() => document.getElementById("employee-detail-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }}>
+                <span className="csb absent">ขาด/ลา {absent}</span>
+                {absent > 0 && (() => {
+                  const deptAbsentIds = new Set(allRecords.filter(r => r.status === "Absent").map(r => r.empId));
+                  const leaveColor: Record<string, string> = { "ลาป่วย": "blue", "ลากิจ": "amber", "ลาพักร้อน": "green", "ขาดงาน": "red", "ลาตรวจครรภ์": "pink", "ลาคลอด": "rose", "ลาอุบัติเหตุจากการปฏิบัติงาน": "orange", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "purple", "ลาทหาร": "indigo", "ลาพิเศษไม่จ่าย": "gray" };
+                  const subBadges = (["ลาป่วย", "ลากิจ", "ลาพักร้อน", "ลาตรวจครรภ์", "ลาคลอด", "ลาอุบัติเหตุจากการปฏิบัติงาน", "ลาบวช/ลาพิธีสำคัญทางศาสนา", "ลาทหาร", "ลาพิเศษไม่จ่าย", "ขาดงาน"] as const).map(type => {
+                    const cnt = [...leaveMap.entries()].filter(([eid, lt]) => deptAbsentIds.has(eid) && lt === type).length;
+                    return cnt ? <span key={type} className={`csb-leave ${leaveColor[type] ?? "blue"}`}>{type} {cnt}</span> : null;
+                  }).filter(Boolean);
+                  return subBadges.length ? <><span className="csb-absent-divider" />{subBadges}</> : null;
+                })()}
+              </div>
             </div>
           </div>
           <div className="confirm-card-action">
@@ -2084,7 +2302,7 @@ function DashboardPanels({
         </section>
       )}
       <section className="dashboard-grid">
-        <section className="panel dashboard-late-card">
+        <section id="late-people-section" className="panel dashboard-late-card">
           <div className="panel-title-row">
             <h3>คนที่มาสาย</h3>
             <span className="table-count">{dashboardLateRows.length} คน</span>
@@ -2287,7 +2505,7 @@ function DashboardPanels({
       })()}
 
       {/* Employee detail table */}
-      <section className="panel detail-attendance-panel">
+      <section id="employee-detail-section" className="panel detail-attendance-panel">
         <div className="panel-title-row">
           <h3>
             สถานะพนักงานรายคน
@@ -2350,7 +2568,7 @@ function DashboardPanels({
                     <td>
                       {row.status === "Absent" ? (() => {
                         const lt = leaveMap.get(row.empId) ?? "ขาดงาน";
-                        const lc = ({ "ลาป่วย": "leave-sick", "ลากิจ": "leave-personal", "ลาพักร้อน": "leave-vacation" } as Record<string, string>)[lt] ?? "leave-absent";
+                        const lc = ({ "ลาป่วย": "leave-sick", "ลากิจ": "leave-personal", "ลาพักร้อน": "leave-vacation", "ลาตรวจครรภ์": "leave-prenatal", "ลาคลอด": "leave-maternity", "ลาอุบัติเหตุจากการปฏิบัติงาน": "leave-accident", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "leave-ordain", "ลาทหาร": "leave-military", "ลาพิเศษไม่จ่าย": "leave-unpaid" } as Record<string, string>)[lt] ?? "leave-absent";
                         return (
                           <select
                             className={`leave-select ${lc}`}
@@ -2361,6 +2579,12 @@ function DashboardPanels({
                             <option value="ลาป่วย">ลาป่วย</option>
                             <option value="ลากิจ">ลากิจ</option>
                             <option value="ลาพักร้อน">ลาพักร้อน</option>
+                            <option value="ลาตรวจครรภ์">ลาตรวจครรภ์</option>
+                            <option value="ลาคลอด">ลาคลอด</option>
+                            <option value="ลาอุบัติเหตุจากการปฏิบัติงาน">ลาอุบัติเหตุจากการปฏิบัติงาน</option>
+                            <option value="ลาบวช/ลาพิธีสำคัญทางศาสนา">ลาบวช/ลาพิธีสำคัญทางศาสนา</option>
+                            <option value="ลาทหาร">ลาทหาร</option>
+                            <option value="ลาพิเศษไม่จ่าย">ลาพิเศษไม่จ่าย</option>
                           </select>
                         );
                       })() : (
@@ -3584,6 +3808,8 @@ function DayoffShiftEditor({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDayoff, setBulkDayoff] = useState("");
   const [bulkShift, setBulkShift] = useState("");
+  const [bulkShiftStart, setBulkShiftStart] = useState("");
+  const bulkTimeRef = useRef<HTMLInputElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -3765,17 +3991,20 @@ function DayoffShiftEditor({
   }
 
   function applyBulk() {
-    if (!bulkDayoff && !bulkShift) return;
+    const timeVal = bulkTimeRef.current?.value ?? "";
+    if (!bulkDayoff && !bulkShift && !timeVal) return;
     setRows((current) =>
       current.map((row) => {
         if (!selectedIds.has(row.id)) return row;
         let raw = row.raw;
         if (bulkDayoff) raw = setRowCol(raw, bulkDayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
         if (bulkShift) raw = setRowCol(raw, bulkShift, "อยู่กะไหน", "shift", "กะ", "Shift");
+        if (timeVal) raw = setRowCol(raw, timeVal, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
         return {
           ...row,
           dayoff: bulkDayoff || row.dayoff,
           shift: bulkShift || row.shift,
+          shiftStart: timeVal || row.shiftStart,
           raw,
         };
       }),
@@ -3783,6 +4012,8 @@ function DayoffShiftEditor({
     setSelectedIds(new Set());
     setBulkDayoff("");
     setBulkShift("");
+    setBulkShiftStart("");
+    if (bulkTimeRef.current) bulkTimeRef.current.value = "";
   }
 
   async function handleSave() {
@@ -3864,9 +4095,17 @@ function DayoffShiftEditor({
             <option value="">เปลี่ยน Shift...</option>
             {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
+          <input
+            ref={bulkTimeRef}
+            type="time"
+            onChange={(e) => setBulkShiftStart(e.target.value)}
+            onBlur={(e) => { if (e.target.value) setBulkShiftStart(e.target.value); }}
+            title="เปลี่ยนเวลาเข้างาน"
+            style={{ height: 32, fontSize: 12, padding: "0 6px", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", cursor: "pointer" }}
+          />
           <button
             className="primary-button"
-            disabled={!bulkDayoff && !bulkShift}
+            disabled={!bulkDayoff && !bulkShift && !bulkShiftStart}
             onClick={applyBulk}
             style={{ height: 32, fontSize: 12, padding: "0 14px" }}
             type="button"
@@ -3942,12 +4181,21 @@ function DayoffShiftEditor({
                   </select>
                 </td>
                 <td>
-                  <input
-                    className="shift-time-input"
-                    type="time"
-                    value={row.shiftStart}
-                    onChange={(e) => updateRow(row.id, "shiftStart", e.target.value)}
-                  />
+                  {row.shift === "ผู้จัดการ" ? (
+                    <span style={{ color: "#94a3b8", fontSize: 13 }}>—</span>
+                  ) : (
+                    <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                      <input
+                        className="shift-time-input"
+                        type="time"
+                        value={row.shiftStart}
+                        onChange={(e) => updateRow(row.id, "shiftStart", e.target.value)}
+                        onKeyDown={(e) => { if (!["Tab", "Escape"].includes(e.key)) e.preventDefault(); }}
+                        style={!row.shiftStart ? { opacity: 0, position: "absolute", inset: 0, width: "100%", height: "100%", cursor: "pointer" } : undefined}
+                      />
+                      {!row.shiftStart && <span style={{ color: "#94a3b8", fontSize: 13, padding: "0 8px", userSelect: "none" }}>——</span>}
+                    </div>
+                  )}
                 </td>
                 <td className="shift-end-cell">
                   {row.shiftStart ? addHoursToTime(row.shiftStart, 9) : "—"}
@@ -4383,6 +4631,14 @@ function SkillMatrixPage({
   );
 }
 
+const STORAGE_WARN_COUNT = 20;
+const STORAGE_LIMIT_MB = 1024;
+
+function estimateStorageMB(runs: AllocationRun[]): number {
+  const bytes = runs.reduce((acc, r) => acc + (r.record_count ?? 500) * 200, 0);
+  return Math.round(bytes / (1024 * 1024));
+}
+
 function TimestampPage({
   createDailyRun,
   deleteRun,
@@ -4404,6 +4660,30 @@ function TimestampPage({
   setTimestampFile: (file: File | null) => void;
   timestampFile: File | null;
 }) {
+  const [pendingDelete, setPendingDelete] = useState<AllocationRun | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showStorageWarn, setShowStorageWarn] = useState(false);
+
+  const estimatedMB = estimateStorageMB(runs);
+  const storageUsedPct = Math.min(100, Math.round((estimatedMB / STORAGE_LIMIT_MB) * 100));
+  const isStorageWarning = runs.length >= STORAGE_WARN_COUNT || storageUsedPct >= 70;
+  const oldestRun = runs.length > 0
+    ? [...runs].sort((a, b) => a.created_at.localeCompare(b.created_at))[0]
+    : null;
+
+  async function handleUploadClick() {
+    if (isStorageWarning) { setShowStorageWarn(true); return; }
+    await createDailyRun();
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setIsDeleting(true);
+    await deleteRun(pendingDelete);
+    setIsDeleting(false);
+    setPendingDelete(null);
+  }
+
   return (
     <section className="workspace-grid">
       <section className="panel ts-upload-panel">
@@ -4439,10 +4719,17 @@ function TimestampPage({
             : "ต้องมี master files ครบ 4 ไฟล์ก่อนสร้าง daily run"}
         </div>
 
+        {isStorageWarning && (
+          <div className="storage-warn-banner">
+            <AlertTriangle size={15} />
+            <span>พื้นที่เริ่มเต็ม · {runs.length} ไฟล์ · แนะนำให้ลบไฟล์เก่าก่อน upload</span>
+          </div>
+        )}
+
         <button
           className="primary-button ts-submit-btn"
           disabled={!timestampFile || !hasAllActiveMasters || isCreatingRun}
-          onClick={createDailyRun}
+          onClick={() => void handleUploadClick()}
           type="button"
         >
           <ClipboardCheck size={18} />
@@ -4479,6 +4766,20 @@ function TimestampPage({
           <span className="table-count">{runs.length} ไฟล์</span>
         </div>
 
+        {runs.length > 0 && (
+          <div className="storage-bar-row">
+            <div className="storage-bar-track">
+              <div
+                className={`storage-bar-fill${storageUsedPct >= 80 ? " danger" : storageUsedPct >= 60 ? " warn" : ""}`}
+                style={{ width: `${storageUsedPct}%` }}
+              />
+            </div>
+            <span className="storage-bar-label">
+              ~{estimatedMB} MB / {STORAGE_LIMIT_MB} MB ({storageUsedPct}%)
+            </span>
+          </div>
+        )}
+
         <div className="ts-history-list">
           {runs.length === 0 ? (
             <p className="empty-copy">ยังไม่มีประวัติการอัปโหลด</p>
@@ -4499,11 +4800,12 @@ function TimestampPage({
               run.record_count != null ? `${run.record_count.toLocaleString()} รายการ` : null,
               dateText,
             ].filter(Boolean).join(" · ");
+            const isOldest = oldestRun?.id === run.id;
             return (
-              <div className="ts-history-row" key={run.id}>
+              <div className={`ts-history-row${isOldest && isStorageWarning ? " ts-row-oldest" : ""}`} key={run.id}>
                 <div className="ts-history-info">
                   <strong>{filename}</strong>
-                  <span>{meta}</span>
+                  <span>{meta}{isOldest && isStorageWarning ? <span className="ts-oldest-badge">เก่าที่สุด</span> : null}</span>
                 </div>
                 <div className="ts-history-actions">
                   <button
@@ -4516,11 +4818,11 @@ function TimestampPage({
                   </button>
                   <button
                     className="icon-button danger"
-                    onClick={() => void deleteRun(run)}
+                    onClick={() => setPendingDelete(run)}
                     title="ลบ"
                     type="button"
                   >
-                    <X size={15} />
+                    <Trash2 size={15} />
                   </button>
                 </div>
               </div>
@@ -4528,6 +4830,85 @@ function TimestampPage({
           })}
         </div>
       </section>
+
+      {/* Storage warning modal */}
+      {showStorageWarn && (
+        <div className="modal-overlay" onClick={() => setShowStorageWarn(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-icon warn"><AlertTriangle size={28} /></div>
+            <h3>พื้นที่จัดเก็บใกล้เต็ม</h3>
+            <p className="modal-desc">
+              ขณะนี้มี <strong>{runs.length} ไฟล์</strong> ในระบบ (ประมาณ ~{estimatedMB} MB)
+              แนะนำให้ลบไฟล์เก่าออกก่อน upload ใหม่
+            </p>
+            {oldestRun && (
+              <div className="modal-suggest">
+                <span className="modal-suggest-label">ไฟล์เก่าที่สุด</span>
+                <strong>{oldestRun.original_filename ?? oldestRun.id}</strong>
+                <span>{new Date(oldestRun.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}</span>
+                <button
+                  className="danger-button"
+                  type="button"
+                  onClick={() => { setShowStorageWarn(false); setPendingDelete(oldestRun); }}
+                >
+                  <Trash2 size={14} /> ลบไฟล์นี้
+                </button>
+              </div>
+            )}
+            <div className="modal-actions">
+              <button className="secondary-button" type="button" onClick={() => setShowStorageWarn(false)}>
+                ยกเลิก
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => { setShowStorageWarn(false); void createDailyRun(); }}
+              >
+                Upload ต่อไปเลย
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm dialog */}
+      {pendingDelete && (
+        <div className="modal-overlay" onClick={() => !isDeleting && setPendingDelete(null)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-icon danger"><Trash2 size={28} /></div>
+            <h3>ยืนยันการลบไฟล์</h3>
+            <p className="modal-desc">
+              คุณต้องการลบไฟล์นี้ใช่ไหม? การลบไม่สามารถย้อนกลับได้
+            </p>
+            <div className="modal-file-info">
+              <strong>{pendingDelete.original_filename ?? pendingDelete.id}</strong>
+              <span>
+                {pendingDelete.record_count != null ? `${pendingDelete.record_count.toLocaleString()} รายการ · ` : ""}
+                {new Date(pendingDelete.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}
+              </span>
+            </div>
+            <div className="modal-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setPendingDelete(null)}
+              >
+                ยกเลิก
+              </button>
+              <button
+                className="danger-button"
+                type="button"
+                disabled={isDeleting}
+                onClick={() => void confirmDelete()}
+              >
+                <Trash2 size={14} />
+                {isDeleting ? "กำลังลบ..." : "ยืนยันลบ"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -4640,6 +5021,7 @@ function TimestampWithDeptPage({
               <th><SortButton columnKey="shift" setSort={setSort} sort={sort}>Shift</SortButton></th>
               <th><SortButton columnKey="shiftStart" setSort={setSort} sort={sort}>Shift Start</SortButton></th>
               <th><SortButton columnKey="scanIn" setSort={setSort} sort={sort}>Scan In</SortButton></th>
+              <th><SortButton columnKey="scanOut" setSort={setSort} sort={sort}>Scan Out</SortButton></th>
               <th><SortButton columnKey="status" setSort={setSort} sort={sort}>Status</SortButton></th>
               <th><SortButton columnKey="minutesLate" setSort={setSort} sort={sort}>Minutes Late</SortButton></th>
             </tr>
@@ -4654,13 +5036,14 @@ function TimestampWithDeptPage({
                 <td>{row.shift}</td>
                 <td>{row.shiftStart}</td>
                 <td>{row.scanIn}</td>
+                <td>{row.scanOut}</td>
                 <td><span className={`status-pill ${row.status.toLowerCase()}`}>{STATUS_TH[row.status] ?? row.status}</span></td>
                 <td>{row.minutesLate}</td>
               </tr>
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={9}>ยังไม่มี timestamp ที่ merge หน่วยงานแล้ว</td>
+                <td colSpan={10}>ยังไม่มี timestamp ที่ merge หน่วยงานแล้ว</td>
               </tr>
             ) : null}
           </tbody>
@@ -5097,7 +5480,7 @@ function ReportDashboard({
         <KpiCard
           icon={<UserX size={34} />}
           tone="purple"
-          label="ขาดงาน"
+          label="ขาด/ลา"
           value={scopedAbsent.toLocaleString()}
           unit="คน"
           note={`${absentPercent.toFixed(1)}% ของคนที่ต้องมา`}
@@ -5133,7 +5516,7 @@ function ReportDashboard({
           <div className="stack-legend">
             <span><i className="present" />มาตรงเวลา</span>
             <span><i className="late" />มาสาย</span>
-            <span><i className="absent" />ขาดงาน</span>
+            <span><i className="absent" />ขาด/ลา</span>
           </div>
           <div className="stacked-bars">
             {data.deptRows.map((row, index) => {
@@ -5235,7 +5618,7 @@ function ReportDashboard({
         {absTotalAbsent > 0 && (
         <div className="panel report-overview-card">
           <div className="sup-report-header">
-            <h3>สถานะการขาดงาน{selectedDept !== "all" ? ` · ${selectedDept}` : ""}</h3>
+            <h3>สถานะการขาด/ลา{selectedDept !== "all" ? ` · ${selectedDept}` : ""}</h3>
             <span className={`sup-overall-badge ${absPending === 0 ? "done" : "pending"}`}>
               {absPending === 0 ? "✓ ครบแล้ว" : `⚠ ค้าง ${absPending}`}
             </span>
@@ -5253,7 +5636,7 @@ function ReportDashboard({
             </div>
             <div className="sup-report-stat-item">
               <span className="sup-report-stat-val" style={{ color: "#ef4444" }}>{absTotalAbsent}</span>
-              <span className="sup-report-stat-lbl">ขาดงานทั้งหมด</span>
+              <span className="sup-report-stat-lbl">ขาด/ลาทั้งหมด</span>
             </div>
             <div className="sup-report-stat-item">
               <span className="sup-report-stat-val" style={{ color: absPending > 0 ? "#ef4444" : "#94a3b8" }}>{absPending}</span>
@@ -5393,6 +5776,12 @@ function ReportDashboard({
                           <option value="ลาป่วย">ลาป่วย</option>
                           <option value="ลากิจ">ลากิจ</option>
                           <option value="ลาพักร้อน">ลาพักร้อน</option>
+                          <option value="ลาตรวจครรภ์">ลาตรวจครรภ์</option>
+                          <option value="ลาคลอด">ลาคลอด</option>
+                          <option value="ลาอุบัติเหตุจากการปฏิบัติงาน">ลาอุบัติเหตุจากการปฏิบัติงาน</option>
+                          <option value="ลาบวช/ลาพิธีสำคัญทางศาสนา">ลาบวช/ลาพิธีสำคัญทางศาสนา</option>
+                          <option value="ลาทหาร">ลาทหาร</option>
+                          <option value="ลาพิเศษไม่จ่าย">ลาพิเศษไม่จ่าย</option>
                           <option value="ขาดงาน">ขาดงาน</option>
                         </select>
                       ) : (
@@ -5623,6 +6012,7 @@ function KpiCard({
   unit,
   note,
   progress,
+  onClick,
 }: {
   icon: ReactNode;
   tone: "green" | "blue" | "amber" | "purple" | "gray" | "red";
@@ -5631,9 +6021,16 @@ function KpiCard({
   unit: string;
   note: string;
   progress?: number;
+  onClick?: () => void;
 }) {
   return (
-    <article className={`kpi-card kpi-${tone}`}>
+    <article
+      className={`kpi-card kpi-${tone}${onClick ? " kpi-clickable" : ""}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") onClick(); } : undefined}
+    >
       <div className={`kpi-icon ${tone}`}>{icon}</div>
       <div className="kpi-body">
         <span>{label}</span>

@@ -48,9 +48,9 @@ def run_pipeline(
 
     scan, target_date = load_scan(scan_file)
     employee = load_employee(input_files["master_file"])
-    attendance = rebuild_attendance(scan, employee)
-    scan_with_dept = add_department_to_scan(scan, employee)
     manpower_plan = load_manpower_plan(input_files["manpower_file"], target_date)
+    attendance = rebuild_attendance(scan, employee, manpower_plan)
+    scan_with_dept = add_department_to_scan(scan, employee)
     attendance_today = build_attendance_today(employee, attendance, target_date)
     attendance_today, available = detect_shift_and_availability(
         attendance_today,

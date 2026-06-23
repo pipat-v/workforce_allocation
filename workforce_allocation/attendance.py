@@ -1,9 +1,93 @@
+import datetime
+
 import pandas as pd
 
 from .utils import clean_emp_id, clean_name
 
 
-def rebuild_attendance(scan: pd.DataFrame, employee: pd.DataFrame) -> pd.DataFrame:
+def _get_night_shift_windows(manpower_plan: pd.DataFrame) -> list[tuple[str, str]]:
+    """Returns (shift_start, shift_end) pairs for shifts that cross midnight."""
+    shifts = manpower_plan.dropna(subset=["shift_start", "shift_end"]).copy()
+    shifts["start_dt"] = pd.to_datetime(shifts["shift_start"], format="%H:%M", errors="coerce")
+    shifts["end_dt"] = pd.to_datetime(shifts["shift_end"], format="%H:%M", errors="coerce")
+    shifts = shifts.dropna(subset=["start_dt", "end_dt"])
+    night = shifts[shifts["end_dt"] < shifts["start_dt"]]
+    return list(
+        night[["shift_start", "shift_end"]].drop_duplicates().itertuples(index=False, name=None)
+    )
+
+
+def _adjust_dates_for_night_shifts(
+    scan: pd.DataFrame,
+    manpower_plan: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Re-date early-morning clock-out timestamps to the previous day so they
+    group with the night shift's clock-in.
+
+    A scan at time T on date D is moved to D-1 when:
+      - T is within 2 h after a night shift's shift_end (early morning window)
+      - The same employee has a scan within 2 h before shift_start on D-1
+        (confirming they actually worked that night shift)
+
+    Each scan row is only reassigned once (first matching night shift wins).
+    """
+    night_shifts = _get_night_shift_windows(manpower_plan)
+    if not night_shifts:
+        return scan
+
+    scan = scan.copy()
+    scan["time_dt"] = pd.to_datetime(scan["time"], format="%H:%M", errors="coerce")
+    already_reassigned = pd.Series(False, index=scan.index)
+
+    for shift_start_str, shift_end_str in night_shifts:
+        shift_start_dt = pd.to_datetime(shift_start_str, format="%H:%M")
+        shift_end_dt = pd.to_datetime(shift_end_str, format="%H:%M")
+        buffer_before = pd.Timedelta(hours=2)
+        buffer_after = pd.Timedelta(hours=1)
+
+        # (emp_id, D+1) pairs where D is a date the employee has an evening scan
+        # — their D+1 early-morning scan is the clock-out for this night shift.
+        # Upper bound uses a tighter window (+1h) to reduce false positives from
+        # afternoon-shift overtime workers who stay past shift_start.
+        evening_mask = (
+            (scan["time_dt"] >= (shift_start_dt - buffer_before))
+            & (scan["time_dt"] <= (shift_start_dt + buffer_after))
+        )
+        evening_df = scan.loc[evening_mask, ["emp_id", "date"]].copy()
+        evening_df["clockout_date"] = evening_df["date"].apply(
+            lambda d: d + datetime.timedelta(days=1)
+        )
+        confirmed_pairs: set[tuple] = set(
+            zip(evening_df["emp_id"], evening_df["clockout_date"])
+        )
+
+        # Early-morning scans eligible for reassignment
+        morning_mask = (
+            (scan["time_dt"] <= shift_end_dt + buffer)
+            & (scan["time_dt"].dt.hour < 12)
+            & ~already_reassigned
+        )
+        scan_keys = list(zip(scan["emp_id"], scan["date"]))
+        in_confirmed = pd.Series(
+            [k in confirmed_pairs for k in scan_keys],
+            index=scan.index,
+        )
+
+        reassign_this = morning_mask & in_confirmed
+        already_reassigned |= reassign_this
+
+    scan.loc[already_reassigned, "date"] = scan.loc[already_reassigned, "date"].apply(
+        lambda d: d - datetime.timedelta(days=1)
+    )
+    return scan.drop(columns=["time_dt"])
+
+
+def rebuild_attendance(
+    scan: pd.DataFrame,
+    employee: pd.DataFrame,
+    manpower_plan: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     scan = scan.copy()
     scan["emp_id"] = scan["Employee ID"].apply(clean_emp_id)
     scan["name_key"] = scan["Employee Name"].apply(clean_name)
@@ -31,6 +115,9 @@ def rebuild_attendance(scan: pd.DataFrame, employee: pd.DataFrame) -> pd.DataFra
         condition_exact_name,
         "emp_id_by_name",
     ]
+
+    if manpower_plan is not None:
+        scan = _adjust_dates_for_night_shifts(scan, manpower_plan)
 
     attendance = (
         scan.groupby(["emp_id", "Employee Name", "date"])
