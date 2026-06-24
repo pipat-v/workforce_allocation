@@ -38,6 +38,9 @@ type AllocationRun = {
   original_filename: string | null;
   record_count: number | null;
   created_at: string;
+  master_file_path: string | null;
+  manpower_file_path: string | null;
+  dayoff_shift_file_path: string | null;
 };
 
 type MasterFile = {
@@ -454,7 +457,7 @@ export default function Home() {
   async function loadRuns() {
     const { data, error: loadError } = await supabase
       .from("allocation_runs")
-      .select("id,target_date,status,scan_file_path,solver_status,original_filename,record_count,created_at")
+      .select("id,target_date,status,scan_file_path,solver_status,original_filename,record_count,created_at,master_file_path,manpower_file_path,dayoff_shift_file_path")
       .order("created_at", { ascending: false })
       .limit(100);
 
@@ -753,15 +756,17 @@ export default function Home() {
         return;
       }
 
+      // Use the master-file snapshot stored with this run (historical accuracy).
+      // Fall back to the current active master only when the run pre-dates snapshot storage.
+      const empPath      = latestRun.master_file_path        ?? employeeMaster.file_path;
+      const manpowerPath = latestRun.manpower_file_path      ?? activeMasterMap.manpower_plan?.file_path;
+      const dayoffPath   = latestRun.dayoff_shift_file_path  ?? activeMasterMap.dayoff_shift?.file_path;
+
       const [employeeRows, scanRows, manpowerRows, dayoffShiftRows] = await Promise.all([
-        downloadSheetRows(employeeMaster.file_path),
+        downloadSheetRows(empPath),
         downloadSheetRows(latestRun.scan_file_path),
-        activeMasterMap.manpower_plan
-          ? downloadSheetRows(activeMasterMap.manpower_plan.file_path)
-          : Promise.resolve([]),
-        activeMasterMap.dayoff_shift
-          ? downloadSheetRows(activeMasterMap.dayoff_shift.file_path)
-          : Promise.resolve([]),
+        manpowerPath ? downloadSheetRows(manpowerPath) : Promise.resolve([]),
+        dayoffPath   ? downloadSheetRows(dayoffPath)   : Promise.resolve([]),
       ]);
 
       // Find adjacent runs to supply night-shift clock-in/out times
@@ -831,6 +836,21 @@ export default function Home() {
         ? `${tY - 1}-12`
         : `${tY}-${String(tM - 1).padStart(2, "0")}`;
 
+      // Pre-fetch all unique master snapshots used across the monthly runs.
+      // Runs that pre-date snapshot storage will have null paths and fall back to
+      // the already-loaded employeeRows/manpowerRows/dayoffShiftRows from above.
+      const masterRowsCache = new Map<string, Record<string, unknown>[]>();
+      const uniquePaths = new Set(
+        sortedMonthlyRuns.flatMap((r) =>
+          [r.master_file_path, r.manpower_file_path, r.dayoff_shift_file_path].filter(Boolean) as string[]
+        ),
+      );
+      await Promise.all(
+        [...uniquePaths].map(async (p) => {
+          try { masterRowsCache.set(p, await downloadSheetRows(p)); } catch { masterRowsCache.set(p, []); }
+        }),
+      );
+
       const monthlyScanRows = await Promise.all(
         sortedMonthlyRuns.map(async (run) => {
           try {
@@ -845,7 +865,11 @@ export default function Home() {
         const rows = monthlyScanRows[mi];
         const prevRows = monthlyScanRows[mi - 1] ?? [];
         const nextRows = monthlyScanRows[mi + 1] ?? [];
-        const dayReport = buildReportData(employeeRows, rows, manpowerRows, dayoffShiftRows, holidayDates, prevRows, nextRows);
+        const run = sortedMonthlyRuns[mi];
+        const runEmpRows      = (run.master_file_path       ? masterRowsCache.get(run.master_file_path)       : null) ?? employeeRows;
+        const runManpowerRows = (run.manpower_file_path     ? masterRowsCache.get(run.manpower_file_path)     : null) ?? manpowerRows;
+        const runDayoffRows   = (run.dayoff_shift_file_path ? masterRowsCache.get(run.dayoff_shift_file_path) : null) ?? dayoffShiftRows;
+        const dayReport = buildReportData(runEmpRows, rows, runManpowerRows, runDayoffRows, holidayDates, prevRows, nextRows);
 
         if (dayReport.targetMonthKey === latestReport.targetMonthKey) {
           for (const lateRow of dayReport.lateRows) {
@@ -1368,7 +1392,7 @@ function buildReportData(
   const employeeMap = new Map(employees.map((employee) => [employee.empId, employee]));
   const dayoffShiftMap = buildDayoffShiftMap(dayoffShiftRows);
   const deptShiftStart = buildDeptShiftStart(manpowerRows);
-  const scanByEmp = new Map<string, { name: string; times: Date[] }>();
+  const scanByEmp = new Map<string, { name: string; times: Date[]; seenMs: Set<number> }>();
 
   for (const row of scanRows) {
     const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? row["รหัสพนักงาน"]);
@@ -1378,8 +1402,13 @@ function buildReportData(
     const current = scanByEmp.get(empId) ?? {
       name: String(row["Employee Name"] ?? row["name"] ?? "").trim(),
       times: [],
+      seenMs: new Set<number>(),
     };
-    current.times.push(timestamp);
+    const ms = timestamp.getTime();
+    if (!current.seenMs.has(ms)) {
+      current.seenMs.add(ms);
+      current.times.push(timestamp);
+    }
     scanByEmp.set(empId, current);
   }
 
@@ -1399,18 +1428,19 @@ function buildReportData(
   // Only applied to employees whose entire current-day scan set is before 12:00, which
   // distinguishes them from day/afternoon workers who also have afternoon scans today.
   if (prevDayScanRows.length > 0) {
-    const prevEveningByEmp = new Map<string, Date[]>();
+    const prevEveningByEmp = new Map<string, { times: Date[]; seenMs: Set<number> }>();
     for (const row of prevDayScanRows) {
       const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? row["รหัสพนักงาน"]);
       const ts = parseTimestamp(row["Timestamp"]);
-      if (!empId || !ts || ts.getHours() < 20) continue;
-      const arr = prevEveningByEmp.get(empId) ?? [];
-      arr.push(ts);
-      prevEveningByEmp.set(empId, arr);
+      if (!empId || !ts || ts.getHours() < 15) continue; // ≥15:00 covers 17:00 evening shifts
+      const entry2 = prevEveningByEmp.get(empId) ?? { times: [], seenMs: new Set<number>() };
+      const ms = ts.getTime();
+      if (!entry2.seenMs.has(ms)) { entry2.seenMs.add(ms); entry2.times.push(ts); }
+      prevEveningByEmp.set(empId, entry2);
     }
     for (const [empId, entry] of scanByEmp.entries()) {
       if (entry.times.length === 0 || !entry.times.every((t) => t.getHours() < 12)) continue;
-      const prevTimes = prevEveningByEmp.get(empId) ?? [];
+      const prevTimes = prevEveningByEmp.get(empId)?.times ?? [];
       if (prevTimes.length > 0) entry.times = [...prevTimes, ...entry.times];
     }
   }
@@ -1420,20 +1450,21 @@ function buildReportData(
   // This lets the previous day's report show the correct scanOut even when the
   // machine scan file only captures up to midnight.
   if (nextDayScanRows.length > 0) {
-    const nextMorningByEmp = new Map<string, Date[]>();
+    const nextMorningByEmp = new Map<string, { times: Date[]; seenMs: Set<number> }>();
     for (const row of nextDayScanRows) {
       const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? row["รหัสพนักงาน"]);
       const ts = parseTimestamp(row["Timestamp"]);
       if (!empId || !ts || ts.getHours() >= 12) continue; // early-morning only
-      const arr = nextMorningByEmp.get(empId) ?? [];
-      arr.push(ts);
-      nextMorningByEmp.set(empId, arr);
+      const entry2 = nextMorningByEmp.get(empId) ?? { times: [], seenMs: new Set<number>() };
+      const ms = ts.getTime();
+      if (!entry2.seenMs.has(ms)) { entry2.seenMs.add(ms); entry2.times.push(ts); }
+      nextMorningByEmp.set(empId, entry2);
     }
     for (const [empId, entry] of scanByEmp.entries()) {
-      const hasEveningScan = entry.times.some((t) => t.getHours() >= 20);
+      const hasEveningScan = entry.times.some((t) => t.getHours() >= 15); // ≥15:00 covers 17:00 evening shifts
       const hasMorningScan = entry.times.some((t) => t.getHours() < 12);
       if (!hasEveningScan || hasMorningScan) continue;
-      const nextMorning = nextMorningByEmp.get(empId) ?? [];
+      const nextMorning = nextMorningByEmp.get(empId)?.times ?? [];
       if (nextMorning.length > 0) entry.times = [...entry.times, ...nextMorning];
     }
   }
@@ -1971,12 +2002,14 @@ function findScanOut(scans: Date[], scanIn: Date | undefined): Date | undefined 
 }
 
 // Returns true when the time-of-day of `t` falls within the clock-in window:
-// [shiftStart - 2 h, shiftStart + 4 h], wrapping around midnight for night shifts.
-function isInClockInWindow(t: Date, shiftHour: number, shiftMin: number): boolean {
+// [shiftStart - 2 h, shiftStart + afterMin], wrapping around midnight for night shifts.
+// Night shifts use +2 h (afterMin=120) to avoid misidentifying early-morning clock-outs
+// (e.g. 02:05 AM exit) as clock-ins for a 22:00 or 23:00 shift.
+function isInClockInWindow(t: Date, shiftHour: number, shiftMin: number, afterMin = 240): boolean {
   const tMin = t.getHours() * 60 + t.getMinutes();
   const shiftTotal = shiftHour * 60 + shiftMin;
-  const windowStart = (shiftTotal - 120 + 1440) % 1440; // 2 h before
-  const windowEnd = (shiftTotal + 240) % 1440;           // 4 h after
+  const windowStart = (shiftTotal - 120 + 1440) % 1440;
+  const windowEnd = (shiftTotal + afterMin) % 1440;
   return windowStart <= windowEnd
     ? tMin >= windowStart && tMin <= windowEnd
     : tMin >= windowStart || tMin <= windowEnd; // window crosses midnight
@@ -2015,12 +2048,12 @@ function findScanIn(scans: Date[], shiftStart: string, isoTargetDate: string): D
       .sort((a, b) => a.diff - b.diff)[0].t;
 
   if (sh >= 20) {
-    // Night shift — don't filter by date; window handles clock-out exclusion.
+    // Night shift — use tight +2 h window to exclude early-morning clock-outs
+    // (e.g. 02:05 AM exit for a 22:00 shift would fall inside a +4 h window).
     // If nothing lands in the window the available scans are early-morning
-    // clock-outs from the previous night (no matching evening entry in this
-    // file). Return undefined so the caller marks this day as Absent and
-    // surfaces the morning scan as scanOut instead of misidentifying it as scanIn.
-    const inWindow = scans.filter((t) => isInClockInWindow(t, sh, sm));
+    // clock-outs from the previous night; return undefined so the caller marks
+    // this day as Absent instead of misidentifying the exit scan as a clock-in.
+    const inWindow = scans.filter((t) => isInClockInWindow(t, sh, sm, 120));
     return inWindow.length ? pickClosest(inWindow) : undefined;
   }
 
