@@ -260,7 +260,10 @@ export default function Home() {
     [masterUploads],
   );
 
-  const latestRun = (selectedRunId ? runs.find(r => r.id === selectedRunId) : null) ?? runs.find(r => !!r.scan_file_path);
+  const latestRun = useMemo(
+    () => (selectedRunId ? runs.find((r) => r.id === selectedRunId) : null) ?? runs.find((r) => !!r.scan_file_path),
+    [selectedRunId, runs],
+  );
   const reportSourceKey =
     activeMasterMap.employee_master?.file_path && latestRun?.scan_file_path
       ? [
@@ -369,7 +372,8 @@ export default function Home() {
       .from("employee_warnings")
       .select("emp_id")
       .eq("warn_date", isoTargetDate)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) { setError(error.message); return; }
         if (data) setWarnedIds(new Set(data.map((r: { emp_id: string }) => r.emp_id)));
       });
   }, [isoTargetDate]);
@@ -382,7 +386,8 @@ export default function Home() {
     supabase
       .from("holidays")
       .select("date")
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) { setError(error.message); return; }
         if (data && data.length > 0) {
           setHolidayDates(new Set(data.map((r: { date: string }) => r.date)));
         }
@@ -419,8 +424,8 @@ export default function Home() {
       const updates: { id: string; file_size_bytes: number }[] = [];
       await Promise.all(
         Array.from(folderMap.entries()).map(async ([folder, files]) => {
-          const { data: listed } = await supabase.storage.from("workforce-inputs").list(folder);
-          if (!listed) return;
+          const { data: listed, error: listError } = await supabase.storage.from("workforce-inputs").list(folder);
+          if (listError || !listed) return;
           for (const f of files) {
             const filename = f.file_path.substring(f.file_path.lastIndexOf("/") + 1);
             const found = listed.find((l) => l.name === filename);
@@ -1000,15 +1005,14 @@ export default function Home() {
     }
     const rows = Array.from(rowMap.values());
 
+    const batchErrors: string[] = [];
     for (let index = 0; index < rows.length; index += 500) {
       const { error: insertError } = await supabase
         .from("timestamp_with_dept")
         .upsert(rows.slice(index, index + 500), { onConflict: "run_id,emp_id" });
-
-      if (insertError) {
-        throw insertError;
-      }
+      if (insertError) batchErrors.push(insertError.message);
     }
+    if (batchErrors.length > 0) throw new Error(batchErrors.join("; "));
   }
 
   return (
@@ -2202,16 +2206,18 @@ function DashboardPanels({
   const [detailSort, setDetailSort_] = useState<SortState>(null);
   const setDetailSort = setDetailSort_ as (sort: SortState) => void;
   const [leaveMap, setLeaveMap] = useState<Map<string, string>>(new Map());
+  const [leaveError, setLeaveError] = useState("");
   const [warnPanelCollapsed, setWarnPanelCollapsed] = useState(true);
 
   useEffect(() => {
     if (!isoTargetDate) return;
+    setLeaveError("");
     const absentIds = (reportData?.records ?? [])
       .filter((r: { status: string }) => r.status === "Absent")
       .map((r: { empId: string }) => r.empId);
     supabase.from("leave_records").select("emp_id, leave_type").eq("leave_date", isoTargetDate)
       .then(async ({ data: rows, error }) => {
-        if (error) { console.error("leave_records load error:", error.message); return; }
+        if (error) { setLeaveError(`โหลดข้อมูลการลาไม่สำเร็จ: ${error.message}`); return; }
         const map = new Map((rows ?? []).map((r: { emp_id: string; leave_type: string }) => [r.emp_id, r.leave_type]));
         const missing = absentIds.filter((id: string) => !map.has(id));
         if (missing.length) {
@@ -2219,7 +2225,7 @@ function DashboardPanels({
             missing.map((empId: string) => ({ emp_id: empId, leave_date: isoTargetDate, leave_type: "ขาดงาน" })),
             { onConflict: "emp_id,leave_date" }
           );
-          if (upsertError) { console.error("leave_records upsert error:", upsertError.message); }
+          if (upsertError) { setLeaveError(`บันทึกข้อมูลการลาไม่สำเร็จ: ${upsertError.message}`); }
           else { missing.forEach((id: string) => map.set(id, "ขาดงาน")); }
         }
         setLeaveMap(map);
@@ -2327,6 +2333,9 @@ function DashboardPanels({
 
   return (
     <>
+      {leaveError && (
+        <div className="error-banner" style={{ marginBottom: 8 }}>{leaveError}</div>
+      )}
       {isoTargetDate && (
         <section className="confirm-attendance-card">
           <div className="confirm-card-top">

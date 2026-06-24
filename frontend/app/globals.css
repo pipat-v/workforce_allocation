@@ -171,9 +171,6 @@ button {
   align-items: center;
   gap: 12px;
   min-height: 60px;
-}
-
-.date-picker {
   min-width: 258px;
   border: 1px solid var(--line);
   border-radius: 8px;
