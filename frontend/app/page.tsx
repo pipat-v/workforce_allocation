@@ -4252,8 +4252,8 @@ function DayoffShiftEditor({
         </span>
         {selectedDept !== "all" && selectedJobSite !== "all" && selectedJobSite !== "__empty__" && (
           <button
-            className="secondary-button"
-            style={{ height: 30, fontSize: 12, padding: "0 12px" }}
+            className="primary-button"
+            style={{ height: 30, fontSize: 12, padding: "0 14px", background: "linear-gradient(135deg, #f59e0b, #d97706)", gap: 6 }}
             type="button"
             onClick={() => {
               const กะ1Row = filteredRows.find((r) => r.shift === "กะ1");
