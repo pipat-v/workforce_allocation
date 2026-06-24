@@ -3920,6 +3920,19 @@ function DayoffShiftEditor({
   ]));
   const deptOptions = Array.from(new Set(rows.map((r) => r.dept).filter(Boolean))).sort();
 
+  // cascading: หน้างาน dropdown แสดงแค่ค่าที่มีในหน่วยงานที่เลือก
+  const availableJobSiteOptions = (() => {
+    const base = selectedDept === "all" ? rows : rows.filter((r) => r.dept === selectedDept);
+    return Array.from(new Set(base.map((r) => r.jobSite).filter(Boolean))).sort();
+  })();
+
+  // cascading: หน่วยงาน dropdown แสดงแค่ค่าที่มีในหน้างานที่เลือก
+  const availableDeptOptions = (() => {
+    if (selectedJobSite === "all") return deptOptions;
+    if (selectedJobSite === "__empty__") return Array.from(new Set(rows.filter((r) => r.jobSite === "").map((r) => r.dept).filter(Boolean))).sort();
+    return Array.from(new Set(rows.filter((r) => r.jobSite === selectedJobSite).map((r) => r.dept).filter(Boolean))).sort();
+  })();
+
   const normalizedQuery = query.trim().toLowerCase();
   const filteredRows = rows.filter((row) => {
     if (selectedDept !== "all" && row.dept !== selectedDept) return false;
@@ -4185,14 +4198,36 @@ function DayoffShiftEditor({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
+        <select value={selectedDept} onChange={(e) => {
+          const val = e.target.value;
+          setSelectedDept(val);
+          // reset jobSite ถ้าค่าที่เลือกไม่มีในหน่วยงานใหม่
+          if (selectedJobSite !== "all" && selectedJobSite !== "__empty__") {
+            const nextJobSites = new Set(
+              (val === "all" ? rows : rows.filter((r) => r.dept === val)).map((r) => r.jobSite)
+            );
+            if (!nextJobSites.has(selectedJobSite)) setSelectedJobSite("all");
+          }
+        }}>
           <option value="all">ทุกหน่วยงาน</option>
-          {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+          {availableDeptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select value={selectedJobSite} onChange={(e) => setSelectedJobSite(e.target.value)}>
+        <select value={selectedJobSite} onChange={(e) => {
+          const val = e.target.value;
+          setSelectedJobSite(val);
+          // reset dept ถ้าค่าที่เลือกไม่มีในหน้างานใหม่
+          if (selectedDept !== "all") {
+            const nextDepts = new Set(
+              val === "all" ? rows.map((r) => r.dept) :
+              val === "__empty__" ? rows.filter((r) => r.jobSite === "").map((r) => r.dept) :
+              rows.filter((r) => r.jobSite === val).map((r) => r.dept)
+            );
+            if (!nextDepts.has(selectedDept)) setSelectedDept("all");
+          }
+        }}>
           <option value="all">ทุกหน้างาน</option>
           <option value="__empty__">— ยังไม่มีข้อมูล</option>
-          {jobSiteOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+          {availableJobSiteOptions.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
         <select value={selectedDayoff} onChange={(e) => setSelectedDayoff(e.target.value)}>
           <option value="all">ทุก Dayoff</option>
