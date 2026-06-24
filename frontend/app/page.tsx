@@ -4245,10 +4245,42 @@ function DayoffShiftEditor({
           {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
       </div>
-      <span className="dayoff-count">
-        {filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} คน
-        {modifiedIds.size > 0 && <span className="modified-badge">{modifiedIds.size} แก้ไข</span>}
-      </span>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
+        <span className="dayoff-count">
+          {filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} คน
+          {modifiedIds.size > 0 && <span className="modified-badge">{modifiedIds.size} แก้ไข</span>}
+        </span>
+        {selectedDept !== "all" && selectedJobSite !== "all" && selectedJobSite !== "__empty__" && (
+          <button
+            className="secondary-button"
+            style={{ height: 30, fontSize: 12, padding: "0 12px" }}
+            type="button"
+            onClick={() => {
+              const กะ1Row = filteredRows.find((r) => r.shift === "กะ1");
+              const กะ2Row = filteredRows.find((r) => r.shift === "กะ2");
+              if (!กะ1Row || !กะ2Row) {
+                alert("ต้องมีพนักงานทั้งกะ1 และ กะ2 ในมุมมองนี้จึงจะสลับได้");
+                return;
+              }
+              const กะ1Start = กะ1Row.shiftStart;
+              const กะ2Start = กะ2Row.shiftStart;
+              const idsToSwap = new Set(filteredRows.filter((r) => r.shift === "กะ1" || r.shift === "กะ2").map((r) => r.id));
+              setRows((current) =>
+                current.map((row) => {
+                  if (!idsToSwap.has(row.id)) return row;
+                  const newShift = row.shift === "กะ1" ? "กะ2" : "กะ1";
+                  const newStart = row.shift === "กะ1" ? กะ2Start : กะ1Start;
+                  let raw = setRowCol(row.raw, newShift, "อยู่กะไหน", "shift", "กะ", "Shift");
+                  raw = setRowCol(raw, newStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+                  return { ...row, shift: newShift, shiftStart: newStart, raw };
+                })
+              );
+            }}
+          >
+            ⇄ สลับกะ 1 ↔ 2
+          </button>
+        )}
+      </div>
 
       {selectedIds.size > 0 && (
         <div className="dayoff-bulk-bar">
