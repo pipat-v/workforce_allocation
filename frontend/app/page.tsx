@@ -45,6 +45,7 @@ type MasterFile = {
   file_type: MasterFileKey;
   file_path: string;
   original_filename: string | null;
+  file_size_bytes: number | null;
   created_at: string;
   is_active: boolean;
 };
@@ -390,7 +391,7 @@ export default function Home() {
   async function loadActiveMasters() {
     const { data, error: loadError } = await supabase
       .from("master_data_files")
-      .select("id,file_type,file_path,original_filename,is_active,created_at")
+      .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at")
       .order("created_at", { ascending: false });
 
     if (loadError) {
@@ -400,6 +401,43 @@ export default function Home() {
 
     const allFiles = (data ?? []) as MasterFile[];
     setMasterFileHistory(allFiles);
+
+    const missingSize = allFiles.filter((f) => f.file_size_bytes == null);
+    if (missingSize.length > 0) {
+      const folderMap = new Map<string, MasterFile[]>();
+      for (const f of missingSize) {
+        const lastSlash = f.file_path.lastIndexOf("/");
+        const folder = f.file_path.substring(0, lastSlash);
+        if (!folderMap.has(folder)) folderMap.set(folder, []);
+        folderMap.get(folder)!.push(f);
+      }
+      const updates: { id: string; file_size_bytes: number }[] = [];
+      await Promise.all(
+        Array.from(folderMap.entries()).map(async ([folder, files]) => {
+          const { data: listed } = await supabase.storage.from("workforce-inputs").list(folder);
+          if (!listed) return;
+          for (const f of files) {
+            const filename = f.file_path.substring(f.file_path.lastIndexOf("/") + 1);
+            const found = listed.find((l) => l.name === filename);
+            const size = found?.metadata?.size as number | undefined;
+            if (size != null) updates.push({ id: f.id, file_size_bytes: size });
+          }
+        })
+      );
+      if (updates.length > 0) {
+        await Promise.all(
+          updates.map(({ id, file_size_bytes }) =>
+            supabase.from("master_data_files").update({ file_size_bytes }).eq("id", id)
+          )
+        );
+        setMasterFileHistory((prev) =>
+          prev.map((f) => {
+            const u = updates.find((u) => u.id === f.id);
+            return u ? { ...f, file_size_bytes: u.file_size_bytes } : f;
+          })
+        );
+      }
+    }
 
     const latestByType = new Map<MasterFileKey, MasterFile>();
     for (const item of allFiles) {
@@ -459,6 +497,7 @@ export default function Home() {
             file_type: item.key,
             file_path: path,
             original_filename: file.name,
+            file_size_bytes: file.size,
             is_active: true,
           });
 
@@ -3024,7 +3063,7 @@ function MasterDataPage({
         const { error: deactivateError } = await supabase.from("master_data_files").update({ is_active: false }).is("owner_id", null).eq("file_type", fileType);
         if (deactivateError) { setError(deactivateError.message); return; }
         const { error: insertError } = await supabase.from("master_data_files").insert({
-          owner_id: null, file_type: fileType, file_path: path, original_filename: combinedFile.name, is_active: true,
+          owner_id: null, file_type: fileType, file_path: path, original_filename: combinedFile.name, file_size_bytes: combinedFile.size, is_active: true,
         });
         if (insertError) { setError(insertError.message); return; }
       }
@@ -3042,7 +3081,7 @@ function MasterDataPage({
       if (skillUpErr) { setError(skillUpErr.message); return; }
       const { error: skillDeactErr } = await supabase.from("master_data_files").update({ is_active: false }).is("owner_id", null).eq("file_type", "skill_matrix");
       if (skillDeactErr) { setError(skillDeactErr.message); return; }
-      const { error: skillInsErr } = await supabase.from("master_data_files").insert({ owner_id: null, file_type: "skill_matrix", file_path: skillPath, original_filename: "skill_matrix-from-combined.xlsx", is_active: true });
+      const { error: skillInsErr } = await supabase.from("master_data_files").insert({ owner_id: null, file_type: "skill_matrix", file_path: skillPath, original_filename: "skill_matrix-from-combined.xlsx", file_size_bytes: skillBlob.size, is_active: true });
       if (skillInsErr) { setError(skillInsErr.message); return; }
 
       if (diffResult.newManpowerRows.length > 0) {
@@ -3055,7 +3094,7 @@ function MasterDataPage({
         if (mpUpErr) { setError(mpUpErr.message); return; }
         const { error: mpDeactErr } = await supabase.from("master_data_files").update({ is_active: false }).is("owner_id", null).eq("file_type", "manpower_plan");
         if (mpDeactErr) { setError(mpDeactErr.message); return; }
-        const { error: mpInsErr } = await supabase.from("master_data_files").insert({ owner_id: null, file_type: "manpower_plan", file_path: mpPath, original_filename: "manpower_plan-from-combined.xlsx", is_active: true });
+        const { error: mpInsErr } = await supabase.from("master_data_files").insert({ owner_id: null, file_type: "manpower_plan", file_path: mpPath, original_filename: "manpower_plan-from-combined.xlsx", file_size_bytes: mpBlob.size, is_active: true });
         if (mpInsErr) { setError(mpInsErr.message); return; }
       }
 
@@ -3151,7 +3190,28 @@ function MasterDataPage({
           />
         </label>
         <div className="master-card-history">
-          <h4>ประวัติการอัปโหลด</h4>
+          {(() => {
+            const files = masterFileHistory.filter((f) => f.file_type === "employee_master");
+            const totalBytes = files.reduce((acc, f) => acc + (f.file_size_bytes ?? 0), 0);
+            const totalMB = Math.round(totalBytes / (1024 * 1024));
+            const pct = Math.min(100, Math.round((totalMB / STORAGE_LIMIT_MB) * 100));
+            return (
+              <div className="ts-history-header">
+                <h4>ประวัติการอัปโหลด</h4>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  {totalBytes > 0 && (
+                    <>
+                      <div className="storage-bar-track" style={{ flex: "none", width: "90px" }}>
+                        <div className={`storage-bar-fill${pct >= 80 ? " danger" : pct >= 60 ? " warn" : ""}`} style={{ width: `${Math.max(pct, 0.5)}%` }} />
+                      </div>
+                      <span className="storage-bar-label">~{totalMB} MB / {STORAGE_LIMIT_MB} MB ({pct}%)</span>
+                    </>
+                  )}
+                  <span className="table-count">{files.length} ไฟล์</span>
+                </div>
+              </div>
+            );
+          })()}
           <div className="ts-history-list">
             {masterFileHistory.filter((f) => f.file_type === "employee_master").length === 0 ? (
               <p className="empty-copy" style={{ padding: "8px 0" }}>ยังไม่มีประวัติ</p>
@@ -3170,7 +3230,7 @@ function MasterDataPage({
                         <strong>{file.original_filename ?? "ไฟล์"}</strong>
                         {file.is_active ? <span className="status-pill uploaded">Active</span> : null}
                       </div>
-                      <span>{dateText}</span>
+                      <span>{dateText}{file.file_size_bytes != null ? ` · ${(file.file_size_bytes / 1024).toFixed(0)} KB` : ""}</span>
                     </div>
                     <div className="ts-history-actions">
                       <button className="icon-button" onClick={() => downloadMasterFile(file.file_path, file.original_filename ?? "download.xlsx")} title="ดาวน์โหลด" type="button">
@@ -3245,7 +3305,27 @@ function MasterDataPage({
               />
             </label>
             <div className="master-card-history">
-              <h4>ประวัติการอัปโหลด</h4>
+              {(() => {
+                const totalBytes = fileHistory.reduce((acc, f) => acc + (f.file_size_bytes ?? 0), 0);
+                const totalMB = Math.round(totalBytes / (1024 * 1024));
+                const pct = Math.min(100, Math.round((totalMB / STORAGE_LIMIT_MB) * 100));
+                return (
+                  <div className="ts-history-header">
+                    <h4>ประวัติการอัปโหลด</h4>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      {totalBytes > 0 && (
+                        <>
+                          <div className="storage-bar-track" style={{ flex: "none", width: "90px" }}>
+                            <div className={`storage-bar-fill${pct >= 80 ? " danger" : pct >= 60 ? " warn" : ""}`} style={{ width: `${Math.max(pct, 0.5)}%` }} />
+                          </div>
+                          <span className="storage-bar-label">~{totalMB} MB / {STORAGE_LIMIT_MB} MB ({pct}%)</span>
+                        </>
+                      )}
+                      <span className="table-count">{fileHistory.length} ไฟล์</span>
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="ts-history-list">
                 {fileHistory.length === 0 ? (
                   <p className="empty-copy" style={{ padding: "8px 0" }}>ยังไม่มีประวัติ</p>
@@ -3262,7 +3342,7 @@ function MasterDataPage({
                           <strong>{file.original_filename ?? "ไฟล์"}</strong>
                           {file.is_active ? <span className="status-pill uploaded">Active</span> : null}
                         </div>
-                        <span>{dateText}</span>
+                        <span>{dateText}{file.file_size_bytes != null ? ` · ${(file.file_size_bytes / 1024).toFixed(0)} KB` : ""}</span>
                       </div>
                       <div className="ts-history-actions">
                         <button className="icon-button" onClick={() => downloadMasterFile(file.file_path, file.original_filename ?? "download.xlsx")} title="ดาวน์โหลด" type="button">
