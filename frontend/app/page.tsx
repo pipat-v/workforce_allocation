@@ -91,6 +91,7 @@ type CombinedEmployeeRow = {
   lastName: string;
   dept: string;
   position: string;
+  jobSite: string;
   shift: string;
   shiftStart: string;
   dayoff: string;
@@ -2665,6 +2666,7 @@ function buildCombinedExcelWorkbook(
   skillFlatRows: SkillFlatRow[],
   manpowerRows: Record<string, unknown>[],
   skillNames: string[],
+  skillCFMap: Map<string, string>,
 ): ReturnType<typeof XLSX.utils.book_new> {
   const sheet1Rows = empRows.map((row) => {
     const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
@@ -2679,6 +2681,7 @@ function buildCombinedExcelWorkbook(
       "Last Name (Local)": String(row["Last Name (Local)"] ?? "").trim(),
       "หน่วยงาน": String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim(),
       "Title (Position)": String(row["Title (Position)"] ?? row["position"] ?? "").trim(),
+      "หน้างาน": skillCFMap.get(empId) ?? "",
       "กะ": ds?.shift ?? "",
       "เวลาเข้างาน": ds?.shiftStart ?? "",
       "วันหยุดประจำสัปดาห์": ds?.dayoff ?? "",
@@ -2687,7 +2690,7 @@ function buildCombinedExcelWorkbook(
   }).filter(Boolean);
   const ws1 = XLSX.utils.json_to_sheet(sheet1Rows as object[]);
   ws1["!cols"] = [
-    { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 20 },
+    { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 16 },
     { wch: 8 }, { wch: 14 }, { wch: 24 },
     ...skillNames.map(() => ({ wch: 14 })),
   ];
@@ -2703,7 +2706,7 @@ function buildCombinedExcelWorkbook(
 function parseCombinedSheet1(rows: Record<string, unknown>[]): CombinedEmployeeRow[] {
   const FIXED = new Set([
     "employee id", "first name (local)", "last name (local)",
-    "หน่วยงาน", "title (position)", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
+    "หน่วยงาน", "title (position)", "หน้างาน", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
   ]);
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   return rows.map((row) => {
@@ -2722,6 +2725,7 @@ function parseCombinedSheet1(rows: Record<string, unknown>[]): CombinedEmployeeR
       lastName: String(row["Last Name (Local)"] ?? "").trim(),
       dept: String(row["หน่วยงาน"] ?? "").trim(),
       position: String(row["Title (Position)"] ?? "").trim(),
+      jobSite: String(row["หน้างาน"] ?? "").trim(),
       shift: String(row["กะ"] ?? "").trim(),
       shiftStart: normalizeTimeText(row["เวลาเข้างาน"]),
       dayoff: String(row["วันหยุดประจำสัปดาห์"] ?? "").trim(),
@@ -2751,6 +2755,7 @@ function computeEmployeeDiff(
     chk("ชื่อ", `${cur.firstName} ${cur.lastName}`.trim(), `${nr.firstName} ${nr.lastName}`.trim());
     chk("หน่วยงาน", cur.dept, nr.dept);
     chk("ตำแหน่ง", cur.position, nr.position);
+    chk("หน้างาน", cur.jobSite, nr.jobSite);
     chk("กะ", cur.shift, nr.shift);
     chk("เวลาเข้างาน", cur.shiftStart, nr.shiftStart);
     chk("วันหยุด", cur.dayoff, nr.dayoff);
@@ -2931,19 +2936,17 @@ function MasterDataPage({
   const [isExporting, setIsExporting] = useState(false);
 
   function downloadCombinedTemplate() {
-    const skillExamples = ["Office", "QC คลังชิ้นส่วน", "QC เชื่อด", "คลัง Picking", "ผ่าซาก"];
     const headers = [
       "Employee ID", "First Name (Local)", "Last Name (Local)",
-      "หน่วยงาน", "Title (Position)", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
-      ...skillExamples,
+      "หน่วยงาน", "Title (Position)", "หน้างาน", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
     ];
     const examples = [
-      ["EMP001", "สมชาย", "ใจดี", "งานเครื่องใน", "พนักงานผลิต", "กะ 1", "07:00", "อาทิตย์", 0, 3, 0, 2, 0],
-      ["EMP002", "สมหญิง", "รักดี", "งานแยกชิ้นส่วน", "พนักงานผลิต", "กะ 1", "07:00", "เสาร์-อาทิตย์", 0, 0, 2, 0, 3],
-      ["EMP003", "มานพ", "สุขใจ", "งานควบคุมคุณภาพ", "หัวหน้างาน", "กะ 2", "13:00", "อาทิตย์", 3, 0, 0, 0, 0],
+      ["EMP001", "สมชาย", "ใจดี", "งานเครื่องใน", "พนักงานผลิต", "ตะกร้า", "กะ 1", "07:00", "อาทิตย์"],
+      ["EMP002", "สมหญิง", "รักดี", "งานแยกชิ้นส่วน", "พนักงานผลิต", "ดันหมู", "กะ 1", "07:00", "เสาร์-อาทิตย์"],
+      ["EMP003", "มานพ", "สุขใจ", "งานควบคุมคุณภาพ", "หัวหน้างาน", "QC", "กะ 2", "13:00", "อาทิตย์"],
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers, ...examples]);
-    ws["!cols"] = [14, 18, 18, 22, 20, 8, 14, 24, ...skillExamples.map(() => 14)].map((w) => ({ wch: w }));
+    ws["!cols"] = [14, 18, 18, 22, 20, 16, 8, 14, 24].map((w) => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "พนักงาน");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["หน่วยงาน", "กะ", "เวลาเข้า"], ["งานเครื่องใน", "กะ 1", "07:00"]]), "Manpower Plan");
@@ -2954,11 +2957,34 @@ function MasterDataPage({
     setIsExporting(true);
     setError("");
     try {
-      const [empRows, dayoffRows, skillRawRows, manpowerRows] = await Promise.all([
+      const skillCFPromise = (async () => {
+        try {
+          const res = await fetch("/skillcf_default.xlsx");
+          if (!res.ok) return new Map<string, string>();
+          const buffer = await res.arrayBuffer();
+          const wb = XLSX.read(buffer, { type: "array" });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
+          const hdrIdx = rawRows.findIndex((r) => (r as string[]).includes("User ID (Job Information)"));
+          if (hdrIdx < 0) return new Map<string, string>();
+          const hdr = rawRows[hdrIdx] as string[];
+          const map = new Map<string, string>();
+          for (const r of rawRows.slice(hdrIdx + 1)) {
+            const row: Record<string, unknown> = {};
+            (r as unknown[]).forEach((val, i) => { if (hdr[i]) row[hdr[i]] = val; });
+            const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+            const skillCF = String(row["SKILL CF"] ?? "").trim();
+            if (empId && skillCF) map.set(empId, skillCF);
+          }
+          return map;
+        } catch { return new Map<string, string>(); }
+      })();
+      const [empRows, dayoffRows, skillRawRows, manpowerRows, skillCFMap] = await Promise.all([
         activeMasterMap.employee_master ? downloadSheetRows(activeMasterMap.employee_master.file_path) : Promise.resolve([]),
         activeMasterMap.dayoff_shift ? downloadSheetRows(activeMasterMap.dayoff_shift.file_path) : Promise.resolve([]),
         activeMasterMap.skill_matrix ? downloadSheetRows(activeMasterMap.skill_matrix.file_path) : Promise.resolve([]),
         activeMasterMap.manpower_plan ? downloadSheetRows(activeMasterMap.manpower_plan.file_path) : Promise.resolve([]),
+        skillCFPromise,
       ]);
       const skillFlatRows: SkillFlatRow[] = skillRawRows
         .map((row, i) => {
@@ -2970,7 +2996,7 @@ function MasterDataPage({
         .filter((r) => r.empId && r.skill);
       const skillNames = Array.from(new Set(skillFlatRows.map((r) => r.skill))).sort();
       const dayoffMap = buildDayoffShiftMap(dayoffRows);
-      const wb = buildCombinedExcelWorkbook(empRows, dayoffMap, skillFlatRows, manpowerRows, skillNames);
+      const wb = buildCombinedExcelWorkbook(empRows, dayoffMap, skillFlatRows, manpowerRows, skillNames, skillCFMap);
       const now = new Date().toLocaleDateString("th-TH").replace(/\//g, "-");
       XLSX.writeFile(wb, `master-พนักงาน-${now}.xlsx`);
     } catch (e) {
@@ -3009,10 +3035,33 @@ function MasterDataPage({
         ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[sheet2Name], { defval: "" })
         : [];
 
-      const [curEmpRows, curDayoffRows, curSkillRows] = await Promise.all([
+      const loadSkillCFMap = async (): Promise<Map<string, string>> => {
+        try {
+          const res = await fetch("/skillcf_default.xlsx");
+          if (!res.ok) return new Map<string, string>();
+          const buffer = await res.arrayBuffer();
+          const wb = XLSX.read(buffer, { type: "array" });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
+          const hdrIdx = rawRows.findIndex((r) => (r as string[]).includes("User ID (Job Information)"));
+          if (hdrIdx < 0) return new Map<string, string>();
+          const hdr = rawRows[hdrIdx] as string[];
+          const map = new Map<string, string>();
+          for (const r of rawRows.slice(hdrIdx + 1)) {
+            const rowObj: Record<string, unknown> = {};
+            (r as unknown[]).forEach((val, i) => { if (hdr[i]) rowObj[hdr[i]] = val; });
+            const empId = cleanEmpId(rowObj["User ID (Job Information)"] ?? rowObj["Employee ID"] ?? rowObj["Emp ID"]);
+            const skillCF = String(rowObj["SKILL CF"] ?? "").trim();
+            if (empId && skillCF) map.set(empId, skillCF);
+          }
+          return map;
+        } catch { return new Map<string, string>(); }
+      };
+      const [curEmpRows, curDayoffRows, curSkillRows, curSkillCFMap] = await Promise.all([
         activeMasterMap.employee_master ? downloadSheetRows(activeMasterMap.employee_master.file_path) : Promise.resolve([]),
         activeMasterMap.dayoff_shift ? downloadSheetRows(activeMasterMap.dayoff_shift.file_path) : Promise.resolve([]),
         activeMasterMap.skill_matrix ? downloadSheetRows(activeMasterMap.skill_matrix.file_path) : Promise.resolve([]),
+        loadSkillCFMap(),
       ]);
       const curDayoffMap = buildDayoffShiftMap(curDayoffRows);
       const curSkillFlat: SkillFlatRow[] = curSkillRows
@@ -3035,6 +3084,7 @@ function MasterDataPage({
           lastName: String(row["Last Name (Local)"] ?? "").trim(),
           dept: String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim(),
           position: String(row["Title (Position)"] ?? "").trim(),
+          jobSite: curSkillCFMap.get(empId) ?? "",
           shift: ds?.shift ?? "",
           shiftStart: ds?.shiftStart ?? "",
           dayoff: ds?.dayoff ?? "",
