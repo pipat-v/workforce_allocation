@@ -1095,7 +1095,7 @@ button {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  max-height: 400px;
+  max-height: 280px;
 }
 
 .ts-history-row {
