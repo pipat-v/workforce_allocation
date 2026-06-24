@@ -4631,7 +4631,7 @@ function SkillMatrixPage({
   );
 }
 
-const STORAGE_WARN_COUNT = 20;
+const STORAGE_WARN_MB = 1001;
 const STORAGE_LIMIT_MB = 1024;
 
 function estimateStorageMB(runs: AllocationRun[]): number {
@@ -4666,7 +4666,7 @@ function TimestampPage({
 
   const estimatedMB = estimateStorageMB(runs);
   const storageUsedPct = Math.min(100, Math.round((estimatedMB / STORAGE_LIMIT_MB) * 100));
-  const isStorageWarning = runs.length >= STORAGE_WARN_COUNT || storageUsedPct >= 70;
+  const isStorageWarning = estimatedMB >= STORAGE_WARN_MB;
   const oldestRun = runs.length > 0
     ? [...runs].sort((a, b) => a.created_at.localeCompare(b.created_at))[0]
     : null;
