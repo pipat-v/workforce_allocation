@@ -3931,7 +3931,10 @@ function DayoffShiftEditor({
       if (selectedShift === "__empty__" && row.shift !== "") return false;
       if (selectedShift !== "__empty__" && row.shift !== selectedShift) return false;
     }
-    if (selectedJobSite !== "all" && row.jobSite !== selectedJobSite) return false;
+    if (selectedJobSite !== "all") {
+      if (selectedJobSite === "__empty__" && row.jobSite !== "") return false;
+      if (selectedJobSite !== "__empty__" && row.jobSite !== selectedJobSite) return false;
+    }
     if (!normalizedQuery) return true;
     return [row.empId, row.name, row.dept, row.jobSite, row.dayoff, row.shift]
       .some((v) => v.toLowerCase().includes(normalizedQuery));
@@ -3978,25 +3981,37 @@ function DayoffShiftEditor({
           })()
         : Promise.resolve({ rows: [] as Record<string, unknown>[], rawRows: [] as unknown[][] });
 
-    const manpowerPromise: Promise<Record<string, unknown>[]> =
-      manpowerFile?.file_path
-        ? downloadSheetRows(manpowerFile.file_path)
-        : Promise.resolve([] as Record<string, unknown>[]);
+    const skillCFDefaultPromise: Promise<Record<string, unknown>[]> = (async () => {
+      try {
+        const res = await fetch("/skillcf_default.xlsx");
+        if (!res.ok) return [];
+        const buffer = await res.arrayBuffer();
+        const wb = XLSX.read(buffer, { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
+        // หา header row ที่มี "User ID (Job Information)"
+        const hdrIdx = rawRows.findIndex((r) =>
+          (r as string[]).includes("User ID (Job Information)")
+        );
+        if (hdrIdx < 0) return [];
+        const hdr = rawRows[hdrIdx] as string[];
+        if (!hdr.includes("SKILL CF")) return [];
+        // แปลง raw rows เป็น Record โดยใช้ header row ที่หาได้
+        return rawRows.slice(hdrIdx + 1).map((r) => {
+          const row: Record<string, unknown> = {};
+          (r as unknown[]).forEach((val, i) => { if (hdr[i]) row[hdr[i]] = val; });
+          return row;
+        });
+      } catch { return []; }
+    })();
 
-    Promise.all([dayoffPromise, empPromise, manpowerPromise])
-      .then(([dayoffRows, { rows: empRows, rawRows: empRawRows }, manpowerRows]) => {
+    Promise.all([dayoffPromise, empPromise, skillCFDefaultPromise])
+      .then(([dayoffRows, { rows: empRows, rawRows: empRawRows }, skillCFDefaultRows]) => {
         if (!isMounted) return;
         const deptMap = new Map<string, string>();
         const timeMap = new Map<string, string>();
-        const jobSiteMap = new Map<string, string>();
         const allJobSites = new Set<string>();
-        for (const row of manpowerRows) {
-          const dept = String(row["หน่วยงาน"] ?? row["dept"] ?? "").trim();
-          const jobSite = String(row["หน้างาน"] ?? row["job_site"] ?? row["Job Site"] ?? "").trim();
-          if (jobSite) allJobSites.add(jobSite);
-          if (dept && jobSite && !jobSiteMap.has(dept)) jobSiteMap.set(dept, jobSite);
-        }
-        setJobSiteOptions(Array.from(allJobSites).sort());
+        const skillCFMap = new Map<string, string>();
         for (const row of empRows) {
           const empId = cleanEmpId(
             row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"],
@@ -4006,6 +4021,16 @@ function DayoffShiftEditor({
           ).trim();
           if (empId && dept) deptMap.set(empId, dept);
         }
+        // dropdown และ mapping ใช้เฉพาะ SKILL CF จาก skillcf_default.xlsx
+        for (const row of skillCFDefaultRows) {
+          const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+          const skillCF = String(row["SKILL CF"] ?? "").trim();
+          if (empId && skillCF) {
+            skillCFMap.set(empId, skillCF);
+            allJobSites.add(skillCF);
+          }
+        }
+        setJobSiteOptions(Array.from(allJobSites).filter(Boolean).sort());
         // ดึงเวลาเข้าจาก column index ตาม shift (AI=กะ1, AL=กะ2, AO=กะ3)
         const hdrIdx = empRawRows.findIndex((r) =>
           (r as unknown[]).some((c) =>
@@ -4033,7 +4058,7 @@ function DayoffShiftEditor({
         const parsed = dayoffRows.map((row, i) => {
           const r = toDayoffShiftEditorRow(row, i);
           if (!r.dept && deptMap.has(r.empId)) r.dept = deptMap.get(r.empId)!;
-          r.jobSite = jobSiteMap.get(r.dept) ?? "";
+          r.jobSite = skillCFMap.get(r.empId) ?? "";
           if (!r.shiftStart && timeMap.has(r.empId)) r.shiftStart = timeMap.get(r.empId)!;
           return r;
         });
@@ -4052,7 +4077,7 @@ function DayoffShiftEditor({
       });
 
     return () => { isMounted = false; };
-  }, [activeFile?.file_path, employeeMasterFile?.file_path, manpowerFile?.file_path]);
+  }, [activeFile?.file_path, employeeMasterFile?.file_path]);
 
   function updateRow(id: string, field: "dayoff" | "shift" | "shiftStart" | "jobSite", value: string) {
     const targets =
@@ -4166,6 +4191,7 @@ function DayoffShiftEditor({
         </select>
         <select value={selectedJobSite} onChange={(e) => setSelectedJobSite(e.target.value)}>
           <option value="all">ทุกหน้างาน</option>
+          <option value="__empty__">— ยังไม่มีข้อมูล</option>
           {jobSiteOptions.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
         <select value={selectedDayoff} onChange={(e) => setSelectedDayoff(e.target.value)}>
