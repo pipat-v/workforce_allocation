@@ -4044,32 +4044,8 @@ function DayoffShiftEditor({
           })()
         : Promise.resolve({ rows: [] as Record<string, unknown>[], rawRows: [] as unknown[][] });
 
-    const skillCFDefaultPromise: Promise<Record<string, unknown>[]> = (async () => {
-      try {
-        const res = await fetch("/skillcf_default.xlsx");
-        if (!res.ok) return [];
-        const buffer = await res.arrayBuffer();
-        const wb = XLSX.read(buffer, { type: "array" });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
-        // หา header row ที่มี "User ID (Job Information)"
-        const hdrIdx = rawRows.findIndex((r) =>
-          (r as string[]).includes("User ID (Job Information)")
-        );
-        if (hdrIdx < 0) return [];
-        const hdr = rawRows[hdrIdx] as string[];
-        if (!hdr.includes("SKILL CF")) return [];
-        // แปลง raw rows เป็น Record โดยใช้ header row ที่หาได้
-        return rawRows.slice(hdrIdx + 1).map((r) => {
-          const row: Record<string, unknown> = {};
-          (r as unknown[]).forEach((val, i) => { if (hdr[i]) row[hdr[i]] = val; });
-          return row;
-        });
-      } catch { return []; }
-    })();
-
-    Promise.all([dayoffPromise, empPromise, skillCFDefaultPromise])
-      .then(([dayoffRows, { rows: empRows, rawRows: empRawRows }, skillCFDefaultRows]) => {
+    Promise.all([dayoffPromise, empPromise])
+      .then(([dayoffRows, { rows: empRows, rawRows: empRawRows }]) => {
         if (!isMounted) return;
         const deptMap = new Map<string, string>();
         const timeMap = new Map<string, string>();
@@ -4083,14 +4059,11 @@ function DayoffShiftEditor({
             row["หน่วยงาน"] ?? row["Name (Section)"] ?? row["Department"] ?? "",
           ).trim();
           if (empId && dept) deptMap.set(empId, dept);
-        }
-        // dropdown และ mapping ใช้เฉพาะ SKILL CF จาก skillcf_default.xlsx
-        for (const row of skillCFDefaultRows) {
-          const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
-          const skillCF = String(row["SKILL CF"] ?? "").trim();
-          if (empId && skillCF) {
-            skillCFMap.set(empId, skillCF);
-            allJobSites.add(skillCF);
+          // อ่านหน้างานจาก employee_master (คอลัมน์ "หน้างาน")
+          const jobSite = String(row["หน้างาน"] ?? "").trim();
+          if (empId && jobSite) {
+            skillCFMap.set(empId, jobSite);
+            allJobSites.add(jobSite);
           }
         }
         setJobSiteOptions(Array.from(allJobSites).filter(Boolean).sort());
