@@ -4442,7 +4442,18 @@ function DayoffShiftEditor({
                   )}
                 </td>
                 <td className="shift-end-cell">
-                  {row.shiftStart ? toAmPm(addHoursToTime(row.shiftStart, 9)) : "—"}
+                  {row.shiftStart ? (() => {
+                    const end = addHoursToTime(row.shiftStart, 9);
+                    const [sh] = row.shiftStart.split(":").map(Number);
+                    const [eh] = end.split(":").map(Number);
+                    const nextDay = sh + 9 >= 24;
+                    return (
+                      <span>
+                        {toAmPm(end)}
+                        {nextDay && <span style={{ fontSize: 10, color: "#fcd34d", fontWeight: 600, marginLeft: 3 }}>+1D</span>}
+                      </span>
+                    );
+                  })() : "—"}
                 </td>
               </tr>
             ))}
@@ -4458,6 +4469,11 @@ function DayoffShiftEditor({
           </tbody>
         </table>
       </div>
+      {filteredRows.some((r) => r.shiftStart && (Number(r.shiftStart.split(":")[0]) + 9 >= 24)) && (
+        <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>
+          <span style={{ color: "#fcd34d", fontWeight: 600 }}>+1D</span> = เวลาออกงานเป็นวันถัดไป (กะกลางคืน)
+        </p>
+      )}
     </section>
   );
 }
