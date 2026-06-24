@@ -1675,6 +1675,14 @@ function addHoursToTime(timeStr: string, hours: number): string {
   return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
 }
 
+function toAmPm(timeStr: string): string {
+  if (!timeStr) return "";
+  const [h, m] = timeStr.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
+}
+
 function isHolidayDate(date: Date, holidaySet?: Set<string>) {
   if (holidaySet) return holidaySet.has(toDateKey(date));
   return isBuddhistHolyDay(date);
@@ -4087,7 +4095,10 @@ function DayoffShiftEditor({
             if (!empId) continue;
             const shiftKey = normalizeShiftKey(shiftColIdx >= 0 ? r[shiftColIdx] : "กะ1");
             const colIdx = SHIFT_TIME_COL[shiftKey] ?? SHIFT_TIME_COL["กะ1"];
-            const t = normalizeTimeText(r[colIdx]);
+            const raw = r[colIdx];
+            // ข้าม integer เพราะอาจเป็น skill level (0-5) ไม่ใช่ Excel time serial
+            if (typeof raw === "number" && raw % 1 === 0) continue;
+            const t = normalizeTimeText(raw);
             if (t) timeMap.set(empId, t);
           }
         }
@@ -4431,7 +4442,7 @@ function DayoffShiftEditor({
                   )}
                 </td>
                 <td className="shift-end-cell">
-                  {row.shiftStart ? addHoursToTime(row.shiftStart, 9) : "—"}
+                  {row.shiftStart ? toAmPm(addHoursToTime(row.shiftStart, 9)) : "—"}
                 </td>
               </tr>
             ))}
