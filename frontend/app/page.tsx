@@ -55,6 +55,7 @@ type DayoffShiftEditorRow = {
   empId: string;
   name: string;
   dept: string;
+  jobSite: string;
   dayoff: string;
   shift: string;
   shiftStart: string;
@@ -532,6 +533,7 @@ export default function Home() {
       raw = setRowCol(raw, row.dayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
       raw = setRowCol(raw, row.shift, "อยู่กะไหน", "shift", "กะ", "Shift");
       raw = setRowCol(raw, row.shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+      raw = setRowCol(raw, row.jobSite, "หน้างาน", "job_site", "Job Site");
       return raw;
     });
     const worksheet = XLSX.utils.json_to_sheet(workbookRows);
@@ -1639,6 +1641,7 @@ function toDayoffShiftEditorRow(row: Record<string, unknown>, index: number): Da
     empId,
     name: `${firstName} ${lastName}`.trim() || fallbackName || empId,
     dept: findRowCol(row, "หน่วยงาน", "Org. Unit Description", "Name (Section)", "แผนก", "Department"),
+    jobSite: "",
     dayoff: findRowCol(row, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"),
     shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
     shiftStart: normalizeTimeText(shiftStartRaw),
@@ -3377,6 +3380,7 @@ function MasterDataPage({
       <DayoffShiftEditor
         activeFile={activeMasterMap.dayoff_shift}
         employeeMasterFile={activeMasterMap.employee_master}
+        manpowerFile={activeMasterMap.manpower_plan}
         saveDayoffShiftRows={saveDayoffShiftRows}
       />
       </>) : null}
@@ -3873,16 +3877,20 @@ function PublicHolidayPage({
 function DayoffShiftEditor({
   activeFile,
   employeeMasterFile,
+  manpowerFile,
   saveDayoffShiftRows,
 }: {
   activeFile?: MasterFile;
   employeeMasterFile?: MasterFile;
+  manpowerFile?: MasterFile;
   saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
 }) {
   const [rows, setRows] = useState<DayoffShiftEditorRow[]>([]);
   const [originalRows, setOriginalRows] = useState<DayoffShiftEditorRow[]>([]);
+  const [jobSiteOptions, setJobSiteOptions] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("all");
+  const [selectedJobSite, setSelectedJobSite] = useState("all");
   const [selectedDayoff, setSelectedDayoff] = useState("all");
   const [selectedShift, setSelectedShift] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -3923,8 +3931,9 @@ function DayoffShiftEditor({
       if (selectedShift === "__empty__" && row.shift !== "") return false;
       if (selectedShift !== "__empty__" && row.shift !== selectedShift) return false;
     }
+    if (selectedJobSite !== "all" && row.jobSite !== selectedJobSite) return false;
     if (!normalizedQuery) return true;
-    return [row.empId, row.name, row.dept, row.dayoff, row.shift]
+    return [row.empId, row.name, row.dept, row.jobSite, row.dayoff, row.shift]
       .some((v) => v.toLowerCase().includes(normalizedQuery));
   });
 
@@ -3932,7 +3941,7 @@ function DayoffShiftEditor({
     rows
       .filter((row) => {
         const orig = originalRows.find((r) => r.id === row.id);
-        return orig && (orig.dayoff !== row.dayoff || orig.shift !== row.shift || orig.shiftStart !== row.shiftStart);
+        return orig && (orig.dayoff !== row.dayoff || orig.shift !== row.shift || orig.shiftStart !== row.shiftStart || orig.jobSite !== row.jobSite);
       })
       .map((r) => r.id),
   );
@@ -3969,11 +3978,25 @@ function DayoffShiftEditor({
           })()
         : Promise.resolve({ rows: [] as Record<string, unknown>[], rawRows: [] as unknown[][] });
 
-    Promise.all([dayoffPromise, empPromise])
-      .then(([dayoffRows, { rows: empRows, rawRows: empRawRows }]) => {
+    const manpowerPromise: Promise<Record<string, unknown>[]> =
+      manpowerFile?.file_path
+        ? downloadSheetRows(manpowerFile.file_path)
+        : Promise.resolve([] as Record<string, unknown>[]);
+
+    Promise.all([dayoffPromise, empPromise, manpowerPromise])
+      .then(([dayoffRows, { rows: empRows, rawRows: empRawRows }, manpowerRows]) => {
         if (!isMounted) return;
         const deptMap = new Map<string, string>();
         const timeMap = new Map<string, string>();
+        const jobSiteMap = new Map<string, string>();
+        const allJobSites = new Set<string>();
+        for (const row of manpowerRows) {
+          const dept = String(row["หน่วยงาน"] ?? row["dept"] ?? "").trim();
+          const jobSite = String(row["หน้างาน"] ?? row["job_site"] ?? row["Job Site"] ?? "").trim();
+          if (jobSite) allJobSites.add(jobSite);
+          if (dept && jobSite && !jobSiteMap.has(dept)) jobSiteMap.set(dept, jobSite);
+        }
+        setJobSiteOptions(Array.from(allJobSites).sort());
         for (const row of empRows) {
           const empId = cleanEmpId(
             row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"],
@@ -4010,6 +4033,7 @@ function DayoffShiftEditor({
         const parsed = dayoffRows.map((row, i) => {
           const r = toDayoffShiftEditorRow(row, i);
           if (!r.dept && deptMap.has(r.empId)) r.dept = deptMap.get(r.empId)!;
+          r.jobSite = jobSiteMap.get(r.dept) ?? "";
           if (!r.shiftStart && timeMap.has(r.empId)) r.shiftStart = timeMap.get(r.empId)!;
           return r;
         });
@@ -4028,14 +4052,16 @@ function DayoffShiftEditor({
       });
 
     return () => { isMounted = false; };
-  }, [activeFile?.file_path, employeeMasterFile?.file_path]);
+  }, [activeFile?.file_path, employeeMasterFile?.file_path, manpowerFile?.file_path]);
 
-  function updateRow(id: string, field: "dayoff" | "shift" | "shiftStart", value: string) {
+  function updateRow(id: string, field: "dayoff" | "shift" | "shiftStart" | "jobSite", value: string) {
     const targets =
       field === "dayoff"
         ? ["วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"]
         : field === "shift"
         ? ["อยู่กะไหน", "shift", "กะ", "Shift"]
+        : field === "jobSite"
+        ? ["หน้างาน", "job_site", "Job Site"]
         : ["เวลาเข้างาน", "เวลาเข้า", "shift_start"];
     setRows((current) =>
       current.map((row) =>
@@ -4126,17 +4152,21 @@ function DayoffShiftEditor({
         </button>
       </div>
 
-      <div className="table-filters dayoff-editor-filters">
+      <div className="dayoff-editor-filters">
         <input
           aria-label="ค้นหา dayoff shift"
-          placeholder="ค้นหา รหัส ชื่อ แผนก"
+          placeholder="ค้นหา รหัส ชื่อ หน่วยงาน"
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
-          <option value="all">ทุกแผนก</option>
+          <option value="all">ทุกหน่วยงาน</option>
           {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select value={selectedJobSite} onChange={(e) => setSelectedJobSite(e.target.value)}>
+          <option value="all">ทุกหน้างาน</option>
+          {jobSiteOptions.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
         <select value={selectedDayoff} onChange={(e) => setSelectedDayoff(e.target.value)}>
           <option value="all">ทุก Dayoff</option>
@@ -4153,11 +4183,11 @@ function DayoffShiftEditor({
           <option value="__empty__">— ยังไม่ได้ตั้ง</option>
           {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
-        <span className="dayoff-count">
-          {filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} คน
-          {modifiedIds.size > 0 && <span className="modified-badge">{modifiedIds.size} แก้ไข</span>}
-        </span>
       </div>
+      <span className="dayoff-count">
+        {filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} คน
+        {modifiedIds.size > 0 && <span className="modified-badge">{modifiedIds.size} แก้ไข</span>}
+      </span>
 
       {selectedIds.size > 0 && (
         <div className="dayoff-bulk-bar">
@@ -4217,7 +4247,8 @@ function DayoffShiftEditor({
               </th>
               <th>Emp ID</th>
               <th>ชื่อ</th>
-              <th>แผนก</th>
+              <th>หน่วยงาน</th>
+              <th>หน้างาน</th>
               <th>Dayoff</th>
               <th>Shift</th>
               <th>เวลาเข้า</th>
@@ -4243,6 +4274,12 @@ function DayoffShiftEditor({
                 <td>{row.empId}</td>
                 <td>{row.name}</td>
                 <td className="dept-cell">{row.dept || "—"}</td>
+                <td>
+                  <select value={row.jobSite} onChange={(e) => updateRow(row.id, "jobSite", e.target.value)}>
+                    <option value="">-</option>
+                    {jobSiteOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </td>
                 <td>
                   <select value={row.dayoff} onChange={(e) => updateRow(row.id, "dayoff", e.target.value)}>
                     <option value="">-</option>
@@ -4283,13 +4320,13 @@ function DayoffShiftEditor({
               </tr>
             ))}
             {!activeFile ? (
-              <tr><td colSpan={8}>อัปโหลด Dayoff & Shift master ก่อน จึงจะแก้ไขในหน้านี้ได้</td></tr>
+              <tr><td colSpan={9}>อัปโหลด Dayoff & Shift master ก่อน จึงจะแก้ไขในหน้านี้ได้</td></tr>
             ) : null}
             {activeFile && isLoading ? (
-              <tr><td colSpan={8}>Loading Dayoff & Shift...</td></tr>
+              <tr><td colSpan={9}>Loading Dayoff & Shift...</td></tr>
             ) : null}
             {activeFile && !isLoading && filteredRows.length === 0 ? (
-              <tr><td colSpan={8}>ไม่พบข้อมูลที่ค้นหา</td></tr>
+              <tr><td colSpan={9}>ไม่พบข้อมูลที่ค้นหา</td></tr>
             ) : null}
           </tbody>
         </table>

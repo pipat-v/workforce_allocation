@@ -1974,8 +1974,34 @@ button {
 }
 
 .dayoff-editor-filters {
-  grid-template-columns: minmax(200px, 1fr) 170px 190px 150px auto;
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.dayoff-editor-filters input[type="search"],
+.dayoff-editor-filters select {
+  min-height: 40px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 0.875rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.dayoff-editor-filters input[type="search"] {
+  flex: 2 1 0;
+  min-width: 0;
+}
+
+.dayoff-editor-filters select {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .dayoff-count {
@@ -1985,6 +2011,7 @@ button {
   color: var(--muted);
   font-size: 13px;
   white-space: nowrap;
+  margin-top: 6px;
 }
 
 .modified-badge {
