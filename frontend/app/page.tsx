@@ -1341,6 +1341,7 @@ export default function Home() {
           <OTDashboard
             reportData={reportData}
             activeMasterMap={activeMasterMap}
+            isLoadingReport={isLoadingReport}
           />
         ) : null}
 
@@ -6408,9 +6409,11 @@ type OTRecord = AttendanceRecord & { shiftEnd: string; otHours: number };
 function OTDashboard({
   reportData,
   activeMasterMap,
+  isLoadingReport,
 }: {
   reportData: ReportData | null;
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
+  isLoadingReport: boolean;
 }) {
   const [shiftEndMap, setShiftEndMap] = useState<Record<string, string>>(() => {
     if (typeof window === "undefined") return {};
@@ -6615,7 +6618,11 @@ function OTDashboard({
 
       {!reportData ? (
         <div className="panel ot-empty">
-          <p>กรุณาเลือกวันที่และโหลดข้อมูลการเข้างานก่อนครับ</p>
+          {isLoadingReport ? (
+            <p>กำลังโหลดข้อมูล...</p>
+          ) : (
+            <p>กรุณาเลือกวันที่และโหลดข้อมูลการเข้างานก่อนครับ</p>
+          )}
         </div>
       ) : (
         <>
