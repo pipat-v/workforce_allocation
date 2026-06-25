@@ -128,14 +128,6 @@ type AttendanceRecord = {
   minutesLate: number;
 };
 
-type DailyStat = {
-  isoDate: string;
-  present: number;
-  late: number;
-  absent: number;
-  total: number;
-};
-
 type ReportData = {
   targetDate: string;
   isoTargetDate: string;
@@ -229,7 +221,6 @@ export default function Home() {
   const [warnCountMap, setWarnCountMap] = useState<Record<string, number>>({});
   const [warnDates, setWarnDates] = useState<Record<string, string[]>>({});
   const [monthlyLateMinutes, setMonthlyLateMinutes] = useState<Record<string, number>>({});
-  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [prevMonthLateCounts, setPrevMonthLateCounts] = useState<Record<string, number>>({});
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [showRunPicker, setShowRunPicker] = useState(false);
@@ -511,7 +502,19 @@ export default function Home() {
             is_active: true,
           });
 
-        if (insertError) { setError(insertError.message); return; }
+        if (insertError) {
+          // Rollback: re-activate the old file so the system is never left with no active master
+          await supabase
+            .from("master_data_files")
+            .update({ is_active: true })
+            .is("owner_id", null)
+            .eq("file_type", item.key)
+            .eq("is_active", false)
+            .order("created_at", { ascending: false })
+            .limit(1);
+          setError(insertError.message);
+          return;
+        }
       }
 
       setMasterUploads({
@@ -835,7 +838,6 @@ export default function Home() {
       const monthlyLateCounts: Record<string, number> = {};
       const lateMinutesAcc: Record<string, number> = {};
       const prevMonthLateAcc: Record<string, number> = {};
-      const dailyStatsAcc: Record<string, DailyStat> = {};
       const [tY, tM] = latestReport.targetMonthKey.split("-").map(Number);
       const prevMonthKey = tM === 1
         ? `${tY - 1}-12`
@@ -881,15 +883,6 @@ export default function Home() {
             monthlyLateCounts[lateRow.empId] = (monthlyLateCounts[lateRow.empId] ?? 0) + 1;
             lateMinutesAcc[lateRow.empId] = (lateMinutesAcc[lateRow.empId] ?? 0) + lateRow.minutesLate;
           }
-          if (dayReport.isoTargetDate && !dailyStatsAcc[dayReport.isoTargetDate]) {
-            dailyStatsAcc[dayReport.isoTargetDate] = {
-              isoDate: dayReport.isoTargetDate,
-              present: dayReport.present,
-              late: dayReport.late,
-              absent: dayReport.absent,
-              total: dayReport.totalEmployees,
-            };
-          }
         } else if (dayReport.targetMonthKey === prevMonthKey) {
           for (const lateRow of dayReport.lateRows) {
             prevMonthLateAcc[lateRow.empId] = (prevMonthLateAcc[lateRow.empId] ?? 0) + 1;
@@ -899,7 +892,6 @@ export default function Home() {
 
       setMonthlyLateMinutes(lateMinutesAcc);
       setPrevMonthLateCounts(prevMonthLateAcc);
-      setDailyStats(Object.values(dailyStatsAcc).sort((a, b) => a.isoDate.localeCompare(b.isoDate)));
       setReportData({
         ...latestReport,
         monthlyLateCounts,
@@ -1245,6 +1237,7 @@ export default function Home() {
             downloadTimestampFile={downloadTimestampFile}
             hasAllActiveMasters={hasAllActiveMasters}
             isCreatingRun={isCreatingRun}
+            isLoadingReport={isLoadingReport}
             latestRun={latestRun}
             runs={runs}
             setTimestampFile={setTimestampFile}
@@ -1279,7 +1272,6 @@ export default function Home() {
 
         {activeTab === "report" ? (
           <ReportDashboard
-            dailyStats={dailyStats}
             deptFilter={reportLateDept}
             monthlyLateMinutes={monthlyLateMinutes}
             prevMonthLateCounts={prevMonthLateCounts}
@@ -1962,7 +1954,10 @@ function normalizeTimeText(value: unknown) {
   const text = String(value ?? "").trim();
   const match = text.match(/(\d{1,2}):(\d{2})/);
   if (!match) return "";
-  return `${match[1].padStart(2, "0")}:${match[2]}`;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (h > 23 || m > 59) return "";
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 function excelSerialDateToDate(value: number) {
@@ -2759,6 +2754,10 @@ function parseCombinedSheet1(rows: Record<string, unknown>[]): CombinedEmployeeR
     "หน่วยงาน", "title (position)", "หน้างาน", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
   ]);
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  if (rows.length > 0) {
+    const hasEmpIdCol = Object.keys(rows[0]).some((k) => norm(k) === "employee id");
+    if (!hasEmpIdCol) throw new Error("ไม่พบคอลัมน์ 'Employee ID' ในไฟล์ — กรุณาใช้ไฟล์ที่ Export จากระบบนี้");
+  }
   return rows.map((row) => {
     const empId = cleanEmpId(row["Employee ID"] ?? "");
     if (!empId) return null;
@@ -2811,6 +2810,7 @@ function computeEmployeeDiff(
     chk("วันหยุด", cur.dayoff, nr.dayoff);
     const allSkills = new Set([...Object.keys(cur.skills), ...Object.keys(nr.skills)]);
     for (const s of allSkills) {
+      if (!s.trim()) continue;
       const fl = cur.skills[s] ?? 0;
       const tl = nr.skills[s] ?? 0;
       if (fl !== tl) chk(`ทักษะ: ${s}`, String(fl), String(tl));
@@ -2820,13 +2820,6 @@ function computeEmployeeDiff(
   }
   return { added, removed, changed, unchangedCount, newRows, newManpowerRows };
 }
-
-const masterColumnColors: Record<MasterFileKey, string> = {
-  employee_master: "#2563eb",
-  manpower_plan: "#d97706",
-  skill_matrix: "#10b981",
-  dayoff_shift: "#7c3aed",
-};
 
 function DiffPreviewModal({
   diff,
@@ -3046,9 +3039,13 @@ function MasterDataPage({
         .filter((r) => r.empId && r.skill);
       const skillNames = Array.from(new Set(skillFlatRows.map((r) => r.skill))).sort();
       const dayoffMap = buildDayoffShiftMap(dayoffRows);
+      const skippedCount = empRows.filter(
+        (row) => !cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]),
+      ).length;
       const wb = buildCombinedExcelWorkbook(empRows, dayoffMap, skillFlatRows, manpowerRows, skillNames, skillCFMap);
       const now = new Date().toLocaleDateString("th-TH").replace(/\//g, "-");
       XLSX.writeFile(wb, `master-พนักงาน-${now}.xlsx`);
+      if (skippedCount > 0) setMessage(`Export สำเร็จ — พนักงาน ${skippedCount} คนถูกข้ามเพราะไม่มี Employee ID`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Export ไม่สำเร็จ");
     } finally {
@@ -3061,6 +3058,17 @@ function MasterDataPage({
     setIsSavingCombined(true);
     setError("");
     try {
+      const ext = combinedFile.name.split(".").pop()?.toLowerCase() ?? "";
+      if (!["xlsx", "xls"].includes(ext)) {
+        setError("รองรับเฉพาะไฟล์ .xlsx หรือ .xls เท่านั้น");
+        setIsSavingCombined(false);
+        return;
+      }
+      if (combinedFile.size > 50 * 1024 * 1024) {
+        setError("ไฟล์มีขนาดใหญ่เกินไป — สูงสุด 50 MB");
+        setIsSavingCombined(false);
+        return;
+      }
       const buffer = await combinedFile.arrayBuffer();
       const wb = XLSX.read(buffer, { type: "array", cellDates: true });
       const sheet1Name = wb.SheetNames.find((n) => n.includes("พนักงาน") || n.toLowerCase().includes("employee")) ?? wb.SheetNames[0];
@@ -3480,7 +3488,6 @@ function MasterDataPage({
       <DayoffShiftEditor
         activeFile={activeMasterMap.dayoff_shift}
         employeeMasterFile={activeMasterMap.employee_master}
-        manpowerFile={activeMasterMap.manpower_plan}
         saveDayoffShiftRows={saveDayoffShiftRows}
       />
       </>) : null}
@@ -3563,7 +3570,6 @@ function HolidayMasterPage({
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<HolidayRow["type"]>("buddhist_holy_day");
   const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
-  const [seedYear, setSeedYear] = useState<string | null>(null);
 
   useEffect(() => {
     void loadHolidays();
@@ -3599,21 +3605,6 @@ function HolidayMasterPage({
     const { error } = await supabase.from("holidays").delete().eq("id", id);
     if (error) { alert(`ลบไม่สำเร็จ: ${error.message}`); return; }
     await loadHolidays();
-  }
-
-  async function seedBuddhistHolyDays(year: string) {
-    const dates = buddhistHolyDaysByYear[year];
-    if (!dates) return;
-    setSeedYear(year);
-    const existingDates = new Set(holidays.map((h) => h.date));
-    const toInsert = Array.from(dates)
-      .filter((d) => !existingDates.has(d))
-      .map((d) => ({ date: d, name: "วันพระ", type: "buddhist_holy_day" as const }));
-    if (toInsert.length > 0) {
-      await supabase.from("holidays").insert(toInsert);
-    }
-    await loadHolidays();
-    setSeedYear(null);
   }
 
   const existingYears = Array.from(new Set(holidays.map((h) => h.date.substring(0, 4)))).sort();
@@ -3977,12 +3968,10 @@ function PublicHolidayPage({
 function DayoffShiftEditor({
   activeFile,
   employeeMasterFile,
-  manpowerFile,
   saveDayoffShiftRows,
 }: {
   activeFile?: MasterFile;
   employeeMasterFile?: MasterFile;
-  manpowerFile?: MasterFile;
   saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
 }) {
   const [rows, setRows] = useState<DayoffShiftEditorRow[]>([]);
@@ -3997,7 +3986,6 @@ function DayoffShiftEditor({
   const [bulkDayoff, setBulkDayoff] = useState("");
   const [bulkShift, setBulkShift] = useState("");
   const [bulkShiftStart, setBulkShiftStart] = useState("");
-  const bulkTimeRef = useRef<HTMLInputElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -4211,20 +4199,19 @@ function DayoffShiftEditor({
   }
 
   function applyBulk() {
-    const timeVal = bulkTimeRef.current?.value ?? "";
-    if (!bulkDayoff && !bulkShift && !timeVal) return;
+    if (!bulkDayoff && !bulkShift && !bulkShiftStart) return;
     setRows((current) =>
       current.map((row) => {
         if (!selectedIds.has(row.id)) return row;
         let raw = row.raw;
         if (bulkDayoff) raw = setRowCol(raw, bulkDayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
         if (bulkShift) raw = setRowCol(raw, bulkShift, "อยู่กะไหน", "shift", "กะ", "Shift");
-        if (timeVal) raw = setRowCol(raw, timeVal, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+        if (bulkShiftStart) raw = setRowCol(raw, bulkShiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
         return {
           ...row,
           dayoff: bulkDayoff || row.dayoff,
           shift: bulkShift || row.shift,
-          shiftStart: timeVal || row.shiftStart,
+          shiftStart: bulkShiftStart || row.shiftStart,
           raw,
         };
       }),
@@ -4233,7 +4220,6 @@ function DayoffShiftEditor({
     setBulkDayoff("");
     setBulkShift("");
     setBulkShiftStart("");
-    if (bulkTimeRef.current) bulkTimeRef.current.value = "";
   }
 
   async function handleSave() {
@@ -4375,10 +4361,9 @@ function DayoffShiftEditor({
             {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
           <input
-            ref={bulkTimeRef}
             type="time"
+            value={bulkShiftStart}
             onChange={(e) => setBulkShiftStart(e.target.value)}
-            onBlur={(e) => { if (e.target.value) setBulkShiftStart(e.target.value); }}
             title="เปลี่ยนเวลาเข้างาน"
             style={{ height: 32, fontSize: 12, padding: "0 6px", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", cursor: "pointer" }}
           />
@@ -4487,7 +4472,6 @@ function DayoffShiftEditor({
                   {row.shiftStart ? (() => {
                     const end = addHoursToTime(row.shiftStart, 9);
                     const [sh] = row.shiftStart.split(":").map(Number);
-                    const [eh] = end.split(":").map(Number);
                     const nextDay = sh + 9 >= 24;
                     return (
                       <span>
@@ -4947,6 +4931,7 @@ function TimestampPage({
   downloadTimestampFile,
   hasAllActiveMasters,
   isCreatingRun,
+  isLoadingReport,
   latestRun,
   runs,
   setTimestampFile,
@@ -4957,6 +4942,7 @@ function TimestampPage({
   downloadTimestampFile: (run: AllocationRun) => Promise<void>;
   hasAllActiveMasters: boolean;
   isCreatingRun: boolean;
+  isLoadingReport: boolean;
   latestRun?: AllocationRun;
   runs: AllocationRun[];
   setTimestampFile: (file: File | null) => void;
@@ -5121,7 +5107,8 @@ function TimestampPage({
                   <button
                     className="icon-button danger"
                     onClick={() => setPendingDelete(run)}
-                    title="ลบ"
+                    title={isLoadingReport ? "กำลังโหลด report — รอสักครู่" : "ลบ"}
+                    disabled={isLoadingReport}
                     type="button"
                   >
                     <Trash2 size={15} />
@@ -5361,34 +5348,6 @@ function TimestampWithDeptPage({
   );
 }
 
-function LatestMasterFiles({
-  activeMasterMap,
-}: {
-  activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
-}) {
-  return (
-    <div className="file-stack">
-      {masterFileTypes.map((item) => {
-        const activeFile = activeMasterMap[item.key];
-        return (
-          <div className="file-card" key={item.key}>
-            <FileSpreadsheet size={24} />
-            <div>
-              <strong>{activeFile?.original_filename ?? item.label}</strong>
-              <span>
-                {activeFile
-                  ? new Date(activeFile.created_at).toLocaleString("th-TH")
-                  : "ยังไม่มีไฟล์"}
-              </span>
-            </div>
-            <Download size={18} />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function ResultsPanel({
   deptFilter = "all",
   query = "",
@@ -5587,7 +5546,6 @@ function TablePagination({
 }
 
 function ReportDashboard({
-  dailyStats,
   deptFilter,
   monthlyLateMinutes,
   prevMonthLateCounts,
@@ -5600,7 +5558,6 @@ function ReportDashboard({
   warnCountMap,
   warnDates,
 }: {
-  dailyStats: DailyStat[];
   deptFilter: string;
   monthlyLateMinutes: Record<string, number>;
   prevMonthLateCounts: Record<string, number>;
@@ -5621,7 +5578,6 @@ function ReportDashboard({
   const isoDate = reportData?.isoTargetDate ?? "";
   const [deptConfirmations, setDeptConfirmations] = useState<Map<string, { confirmed_by: string; confirmed_at: string }>>(new Map());
   const [confirmPanelCollapsed, setConfirmPanelCollapsed] = useState(true);
-  const [warnPanelCollapsed, setWarnPanelCollapsed] = useState(true);
   const [lateAbsentCollapsed, setLateAbsentCollapsed] = useState(true);
 
   useEffect(() => {
@@ -5686,9 +5642,7 @@ function ReportDashboard({
   const lateRate = scopedCameToWork
     ? ((scopedLate / scopedCameToWork) * 100).toFixed(1)
     : "0.0";
-  const maxDeptTotal = Math.max(...data.deptRows.map((row) => row.present + row.late + row.absent), 1);
   const presentPercent = activeTotal ? (scopedPresent / activeTotal) * 100 : 0;
-  const latePercent = activeTotal ? (scopedLate / activeTotal) * 100 : 0;
   const absentPercent = activeTotal ? (scopedAbsent / activeTotal) * 100 : 0;
   const warnedOnDate = new Set(
     Object.entries(warnDates)
@@ -5735,8 +5689,6 @@ function ReportDashboard({
   )
     .map(([dept, count]) => ({ dept, count }))
     .sort((a, b) => b.count - a.count);
-  const lateDeptTotal = Math.max(lateDeptRows.reduce((sum, row) => sum + row.count, 0), 1);
-  const pieColors = ["#2563eb", "#0f172a", "#10b981", "#f59e0b", "#dc2626", "#7c3aed"];
   const selectedDeptLabel = selectedDept === "all" ? "ทั้งโรงงาน" : selectedDept;
   const normalizedQuery = query.trim().toLowerCase();
   const tableSourceRows = scopedRecords.filter((r) => r.status === "Late" || r.status === "Absent" || r.status === "DayOff");
@@ -6281,31 +6233,6 @@ function ReportDashboard({
   );
 }
 
-function ReportMetric({
-  label,
-  tone,
-  value,
-  sublabel,
-  isRate,
-  icon,
-}: {
-  label: string;
-  tone?: "green" | "amber" | "red" | "purple";
-  value: number | string;
-  sublabel?: string;
-  isRate?: boolean;
-  icon?: ReactNode;
-}) {
-  return (
-    <div className={`report-metric${tone ? ` ${tone}` : ""}${isRate ? " is-rate" : ""}`}>
-      {icon && <div className="report-metric-icon">{icon}</div>}
-      <strong className="report-metric-value">{value}</strong>
-      <span className="report-metric-label">{label}</span>
-      {sublabel && <span className="report-metric-sub">{sublabel}</span>}
-    </div>
-  );
-}
-
 function KpiCard({
   icon,
   tone,
@@ -6380,45 +6307,6 @@ function TrendBadge({ curr, prev }: { curr: number; prev: number }) {
   if (curr > prev) return <span className="trend-up" title={`+${curr - prev} จากเดือนก่อน`}>↑{curr - prev}</span>;
   if (curr < prev) return <span className="trend-down" title={`-${prev - curr} จากเดือนก่อน`}>↓{prev - curr}</span>;
   return <span className="trend-same" title="เท่ากับเดือนก่อน">→</span>;
-}
-
-function HeatmapPanel({ dailyStats, targetMonthKey }: { dailyStats: DailyStat[]; targetMonthKey: string }) {
-  if (!targetMonthKey || dailyStats.length === 0) return null;
-  const [yearNum, monthNum] = targetMonthKey.split("-").map(Number);
-  const daysInMonth = new Date(yearNum, monthNum, 0).getDate();
-  const byDate = Object.fromEntries(dailyStats.map((s) => [s.isoDate, s]));
-  const thaiMonths = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-
-  return (
-    <div className="panel heatmap-panel">
-      <div className="panel-title-row">
-        <h3>สถิติรายวัน — {thaiMonths[monthNum]} {yearNum + 543}</h3>
-        <div className="heatmap-legend">
-          <span><i className="heatmap-dot good" />≥95%</span>
-          <span><i className="heatmap-dot warn" />85–94%</span>
-          <span><i className="heatmap-dot bad" />&lt;85%</span>
-        </div>
-      </div>
-      <div className="heatmap-grid">
-        {Array.from({ length: daysInMonth }, (_, i) => {
-          const day = i + 1;
-          const iso = `${yearNum}-${String(monthNum).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-          const stat = byDate[iso];
-          const rate = stat && stat.total > 0 ? ((stat.present + stat.late) / stat.total) * 100 : null;
-          const tone = rate === null ? "no-data" : rate >= 95 ? "good" : rate >= 85 ? "warn" : "bad";
-          const tip = stat
-            ? `${day}/${monthNum}: ${rate!.toFixed(0)}%  P:${stat.present} L:${stat.late} A:${stat.absent}`
-            : `${day}/${monthNum}: ไม่มีข้อมูล`;
-          return (
-            <div key={iso} className={`heatmap-cell ${tone}`} title={tip}>
-              <span className="heatmap-day">{day}</span>
-              {rate !== null && <span className="heatmap-rate">{rate.toFixed(0)}%</span>}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 function formatDateTH(isoDate: string) {
