@@ -4448,19 +4448,19 @@ button.stacked-row {
 }
 
 .master-sub-tab-primary {
-  color: #047857;
-  background: #d1fae5;
-  border-color: #059669;
+  color: #b45309;
+  background: #fef3c7;
+  border-color: #d97706;
   font-weight: 600;
 }
 .master-sub-tab-primary:hover {
-  background: #a7f3d0;
-  color: #065f46;
+  background: #fde68a;
+  color: #92400e;
 }
 .master-sub-tab-primary.active {
-  background: #059669;
+  background: #d97706;
   color: #ffffff;
-  border-color: #047857;
+  border-color: #b45309;
 }
 
 /* ── Holiday Master Page ── */
