@@ -6709,7 +6709,7 @@ function OTDashboard({
                   <th rowSpan={2} className="ot-th-num">เป้า<br />(ชม.)</th>
                   <th colSpan={4} className="ot-th-group ot-th-group-ot">เปรียบเทียบค่าล่วงเวลา</th>
                   <th rowSpan={2} className="ot-th-avg-yellow">เฉลี่ย<br />คน/วัน</th>
-                  <th rowSpan={2} className="ot-th-mgr">สถาพ / ผจก.</th>
+                  <th rowSpan={2} className="ot-th-mgr ot-th-mgr-header">สถาพ / ผจก.</th>
                 </tr>
                 <tr>
                   <th className="ot-th-sub ot-th-vert">ลาป่วย</th>
@@ -6717,10 +6717,10 @@ function OTDashboard({
                   <th className="ot-th-sub ot-th-vert">ขาดงาน</th>
                   <th className="ot-th-sub ot-th-vert">มาสาย</th>
                   <th className="ot-th-sub ot-th-vert">วันหยุด</th>
-                  <th className="ot-th-sub ot-th-wide">OT ปกติ<br /><small>1.5×</small></th>
-                  <th className="ot-th-sub ot-th-wide">OT<br />วันหยุด</th>
-                  <th className="ot-th-sub">รวม<br />(ชม.)</th>
-                  <th className="ot-th-sub">เฉลี่ย<br />/คน</th>
+                  <th className="ot-th-sub ot-th-vert-num">ปกติ 1.5×</th>
+                  <th className="ot-th-sub ot-th-vert-num">วันหยุด</th>
+                  <th className="ot-th-sub ot-th-vert-num">รวม ชม.</th>
+                  <th className="ot-th-sub ot-th-vert-num">เฉลี่ย</th>
                 </tr>
               </thead>
               <tbody>

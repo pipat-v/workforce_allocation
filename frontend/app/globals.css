@@ -5071,17 +5071,31 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 
 .ot-th-num {
   text-align: center;
-  width: 44px;
+  width: 42px;
+  vertical-align: middle;
 }
 
 .ot-th-vert {
   writing-mode: vertical-lr;
   text-orientation: mixed;
   white-space: nowrap;
-  height: 78px;
+  height: 82px;
   text-align: center;
   padding: 6px 2px !important;
-  width: 28px;
+  width: 30px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: bottom;
+}
+
+.ot-th-vert-num {
+  writing-mode: vertical-lr;
+  text-orientation: mixed;
+  white-space: nowrap;
+  height: 82px;
+  text-align: center;
+  padding: 6px 2px !important;
+  width: 46px;
   font-size: 11px;
   font-weight: 600;
   vertical-align: bottom;
@@ -5343,6 +5357,11 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   font-weight: 700;
   text-align: center;
   width: 52px;
+  vertical-align: middle;
+}
+
+.ot-th-mgr-header {
+  vertical-align: middle;
 }
 
 .ot-td-avg-yellow {
