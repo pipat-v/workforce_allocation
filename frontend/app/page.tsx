@@ -183,6 +183,7 @@ const publicWorkspace = "public";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays" | "public_holidays" | "dayoff_shift">("files");
   const [masterUploads, setMasterUploads] = useState<MasterUploadState>({
     employee_master: null,
     manpower_plan: null,
@@ -1092,6 +1093,14 @@ export default function Home() {
         <section className="dashboard-head">
           <div className="dashboard-head-left">
             <h2>{activeNav?.label ?? "Dashboard"}</h2>
+            {activeTab === "master" ? (
+              <div className="master-sub-tabs">
+                <button className={`master-sub-tab${masterSubTab === "files" ? " active" : ""}`} onClick={() => setMasterSubTab("files")}><FileSpreadsheet size={15} />Master Files</button>
+                <button className={`master-sub-tab${masterSubTab === "holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("holidays")}><CalendarDays size={15} />วันพระ</button>
+                <button className={`master-sub-tab${masterSubTab === "public_holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("public_holidays")}><CalendarDays size={15} />วันหยุดประจำปี</button>
+                <button className={`master-sub-tab${masterSubTab === "dayoff_shift" ? " active" : ""}`} onClick={() => setMasterSubTab("dayoff_shift")}><CalendarClock size={15} />Shift & Dayoff</button>
+              </div>
+            ) : null}
             {activeTab === "dashboard" && allDeptOptions.length > 0 ? (
               <select
                 aria-label="กรองหน่วยงาน"
@@ -1219,6 +1228,7 @@ export default function Home() {
             activeMasterMap={activeMasterMap}
             isSavingMasters={isSavingMasters}
             masterFileHistory={masterFileHistory}
+            masterSubTab={masterSubTab}
             masterUploads={masterUploads}
             onDeleteMasterFile={deleteMasterFile}
             onHolidaysChanged={(dates) => setHolidayDates(dates)}
@@ -2949,6 +2959,7 @@ function MasterDataPage({
   activeMasterMap,
   isSavingMasters,
   masterFileHistory,
+  masterSubTab,
   masterUploads,
   onDeleteMasterFile,
   onHolidaysChanged,
@@ -2962,6 +2973,7 @@ function MasterDataPage({
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   isSavingMasters: boolean;
   masterFileHistory: MasterFile[];
+  masterSubTab: "files" | "holidays" | "public_holidays" | "dayoff_shift";
   masterUploads: MasterUploadState;
   onDeleteMasterFile: (file: MasterFile) => Promise<void>;
   onHolidaysChanged: (dates: Set<string>) => void;
@@ -2972,7 +2984,6 @@ function MasterDataPage({
   setMessage: (msg: string) => void;
   setMasterUploads: Dispatch<SetStateAction<MasterUploadState>>;
 }) {
-  const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays" | "public_holidays" | "dayoff_shift">("files");
   const [combinedFile, setCombinedFile] = useState<File | null>(null);
   const [isSavingCombined, setIsSavingCombined] = useState(false);
   const [diffResult, setDiffResult] = useState<EmployeeDiff | null>(null);
@@ -3225,36 +3236,6 @@ function MasterDataPage({
 
   return (
     <section className="md-page">
-      <div className="master-sub-tabs">
-        <button
-          className={`master-sub-tab${masterSubTab === "files" ? " active" : ""}`}
-          onClick={() => setMasterSubTab("files")}
-        >
-          <FileSpreadsheet size={15} />
-          Master Files
-        </button>
-        <button
-          className={`master-sub-tab${masterSubTab === "holidays" ? " active" : ""}`}
-          onClick={() => setMasterSubTab("holidays")}
-        >
-          <CalendarDays size={15} />
-          วันพระ
-        </button>
-        <button
-          className={`master-sub-tab${masterSubTab === "public_holidays" ? " active" : ""}`}
-          onClick={() => setMasterSubTab("public_holidays")}
-        >
-          <CalendarDays size={15} />
-          วันหยุดประจำปี
-        </button>
-        <button
-          className={`master-sub-tab${masterSubTab === "dayoff_shift" ? " active" : ""}`}
-          onClick={() => setMasterSubTab("dayoff_shift")}
-        >
-          <CalendarClock size={15} />
-          Shift & Dayoff
-        </button>
-      </div>
 
       {masterSubTab === "holidays" ? (
         <HolidayMasterPage onHolidaysChanged={onHolidaysChanged} />
