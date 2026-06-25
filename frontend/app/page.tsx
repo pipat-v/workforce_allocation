@@ -547,7 +547,7 @@ export default function Home() {
       raw = setRowCol(raw, row.dayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
       raw = setRowCol(raw, row.shift, "อยู่กะไหน", "shift", "กะ", "Shift");
       raw = setRowCol(raw, row.shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
-      raw = setRowCol(raw, row.jobSite, "หน้างาน", "job_site", "Job Site");
+      raw = setRowCol(raw, row.jobSite, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
       return raw;
     });
     const worksheet = XLSX.utils.json_to_sheet(workbookRows);
@@ -2840,7 +2840,7 @@ function computeEmployeeDiff(
     chk("ชื่อ", `${cur.firstName} ${cur.lastName}`.trim(), `${nr.firstName} ${nr.lastName}`.trim());
     chk("หน่วยงาน", cur.dept, nr.dept);
     chk("ตำแหน่ง", cur.position, nr.position);
-    chk("หน้างาน", cur.jobSite, nr.jobSite);
+    chk("หน่วยงานย่อย/Skill", cur.jobSite, nr.jobSite);
     chk("กะ", cur.shift, nr.shift);
     chk("เวลาเข้างาน", cur.shiftStart, nr.shiftStart);
     chk("วันหยุด", cur.dayoff, nr.dayoff);
@@ -4303,7 +4303,7 @@ function DayoffShiftEditor({
             if (!nextDepts.has(selectedDept)) setSelectedDept("all");
           }
         }}>
-          <option value="all">ทุกหน้างาน</option>
+          <option value="all">ทุกหน่วยงานย่อย</option>
           <option value="__empty__">— ยังไม่มีข้อมูล</option>
           {availableJobSiteOptions.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
