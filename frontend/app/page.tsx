@@ -6626,6 +6626,78 @@ function OTDashboard({
         </div>
       ) : (
         <>
+          {/* ── Bar Chart ── */}
+          <div className="panel ot-chart-panel">
+            <p className="ot-chart-title">
+              วันที่ {reportData.targetDate}&nbsp;&nbsp;เปรียบเทียบ เฉลี่ยชั่วโมง O.T. ต่อคน/วัน
+            </p>
+            <div className="ot-chart-layout">
+              {/* Y-axis labels */}
+              <div className="ot-yaxis-col" style={{ height: TRACK_H + XLAB_H }}>
+                {yTicks.slice().reverse().map((tick) => (
+                  <span
+                    key={tick}
+                    className="ot-ytick-label"
+                    style={{ bottom: (tick / yMax) * TRACK_H + XLAB_H - 7 }}
+                  >
+                    {tick}
+                  </span>
+                ))}
+              </div>
+              {/* Chart track */}
+              <div className="ot-chart-track-wrap" style={{ height: TRACK_H + XLAB_H }}>
+                {/* Gridlines */}
+                {yTicks.map((tick) => (
+                  <div
+                    key={tick}
+                    className={`ot-gridline-h${tick === 0 ? " ot-gridline-base" : ""}`}
+                    style={{ bottom: (tick / yMax) * TRACK_H + XLAB_H }}
+                  />
+                ))}
+                {/* Target line */}
+                <div
+                  className="ot-target-line-h"
+                  style={{ bottom: (otTarget / yMax) * TRACK_H + XLAB_H }}
+                />
+                {/* Bars */}
+                <div className="ot-bars-flex" style={{ height: TRACK_H, bottom: XLAB_H }}>
+                  {chartRows.map((row, i) => {
+                    const avg = row.activeWorkers > 0 ? row.totalOTHours / row.activeWorkers : 0;
+                    const barH = (avg / yMax) * TRACK_H;
+                    const isTotal = row.dept === "รวมทั้งหมด";
+                    const color = isTotal ? "#475569" : DEPT_BAR_COLORS[i % DEPT_BAR_COLORS.length];
+                    return (
+                      <div key={row.dept} className={`ot-bar-item-v2${isTotal ? " ot-bar-total-v2" : ""}`}>
+                        <div className="ot-bar-val-v2">{avg.toFixed(1)}</div>
+                        <div
+                          className="ot-bar-fill-v2"
+                          style={{ height: Math.max(barH, 0), backgroundColor: color }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* X-axis dept labels */}
+                <div className="ot-xaxis-row" style={{ height: XLAB_H, bottom: 0 }}>
+                  {chartRows.map((row) => (
+                    <div key={row.dept} className="ot-xlab-item" title={row.dept}>
+                      {row.dept}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Legend box */}
+              <div className="ot-legend-box">
+                <div className="ot-legend-box-inner">
+                  <div className="ot-legend-arrow">⬇</div>
+                  <strong>Target</strong>
+                  <div>OT น้อยกว่า {otTarget.toFixed(1)} ชม.</div>
+                  <div>ต่อคน ต่อวัน</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* ── Summary Table ── */}
           <div className="ot-table-scroll">
             <table className="table ot-table">
@@ -6649,7 +6721,7 @@ function OTDashboard({
                 <tr>
                   <th className="ot-th-sub ot-th-vert">ลาป่วย</th>
                   <th className="ot-th-sub ot-th-vert">ลากิจ</th>
-                  <th className="ot-th-sub ot-th-vert ot-th-absent">ขาดงาน</th>
+                  <th className="ot-th-sub ot-th-vert">ขาดงาน</th>
                   <th className="ot-th-sub ot-th-vert">มาสาย</th>
                   <th className="ot-th-sub ot-th-vert">วันหยุด</th>
                   <th className="ot-th-sub ot-th-vert-num">ปกติ 1.5×</th>
@@ -6676,13 +6748,13 @@ function OTDashboard({
                       <td className="ot-td-num">{row.total}</td>
                       <td className="ot-td-num ot-td-muted">-</td>
                       <td className="ot-td-num ot-td-muted">-</td>
-                      <td className={`ot-td-num${row.absent > 0 ? " ot-hl-absent" : ""}`}>{row.absent > 0 ? row.absent : ""}</td>
+                      <td className="ot-td-num">{row.absent > 0 ? row.absent : ""}</td>
                       <td className="ot-td-num">{row.late > 0 ? row.late : ""}</td>
                       <td className="ot-td-num">{row.dayoff > 0 ? row.dayoff : ""}</td>
                       <td className="ot-td-num">{pctStop}%</td>
                       <td className="ot-td-num">{row.activeWorkers}</td>
-                      <td className={`ot-td-num${pctOT > 0 ? " ot-hl-blue-bg" : ""}`}>{row.activeWorkers > 0 ? `${pctOT}%` : ""}</td>
-                      <td className={`ot-td-num${row.otWorkers > 0 ? " ot-hl-blue-bg" : ""}`}>
+                      <td className="ot-td-num">{row.activeWorkers > 0 ? `${pctOT}%` : ""}</td>
+                      <td className={`ot-td-num${row.otWorkers > 0 ? " ot-hl-blue" : ""}`}>
                         {row.otWorkers > 0 ? row.otWorkers : ""}
                       </td>
                       <td className="ot-td-num">{otTarget.toFixed(1)}</td>
@@ -6740,78 +6812,6 @@ function OTDashboard({
                 </tr>
               </tfoot>
             </table>
-          </div>
-
-          {/* ── Bar Chart ── */}
-          <div className="panel ot-chart-panel">
-            <p className="ot-chart-title">
-              วันที่ {reportData.targetDate}&nbsp;&nbsp;เปรียบเทียบ เฉลี่ยชั่วโมง O.T. ต่อคน/วัน
-            </p>
-            <div className="ot-chart-layout">
-              {/* Y-axis labels */}
-              <div className="ot-yaxis-col" style={{ height: TRACK_H + XLAB_H }}>
-                {yTicks.slice().reverse().map((tick) => (
-                  <span
-                    key={tick}
-                    className="ot-ytick-label"
-                    style={{ bottom: (tick / yMax) * TRACK_H + XLAB_H - 7 }}
-                  >
-                    {tick}
-                  </span>
-                ))}
-              </div>
-              {/* Chart track */}
-              <div className="ot-chart-track-wrap" style={{ height: TRACK_H + XLAB_H }}>
-                {/* Gridlines */}
-                {yTicks.map((tick) => (
-                  <div
-                    key={tick}
-                    className={`ot-gridline-h${tick === 0 ? " ot-gridline-base" : ""}`}
-                    style={{ bottom: (tick / yMax) * TRACK_H + XLAB_H }}
-                  />
-                ))}
-                {/* Target line */}
-                <div
-                  className="ot-target-line-h"
-                  style={{ bottom: (otTarget / yMax) * TRACK_H + XLAB_H }}
-                />
-                {/* Bars */}
-                <div className="ot-bars-flex" style={{ height: TRACK_H, bottom: XLAB_H }}>
-                  {chartRows.map((row, i) => {
-                    const avg = row.activeWorkers > 0 ? row.totalOTHours / row.activeWorkers : 0;
-                    const barH = (avg / yMax) * TRACK_H;
-                    const isTotal = row.dept === "รวมทั้งหมด";
-                    const color = isTotal ? "#475569" : DEPT_BAR_COLORS[i % DEPT_BAR_COLORS.length];
-                    return (
-                      <div key={row.dept} className={`ot-bar-item-v2${isTotal ? " ot-bar-total-v2" : ""}`}>
-                        <div className="ot-bar-val-v2">{avg.toFixed(1)}</div>
-                        <div
-                          className="ot-bar-fill-v2"
-                          style={{ height: Math.max(barH, 0), backgroundColor: color }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-                {/* X-axis dept labels */}
-                <div className="ot-xaxis-row" style={{ height: XLAB_H, bottom: 0 }}>
-                  {chartRows.map((row) => (
-                    <div key={row.dept} className="ot-xlab-item" title={row.dept}>
-                      <span className="ot-xlab-label">{row.dept}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {/* Legend box */}
-              <div className="ot-legend-box">
-                <div className="ot-legend-box-inner">
-                  <div className="ot-legend-arrow">⬇</div>
-                  <strong>Target</strong>
-                  <div>OT น้อยกว่า {otTarget.toFixed(1)} ชม.</div>
-                  <div>ต่อคน ต่อวัน</div>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* ── Employee Detail (drill-down) ── */}
