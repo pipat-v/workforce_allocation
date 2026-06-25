@@ -5022,25 +5022,25 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 /* Summary Table */
 .ot-table-scroll {
   width: 100%;
-  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
 .ot-table {
-  min-width: 900px;
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .ot-table th,
 .ot-table td {
   border-bottom: 1px solid var(--line);
-  padding: 9px 10px;
+  padding: 5px 4px;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .ot-table thead tr:first-child th {
@@ -5062,13 +5062,29 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 }
 
 .ot-th-sticky {
-  min-width: 140px;
+  width: 120px;
+  min-width: 80px;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ot-th-num {
   text-align: center;
-  min-width: 64px;
+  width: 44px;
+}
+
+.ot-th-vert {
+  writing-mode: vertical-lr;
+  text-orientation: mixed;
+  white-space: nowrap;
+  height: 78px;
+  text-align: center;
+  padding: 6px 2px !important;
+  width: 28px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: bottom;
 }
 
 .ot-th-group {
@@ -5083,8 +5099,13 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 }
 
 .ot-th-mgr {
-  min-width: 140px;
+  width: 130px;
+  min-width: 80px;
   text-align: left;
+}
+
+.ot-th-wide {
+  width: 56px;
 }
 
 .ot-row {
@@ -5098,16 +5119,19 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 
 .ot-td-dept {
   font-weight: 600;
-  font-size: 13px;
-  min-width: 140px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
 }
 
 .ot-td-num {
   text-align: center;
   font-variant-numeric: tabular-nums;
+  font-size: 12px;
 }
 
-.ot-td-mgr { min-width: 140px; }
+.ot-td-mgr { overflow: hidden; }
 
 .ot-hl-blue { color: #1d4ed8; font-weight: 700; }
 .ot-hl-red  { color: #dc2626; font-weight: 700; }
@@ -5308,7 +5332,7 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   font-size: 11px;
   font-weight: 600;
   text-align: center;
-  padding: 5px 6px;
+  padding: 5px 4px;
   white-space: nowrap;
 }
 
@@ -5318,7 +5342,7 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   font-size: 12px;
   font-weight: 700;
   text-align: center;
-  min-width: 64px;
+  width: 52px;
 }
 
 .ot-td-avg-yellow {
@@ -5443,17 +5467,16 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 
 .ot-xlab-item {
   flex: 1;
-  min-width: 48px;
+  min-width: 44px;
   max-width: 80px;
-  font-size: 10px;
-  color: #374151;
+  font-size: 11px;
+  font-weight: 500;
+  color: #1e293b;
   text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   writing-mode: vertical-lr;
-  transform: rotate(180deg);
-  height: 44px;
+  height: 88px;
+  overflow: visible;
 }
 
 .ot-legend-box {

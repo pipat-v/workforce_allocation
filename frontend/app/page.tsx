@@ -6521,7 +6521,7 @@ function OTDashboard({
   const yMax = Math.max(Math.ceil(maxAvgOT) + 1, 5);
   const yTicks = Array.from({ length: yMax + 1 }, (_, i) => i);
   const TRACK_H = 200;
-  const XLAB_H = 48;
+  const XLAB_H = 96;
   const DEPT_BAR_COLORS = [
     "#ef4444", "#8b5cf6", "#3b82f6", "#10b981", "#f59e0b",
     "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16",
@@ -6701,26 +6701,26 @@ function OTDashboard({
                     <span className="ot-th-date">{reportData.targetDate}</span>
                   </th>
                   <th rowSpan={2} className="ot-th-num">อัตรา<br />กำลัง</th>
-                  <th colSpan={5} className="ot-th-group">สถิติการมาทำงาน (คนงาน)</th>
-                  <th rowSpan={2} className="ot-th-num">% หยุดงาน</th>
-                  <th rowSpan={2} className="ot-th-num">พนักงาน<br />ที่ทำงาน</th>
-                  <th rowSpan={2} className="ot-th-num">% พนักงาน<br />ที่ OT</th>
-                  <th rowSpan={2} className="ot-th-num">พนักงาน<br />ที่ OT</th>
-                  <th rowSpan={2} className="ot-th-num">เป้าหมาย<br />(ชม.)</th>
-                  <th colSpan={4} className="ot-th-group ot-th-group-ot">เปรียบเทียบ ค่าล่วงเวลา (คนงาน)</th>
+                  <th colSpan={5} className="ot-th-group">สถิติการมาทำงาน</th>
+                  <th rowSpan={2} className="ot-th-num">%<br />หยุด</th>
+                  <th rowSpan={2} className="ot-th-num">ที่<br />ทำงาน</th>
+                  <th rowSpan={2} className="ot-th-num">%<br />OT</th>
+                  <th rowSpan={2} className="ot-th-num">คน<br />OT</th>
+                  <th rowSpan={2} className="ot-th-num">เป้า<br />(ชม.)</th>
+                  <th colSpan={4} className="ot-th-group ot-th-group-ot">เปรียบเทียบค่าล่วงเวลา</th>
                   <th rowSpan={2} className="ot-th-avg-yellow">เฉลี่ย<br />คน/วัน</th>
                   <th rowSpan={2} className="ot-th-mgr">สถาพ / ผจก.</th>
                 </tr>
                 <tr>
-                  <th className="ot-th-sub">ลาป่วย</th>
-                  <th className="ot-th-sub">ลากิจ</th>
-                  <th className="ot-th-sub">ขาดงาน</th>
-                  <th className="ot-th-sub">มาสาย</th>
-                  <th className="ot-th-sub">วันหยุด</th>
-                  <th className="ot-th-sub">OT ปกติ<br /><small>1.5× (ชม.)</small></th>
-                  <th className="ot-th-sub">OT วันหยุด<br /><small>(ชม.)</small></th>
+                  <th className="ot-th-sub ot-th-vert">ลาป่วย</th>
+                  <th className="ot-th-sub ot-th-vert">ลากิจ</th>
+                  <th className="ot-th-sub ot-th-vert">ขาดงาน</th>
+                  <th className="ot-th-sub ot-th-vert">มาสาย</th>
+                  <th className="ot-th-sub ot-th-vert">วันหยุด</th>
+                  <th className="ot-th-sub ot-th-wide">OT ปกติ<br /><small>1.5×</small></th>
+                  <th className="ot-th-sub ot-th-wide">OT<br />วันหยุด</th>
                   <th className="ot-th-sub">รวม<br />(ชม.)</th>
-                  <th className="ot-th-sub">เฉลี่ย/คน</th>
+                  <th className="ot-th-sub">เฉลี่ย<br />/คน</th>
                 </tr>
               </thead>
               <tbody>
