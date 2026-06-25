@@ -4863,3 +4863,633 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   cursor: pointer;
   accent-color: #dc2626;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   OT Dashboard
+   ═══════════════════════════════════════════════════════════════ */
+
+.ot-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+/* Header */
+.ot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #1e293b 0%, #0f2027 100%);
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.ot-header-left { display: flex; flex-direction: column; gap: 4px; }
+
+.ot-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #f1f5f9;
+  letter-spacing: -0.3px;
+}
+
+.ot-sub {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.ot-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ot-pull-badge {
+  background: #f59e0b;
+  color: #1c1917;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 6px;
+}
+
+.ot-config-toggle {
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.ot-config-toggle:hover,
+.ot-config-toggle.active {
+  background: #0f766e;
+  color: #fff;
+  border-color: #0f766e;
+}
+
+/* Config Panel */
+.ot-config {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ot-config-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.ot-config-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ot-config-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ot-cfg-input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 13px;
+  width: 100px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.ot-config-shifts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.ot-config-subtitle {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.ot-shifts-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ot-shift-cfg-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ot-shift-cfg-row input[type="time"].ot-cfg-input {
+  width: 110px;
+}
+
+/* Empty State */
+.ot-empty {
+  padding: 60px 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* Summary Table */
+.ot-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.ot-table {
+  min-width: 900px;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ot-table th,
+.ot-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 9px 10px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.ot-table thead tr:first-child th {
+  background: #1e293b;
+  color: #f1f5f9;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.ot-table thead tr:nth-child(2) th {
+  background: #0f172a;
+  color: #94a3b8;
+  font-size: 12px;
+  position: sticky;
+  top: 40px;
+  z-index: 2;
+}
+
+.ot-th-sticky {
+  min-width: 140px;
+  text-align: left;
+}
+
+.ot-th-num {
+  text-align: center;
+  min-width: 64px;
+}
+
+.ot-th-group {
+  text-align: center;
+  background: #1e3a5f !important;
+}
+
+.ot-th-date {
+  font-weight: 400;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.ot-th-mgr {
+  min-width: 140px;
+  text-align: left;
+}
+
+.ot-row {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.ot-row:hover { background: #f0fdf4; }
+
+.ot-row-selected { background: #dcfce7 !important; }
+
+.ot-td-dept {
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 140px;
+}
+
+.ot-td-num {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.ot-td-mgr { min-width: 140px; }
+
+.ot-hl-blue { color: #1d4ed8; font-weight: 700; }
+.ot-hl-red  { color: #dc2626; font-weight: 700; }
+.ot-hl-green { color: #059669; font-weight: 700; }
+
+.ot-total-row {
+  background: #f8fafc;
+  font-weight: 700;
+}
+.ot-total-row td {
+  border-top: 2px solid #94a3b8;
+  color: #1e293b;
+}
+
+.ot-mgr-select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--text);
+  max-width: 140px;
+}
+
+/* Bar Chart */
+.ot-chart-panel {
+  padding: 20px;
+}
+
+.ot-chart-title {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ot-chart-wrap {
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.ot-chart-inner {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 220px;
+  padding: 0 4px 40px;
+  min-width: max-content;
+}
+
+/* Target line — positioned at --ot-target-pct from the bottom of the chart area */
+.ot-target-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(40px + var(--ot-target-pct, 50%) * ((220px - 40px) / 100));
+  border-top: 2px dashed #ef4444;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.ot-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 52px;
+  max-width: 80px;
+  height: 100%;
+}
+
+.ot-bar-total {
+  border-left: 1px dashed var(--line);
+  padding-left: 6px;
+}
+
+.ot-bar-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  min-height: 18px;
+  text-align: center;
+}
+
+.ot-bar-track {
+  flex: 1;
+  width: 100%;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  background: #f1f5f9;
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+}
+
+.ot-bar-fill {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  transition: height 0.3s ease;
+}
+
+.ot-bar-ok   { background: #3b82f6; }
+.ot-bar-over { background: #f59e0b; }
+
+.ot-bar-dept {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+  height: 36px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+}
+
+.ot-chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.ot-legend-line {
+  display: inline-block;
+  width: 32px;
+  height: 0;
+  border-top: 2px dashed #ef4444;
+}
+
+/* Employee Detail Panel */
+.ot-detail-panel {
+  padding: 20px;
+}
+
+.ot-detail-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.ot-detail-hdr h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.ot-close-btn {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ot-close-btn:hover {
+  background: #fef2f2;
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.ot-detail-has-ot td {
+  background: #fefce8;
+}
+
+.ot-td-positive {
+  color: #0369a1;
+  font-weight: 700;
+  text-align: right;
+}
+
+.ot-td-zero {
+  color: #94a3b8;
+  text-align: right;
+}
+
+/* ── Table additions ── */
+.ot-th-group-ot {
+  background: #064e3b !important;
+}
+
+.ot-th-sub {
+  background: #0f172a;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  padding: 5px 6px;
+  white-space: nowrap;
+}
+
+.ot-th-avg-yellow {
+  background: #b45309 !important;
+  color: #fff !important;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  min-width: 64px;
+}
+
+.ot-td-avg-yellow {
+  background: #fef9c3;
+  font-weight: 700;
+  text-align: center;
+}
+
+.ot-td-muted {
+  color: #94a3b8;
+  text-align: center;
+}
+
+/* ── New chart layout ── */
+.ot-chart-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.ot-yaxis-col {
+  position: relative;
+  width: 26px;
+  flex-shrink: 0;
+}
+
+.ot-ytick-label {
+  position: absolute;
+  right: 0;
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 600;
+  line-height: 1;
+  transform: translateY(50%);
+}
+
+.ot-chart-track-wrap {
+  flex: 1;
+  position: relative;
+  overflow-x: auto;
+  overflow-y: visible;
+  min-width: 0;
+}
+
+.ot-gridline-h {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(148, 163, 184, 0.25);
+  pointer-events: none;
+}
+
+.ot-gridline-base {
+  background: #94a3b8;
+}
+
+.ot-target-line-h {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px dashed #ef4444;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.ot-bars-flex {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 0 6px;
+  min-width: max-content;
+}
+
+.ot-bar-item-v2 {
+  flex: 1;
+  min-width: 48px;
+  max-width: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+}
+
+.ot-bar-total-v2 {
+  border-left: 2px dashed #94a3b8;
+  padding-left: 8px;
+  margin-left: 6px;
+}
+
+.ot-bar-val-v2 {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 3px;
+  min-height: 18px;
+  line-height: 1;
+}
+
+.ot-bar-fill-v2 {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  transition: height 0.35s ease;
+  min-height: 0;
+}
+
+.ot-xaxis-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  padding: 4px 6px 0;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.ot-xlab-item {
+  flex: 1;
+  min-width: 48px;
+  max-width: 80px;
+  font-size: 10px;
+  color: #374151;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+  height: 44px;
+}
+
+.ot-legend-box {
+  flex-shrink: 0;
+  width: 108px;
+  padding-top: 36px;
+}
+
+.ot-legend-box-inner {
+  background: #fef08a;
+  border: 2px solid #ca8a04;
+  border-radius: 8px;
+  padding: 10px 10px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1c1917;
+  line-height: 1.6;
+}
+
+.ot-legend-arrow {
+  font-size: 22px;
+  color: #16a34a;
+  margin-bottom: 4px;
+  display: block;
+}
+
+/* Status badges in detail table */
+.ot-status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.ot-status-present { background: #dcfce7; color: #15803d; }
+.ot-status-late    { background: #fef3c7; color: #92400e; }
+.ot-status-absent  { background: #fee2e2; color: #dc2626; }
+.ot-status-dayoff  { background: #f1f5f9; color: #64748b; }

@@ -84,6 +84,10 @@ type SkillFlatRow = {
   empId: string;
   name: string;
   dept: string;
+  jobSite: string;
+  shift: string;
+  shiftStart: string;
+  dayoff: string;
   skill: string;
   level: number;
   origLevel: number;
@@ -161,6 +165,7 @@ type TabId =
   | "master"
   | "skill"
   | "report"
+  | "ot"
   | "setting";
 
 const navItems = [
@@ -171,6 +176,7 @@ const navItems = [
   { id: "master", label: "Master Data", icon: FileSpreadsheet },
   { id: "skill", label: "Skill Matrix", icon: LayoutGrid },
   { id: "report", label: "Report & Dashboard", icon: BarChart3 },
+  { id: "ot", label: "OT Dashboard", icon: TrendingUp },
   { id: "setting", label: "Setting", icon: Settings },
 ];
 
@@ -1325,12 +1331,20 @@ export default function Home() {
         {activeTab === "skill" ? (
           <SkillMatrixPage
             activeFile={activeMasterMap.skill_matrix}
+            dayoffShiftFile={activeMasterMap.dayoff_shift}
             employeeMasterFile={activeMasterMap.employee_master}
             saveSkillMatrixRows={saveSkillMatrixRows}
           />
         ) : null}
 
-        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report", "skill"].includes(activeTab) ? (
+        {activeTab === "ot" ? (
+          <OTDashboard
+            reportData={reportData}
+            activeMasterMap={activeMasterMap}
+          />
+        ) : null}
+
+        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report", "skill", "ot"].includes(activeTab) ? (
           <section className="panel empty-page">
             <h3>{activeNav?.label}</h3>
             <p>แท็บนี้จะเชื่อมข้อมูลจริงในขั้นถัดไป</p>
@@ -3071,7 +3085,7 @@ function MasterDataPage({
           const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? "");
           const skill = String(row["Skill"] ?? row["skill"] ?? "").trim();
           const level = Number(row["Level"] ?? row["level"]) || 0;
-          return { id: `${i}-${empId}-${skill}`, empId, name: "", dept: "", skill, level, origLevel: level };
+          return { id: `${i}-${empId}-${skill}`, empId, name: "", dept: "", jobSite: "", shift: "", shiftStart: "", dayoff: "", skill, level, origLevel: level };
         })
         .filter((r) => r.empId && r.skill);
       const skillNames = Array.from(new Set(skillFlatRows.map((r) => r.skill))).sort();
@@ -3164,7 +3178,7 @@ function MasterDataPage({
           const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? "");
           const skill = String(row["Skill"] ?? "").trim();
           const level = Number(row["Level"] ?? row["level"]) || 0;
-          return { id: `${i}-${empId}-${skill}`, empId, name: "", dept: "", skill, level, origLevel: level };
+          return { id: `${i}-${empId}-${skill}`, empId, name: "", dept: "", jobSite: "", shift: "", shiftStart: "", dayoff: "", skill, level, origLevel: level };
         })
         .filter((r) => r.empId && r.skill);
       const currentCombined: CombinedEmployeeRow[] = curEmpRows.map((row) => {
@@ -4522,18 +4536,22 @@ function DayoffShiftEditor({
 
 function SkillMatrixPage({
   activeFile,
+  dayoffShiftFile,
   employeeMasterFile,
   saveSkillMatrixRows,
 }: {
   activeFile?: MasterFile;
+  dayoffShiftFile?: MasterFile;
   employeeMasterFile?: MasterFile;
   saveSkillMatrixRows: (rows: SkillMatrixSaveRow[]) => Promise<void>;
 }) {
   const [rows, setRows] = useState<SkillFlatRow[]>([]);
-  const [empInfoMap, setEmpInfoMap] = useState<Map<string, { name: string; dept: string }>>(new Map());
+  const [empInfoMap, setEmpInfoMap] = useState<Map<string, { name: string; dept: string; jobSite: string }>>(new Map());
+  const [allEmpList, setAllEmpList] = useState<Array<{ empId: string; name: string }>>([]);
   const [query, setQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("all");
   const [selectedSkill, setSelectedSkill] = useState("all");
+  const [selectedShift, setSelectedShift] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLevel, setBulkLevel] = useState("");
   const [addEmpId, setAddEmpId] = useState("");
@@ -4543,9 +4561,14 @@ function SkillMatrixPage({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  const LEVEL_LABELS: Record<number, string> = { 1: "น้อย", 2: "ปานกลาง", 3: "ถนัด" };
+  const LEVEL_BG: Record<number, string> = { 1: "#fecaca", 2: "#fef08a", 3: "#34d399", 4: "#93c5fd", 5: "#a78bfa" };
+
   useEffect(() => {
-    if (!activeFile?.file_path) {
+    if (!employeeMasterFile?.file_path && !activeFile?.file_path) {
       setRows([]);
+      setEmpInfoMap(new Map());
+      setAllEmpList([]);
       setSelectedIds(new Set());
       return;
     }
@@ -4553,16 +4576,21 @@ function SkillMatrixPage({
     let isMounted = true;
     setIsLoading(true);
 
-    const skillPromise = downloadSheetRows(activeFile.file_path);
+    const skillPromise = activeFile?.file_path
+      ? downloadSheetRows(activeFile.file_path).catch(() => [] as Record<string, unknown>[])
+      : Promise.resolve([] as Record<string, unknown>[]);
     const empPromise = employeeMasterFile?.file_path
-      ? downloadSheetRows(employeeMasterFile.file_path)
+      ? downloadSheetRows(employeeMasterFile.file_path).catch(() => [] as Record<string, unknown>[])
+      : Promise.resolve([] as Record<string, unknown>[]);
+    const dayoffPromise = dayoffShiftFile?.file_path
+      ? downloadSheetRows(dayoffShiftFile.file_path).catch(() => [] as Record<string, unknown>[])
       : Promise.resolve([] as Record<string, unknown>[]);
 
-    Promise.all([skillPromise, empPromise])
-      .then(([skillRows, empRows]) => {
+    Promise.all([skillPromise, empPromise, dayoffPromise])
+      .then(([skillRows, empRows, dayoffRows]) => {
         if (!isMounted) return;
 
-        const empInfo = new Map<string, { name: string; dept: string }>();
+        const empInfo = new Map<string, { name: string; dept: string; jobSite: string }>();
         for (const row of empRows) {
           const empId = cleanEmpId(
             row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"],
@@ -4574,8 +4602,11 @@ function SkillMatrixPage({
             String(row["Employee Name"] ?? "").trim() ||
             empId;
           const dept = String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim();
-          if (empId) empInfo.set(empId, { name, dept });
+          const jobSite = String(row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim();
+          if (empId) empInfo.set(empId, { name, dept, jobSite });
         }
+
+        const dayoffMap = buildDayoffShiftMap(dayoffRows);
 
         const parsed: SkillFlatRow[] = skillRows
           .map((row, i) => {
@@ -4584,12 +4615,17 @@ function SkillMatrixPage({
             );
             const skill = String(row["Skill"] ?? row["skill"] ?? row["ทักษะ"] ?? "").trim();
             const level = Number(row["Level"] ?? row["level"] ?? row["ระดับ"]) || 0;
-            const info = empInfo.get(empId) ?? { name: empId, dept: "" };
+            const info = empInfo.get(empId) ?? { name: empId, dept: "", jobSite: "" };
+            const ds = dayoffMap.get(empId) ?? { dayoff: "", shift: "", shiftStart: "" };
             return {
               id: `${i}-${empId}-${skill}`,
               empId,
               name: info.name,
               dept: info.dept,
+              jobSite: info.jobSite,
+              shift: ds.shift,
+              shiftStart: ds.shiftStart,
+              dayoff: ds.dayoff,
               skill,
               level,
               origLevel: level,
@@ -4597,13 +4633,17 @@ function SkillMatrixPage({
           })
           .filter((r) => r.empId && r.skill);
 
+        const empList = Array.from(empInfo.entries()).map(([empId, info]) => ({ empId, name: info.name }));
         setRows(parsed);
         setEmpInfoMap(empInfo);
+        setAllEmpList(empList);
         setSelectedIds(new Set());
       })
       .catch(() => {
         if (!isMounted) return;
         setRows([]);
+        setEmpInfoMap(new Map());
+        setAllEmpList([]);
       })
       .finally(() => {
         if (!isMounted) return;
@@ -4611,16 +4651,18 @@ function SkillMatrixPage({
       });
 
     return () => { isMounted = false; };
-  }, [activeFile?.file_path, employeeMasterFile?.file_path]);
+  }, [activeFile?.file_path, employeeMasterFile?.file_path, dayoffShiftFile?.file_path]);
 
   const deptOptions = Array.from(new Set(rows.map((r) => r.dept).filter(Boolean))).sort();
   const skillOptions = Array.from(new Set(rows.map((r) => r.skill).filter(Boolean))).sort();
+  const shiftOptions = Array.from(new Set(rows.map((r) => r.shift).filter(Boolean))).sort();
   const normalizedQuery = query.trim().toLowerCase();
   const filteredRows = rows.filter((row) => {
     if (selectedDept !== "all" && row.dept !== selectedDept) return false;
     if (selectedSkill !== "all" && row.skill !== selectedSkill) return false;
+    if (selectedShift !== "all" && row.shift !== selectedShift) return false;
     if (!normalizedQuery) return true;
-    return [row.empId, row.name, row.dept, row.skill].some((v) =>
+    return [row.empId, row.name, row.dept, row.skill, row.shift, row.dayoff, row.jobSite].some((v) =>
       v.toLowerCase().includes(normalizedQuery),
     );
   });
@@ -4695,16 +4737,19 @@ function SkillMatrixPage({
         prev.map((r) => (r.empId === empId && r.skill === skill ? { ...r, level: addLevel } : r)),
       );
     } else {
-      const info = empInfoMap.get(empId) ??
-        rows.find((r) => r.empId === empId) ??
-        { name: empId, dept: "" };
+      const empData = empInfoMap.get(empId);
+      const existingRow = rows.find((r) => r.empId === empId);
       setRows((prev) => [
         ...prev,
         {
           id: `add-${Date.now()}-${empId}-${skill}`,
           empId,
-          name: info.name,
-          dept: info.dept,
+          name: empData?.name ?? existingRow?.name ?? empId,
+          dept: empData?.dept ?? existingRow?.dept ?? "",
+          jobSite: empData?.jobSite ?? existingRow?.jobSite ?? "",
+          shift: existingRow?.shift ?? "",
+          shiftStart: existingRow?.shiftStart ?? "",
+          dayoff: existingRow?.dayoff ?? "",
           skill,
           level: addLevel,
           origLevel: 0,
@@ -4717,9 +4762,7 @@ function SkillMatrixPage({
     setAddOpen(false);
   }
 
-  const levelBg: Record<number, string> = {
-    1: "#fecaca", 2: "#fed7aa", 3: "#fef08a", 4: "#bbf7d0", 5: "#34d399",
-  };
+  const levelBg = LEVEL_BG;
 
   return (
     <section className="panel dayoff-editor-panel">
@@ -4739,10 +4782,10 @@ function SkillMatrixPage({
         </button>
       </div>
 
-      <div className="table-filters dayoff-editor-filters" style={{ gridTemplateColumns: "1fr 180px 180px auto" }}>
+      <div className="table-filters dayoff-editor-filters" style={{ gridTemplateColumns: "1fr 160px 160px 140px auto" }}>
         <input
           aria-label="ค้นหา skill matrix"
-          placeholder="ค้นหา รหัส ชื่อ แผนก ทักษะ"
+          placeholder="ค้นหา รหัส ชื่อ แผนก กะ วันหยุด ทักษะ"
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -4755,6 +4798,10 @@ function SkillMatrixPage({
           <option value="all">ทุก Skill</option>
           {skillOptions.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+        <select value={selectedShift} onChange={(e) => setSelectedShift(e.target.value)}>
+          <option value="all">ทุกกะ</option>
+          {shiftOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
         <span className="dayoff-count">
           {filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} แถว
           {modifiedIds.size > 0 && <span className="modified-badge">{modifiedIds.size} แก้ไข</span>}
@@ -4766,12 +4813,10 @@ function SkillMatrixPage({
           <span className="bulk-count">{selectedIds.size} แถวที่เลือก</span>
           <select value={bulkLevel} onChange={(e) => setBulkLevel(e.target.value)}>
             <option value="">เปลี่ยน Level...</option>
-            <option value="0">0 — ไม่มี</option>
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
+            <option value="0">— ยังไม่ระบุ</option>
+            <option value="1">1 — น้อย</option>
+            <option value="2">2 — ปานกลาง</option>
+            <option value="3">3 — ถนัด</option>
           </select>
           <button
             className="primary-button"
@@ -4808,6 +4853,10 @@ function SkillMatrixPage({
               <th>Emp ID</th>
               <th>ชื่อ</th>
               <th>แผนก</th>
+              <th>หน่วยงานย่อย</th>
+              <th>กะ</th>
+              <th>เวลาเข้า</th>
+              <th>วันหยุด</th>
               <th>Skill</th>
               <th>Level</th>
             </tr>
@@ -4831,6 +4880,10 @@ function SkillMatrixPage({
                 <td>{row.empId}</td>
                 <td>{row.name}</td>
                 <td className="dept-cell">{row.dept || "—"}</td>
+                <td>{row.jobSite || "—"}</td>
+                <td>{row.shift || "—"}</td>
+                <td>{row.shiftStart || "—"}</td>
+                <td>{row.dayoff || "—"}</td>
                 <td>{row.skill}</td>
                 <td>
                   <select
@@ -4839,31 +4892,30 @@ function SkillMatrixPage({
                     value={row.level}
                     onChange={(e) => updateRow(row.id, Number(e.target.value))}
                   >
-                    <option value={0}>— (0)</option>
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                    <option value={3}>3</option>
-                    <option value={4}>4</option>
-                    <option value={5}>5</option>
+                    <option value={0}>— ยังไม่ระบุ</option>
+                    <option value={1}>1 — น้อย</option>
+                    <option value={2}>2 — ปานกลาง</option>
+                    <option value={3}>3 — ถนัด</option>
+                    {row.level > 3 && <option value={row.level}>{row.level} — (เก่า)</option>}
                   </select>
                 </td>
               </tr>
             ))}
-            {!activeFile ? (
-              <tr><td colSpan={6}>อัปโหลด Skill Matrix master ก่อน จึงจะแก้ไขในหน้านี้ได้</td></tr>
+            {!employeeMasterFile && !activeFile ? (
+              <tr><td colSpan={10} style={{ color: "var(--muted)", textAlign: "center", padding: "24px 0" }}>อัปโหลดไฟล์รายชื่อพนักงาน (Master Data → Files) เพื่อเริ่มต้นใช้งาน</td></tr>
             ) : null}
-            {activeFile && isLoading ? (
-              <tr><td colSpan={6}>Loading Skill Matrix...</td></tr>
+            {isLoading ? (
+              <tr><td colSpan={10} style={{ textAlign: "center", padding: "24px 0" }}>กำลังโหลด...</td></tr>
             ) : null}
-            {activeFile && !isLoading && filteredRows.length === 0 ? (
-              <tr><td colSpan={6}>ไม่พบข้อมูลที่ค้นหา</td></tr>
+            {!isLoading && (employeeMasterFile || activeFile) && filteredRows.length === 0 ? (
+              <tr><td colSpan={10} style={{ color: "var(--muted)", textAlign: "center", padding: "24px 0" }}>ยังไม่มี Skill — กด "+ เพิ่ม Skill ให้พนักงาน" เพื่อเริ่มเพิ่มข้อมูล</td></tr>
             ) : null}
           </tbody>
         </table>
       </div>
 
       {/* Add row */}
-      {activeFile && (
+      {(activeFile || employeeMasterFile) && (
         <div className="skill-add-row-bar">
           {addOpen ? (
             <>
@@ -4876,10 +4928,9 @@ function SkillMatrixPage({
                 onKeyDown={(e) => { if (e.key === "Escape") setAddOpen(false); }}
               />
               <datalist id="skill-emp-datalist">
-                {Array.from(new Set(rows.map((r) => r.empId))).map((id) => {
-                  const r = rows.find((x) => x.empId === id);
-                  return <option key={id} value={id}>{r?.name ?? id}</option>;
-                })}
+                {(allEmpList.length > 0 ? allEmpList : Array.from(new Set(rows.map((r) => r.empId))).map((id) => ({ empId: id, name: rows.find((x) => x.empId === id)?.name ?? id }))).map(({ empId, name }) => (
+                  <option key={empId} value={empId}>{name}</option>
+                ))}
               </datalist>
               <input
                 className="skill-add-skillname"
@@ -4902,7 +4953,9 @@ function SkillMatrixPage({
                 onChange={(e) => setAddLevel(Number(e.target.value))}
                 style={{ background: levelBg[addLevel] ?? "", height: 34, border: "1px solid var(--line)", borderRadius: 6, padding: "0 8px", fontWeight: 600 }}
               >
-                {[1, 2, 3, 4, 5].map((v) => <option key={v} value={v}>{v}</option>)}
+                {([1, 2, 3] as const).map((v) => (
+                  <option key={v} value={v}>{v} — {LEVEL_LABELS[v]}</option>
+                ))}
               </select>
               <button
                 className="primary-button"
@@ -5423,6 +5476,8 @@ function ResultsPanel({
           </button>
         </div>
       </div>
+
+      
       {standalone ? (
         <div className="table-filters">
           <input
@@ -6331,4 +6386,484 @@ function formatDateTH(isoDate: string) {
   const d = Number(parts[2]);
   const thaiMonths = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
   return `${d} ${thaiMonths[m]}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OT Dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+
+function calcOTHoursForRecord(scanOut: string, shiftEnd: string): number {
+  if (!scanOut || scanOut === "-" || !shiftEnd) return 0;
+  if (!scanOut.includes(":") || !shiftEnd.includes(":")) return 0;
+  const [soH, soM] = scanOut.split(":").map(Number);
+  const [seH, seM] = shiftEnd.split(":").map(Number);
+  let diff = (soH * 60 + soM) - (seH * 60 + seM);
+  // Handle night-shift crossing midnight (e.g. shiftEnd=23:00, scanOut=01:30 → diff negative large)
+  if (diff < -720) diff += 1440;
+  return Math.max(0, diff / 60);
+}
+
+type OTRecord = AttendanceRecord & { shiftEnd: string; otHours: number };
+
+function OTDashboard({
+  reportData,
+  activeMasterMap,
+}: {
+  reportData: ReportData | null;
+  activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
+}) {
+  const [shiftEndMap, setShiftEndMap] = useState<Record<string, string>>(() => {
+    if (typeof window === "undefined") return {};
+    try { return JSON.parse(localStorage.getItem("ot_shift_end") ?? "{}"); } catch { return {}; }
+  });
+  const [otTarget, setOtTarget] = useState<number>(() => {
+    if (typeof window === "undefined") return 2.0;
+    const s = localStorage.getItem("ot_target");
+    return s ? parseFloat(s) : 2.0;
+  });
+  const [deptManagers, setDeptManagers] = useState<Record<string, string>>(() => {
+    if (typeof window === "undefined") return {};
+    try { return JSON.parse(localStorage.getItem("ot_dept_managers") ?? "{}"); } catch { return {}; }
+  });
+  const [managerOptions, setManagerOptions] = useState<Array<{ empId: string; name: string; dept: string }>>([]);
+  const [showConfig, setShowConfig] = useState(false);
+  const [selectedDept, setSelectedDept] = useState<string | null>(null);
+
+  useEffect(() => {
+    const path = activeMasterMap.dayoff_shift?.file_path;
+    if (!path) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await downloadSheetRows(path);
+        if (cancelled) return;
+        const mgrs: Array<{ empId: string; name: string; dept: string }> = [];
+        for (const row of rows) {
+          const jobSite = String(row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim();
+          if (!jobSite.includes("ผู้จัดการ")) continue;
+          const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+          const firstName = String(row["First Name (Local)"] ?? "").trim();
+          const lastName = String(row["Last Name (Local)"] ?? "").trim();
+          const name = `${firstName} ${lastName}`.trim() || String(row["Employee Name"] ?? row["Name"] ?? "").trim();
+          const dept = findRowCol(row, "หน่วยงาน", "Org. Unit Description", "Name (Section)", "แผนก", "Department");
+          if (empId && name) mgrs.push({ empId, name, dept });
+        }
+        setManagerOptions(mgrs);
+      } catch { /* master not yet loaded */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeMasterMap.dayoff_shift?.file_path]);
+
+  const uniqueShifts = useMemo(() => {
+    if (!reportData) return [];
+    return Array.from(new Set(reportData.records.map((r) => r.shift).filter(Boolean))).sort();
+  }, [reportData]);
+
+  const otRecords = useMemo((): OTRecord[] => {
+    if (!reportData) return [];
+    return reportData.records.map((rec) => {
+      const shiftEnd = shiftEndMap[rec.shift] || addHoursToTime(rec.shiftStart, 8);
+      const otHours = (rec.status === "Present" || rec.status === "Late")
+        ? calcOTHoursForRecord(rec.scanOut, shiftEnd)
+        : 0;
+      return { ...rec, shiftEnd, otHours };
+    });
+  }, [reportData, shiftEndMap]);
+
+  const deptOTRows = useMemo(() => {
+    const map = new Map<string, {
+      dept: string; total: number; absent: number; late: number; dayoff: number;
+      otWorkers: number; totalOTHours: number; activeWorkers: number;
+    }>();
+    for (const rec of otRecords) {
+      const cur = map.get(rec.dept) ?? {
+        dept: rec.dept, total: 0, absent: 0, late: 0, dayoff: 0,
+        otWorkers: 0, totalOTHours: 0, activeWorkers: 0,
+      };
+      cur.total += 1;
+      if (rec.status === "Absent") cur.absent += 1;
+      if (rec.status === "Late") cur.late += 1;
+      if (rec.status === "DayOff") cur.dayoff += 1;
+      if (rec.status === "Present" || rec.status === "Late") {
+        cur.activeWorkers += 1;
+        if (rec.otHours > 0) { cur.otWorkers += 1; cur.totalOTHours += rec.otHours; }
+      }
+      map.set(rec.dept, cur);
+    }
+    return Array.from(map.values()).sort((a, b) => a.dept.localeCompare(b.dept, "th"));
+  }, [otRecords]);
+
+  const totals = useMemo(() => ({
+    total: deptOTRows.reduce((s, r) => s + r.total, 0),
+    absent: deptOTRows.reduce((s, r) => s + r.absent, 0),
+    late: deptOTRows.reduce((s, r) => s + r.late, 0),
+    dayoff: deptOTRows.reduce((s, r) => s + r.dayoff, 0),
+    otWorkers: deptOTRows.reduce((s, r) => s + r.otWorkers, 0),
+    totalOTHours: deptOTRows.reduce((s, r) => s + r.totalOTHours, 0),
+    activeWorkers: deptOTRows.reduce((s, r) => s + r.activeWorkers, 0),
+  }), [deptOTRows]);
+
+  const selectedDeptRecords = useMemo((): OTRecord[] => {
+    if (!selectedDept) return [];
+    return otRecords.filter((r) => r.dept === selectedDept);
+  }, [otRecords, selectedDept]);
+
+  const totalAvgOT = totals.activeWorkers > 0 ? totals.totalOTHours / totals.activeWorkers : 0;
+  const chartRows = [
+    ...deptOTRows,
+    { dept: "รวมทั้งหมด", activeWorkers: totals.activeWorkers, totalOTHours: totals.totalOTHours },
+  ];
+  const maxAvgOT = Math.max(
+    ...chartRows.map((r) => (r.activeWorkers > 0 ? r.totalOTHours / r.activeWorkers : 0)),
+    otTarget,
+    0.1,
+  );
+  const yMax = Math.max(Math.ceil(maxAvgOT) + 1, 5);
+  const yTicks = Array.from({ length: yMax + 1 }, (_, i) => i);
+  const TRACK_H = 200;
+  const XLAB_H = 48;
+  const DEPT_BAR_COLORS = [
+    "#ef4444", "#8b5cf6", "#3b82f6", "#10b981", "#f59e0b",
+    "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16",
+    "#a855f7", "#eab308", "#22c55e", "#0ea5e9", "#d946ef",
+    "#64748b",
+  ];
+
+  function saveShiftEnd(shift: string, value: string) {
+    const next = { ...shiftEndMap, [shift]: value };
+    setShiftEndMap(next);
+    localStorage.setItem("ot_shift_end", JSON.stringify(next));
+  }
+
+  function saveOTTarget(value: string) {
+    const num = parseFloat(value);
+    if (!isNaN(num) && num >= 0) {
+      setOtTarget(num);
+      localStorage.setItem("ot_target", String(num));
+    }
+  }
+
+  function saveDeptManager(dept: string, name: string) {
+    const next = { ...deptManagers, [dept]: name };
+    setDeptManagers(next);
+    localStorage.setItem("ot_dept_managers", JSON.stringify(next));
+  }
+
+  const now = new Date();
+  const timeStr = `${String(now.getHours()).padStart(2, "0")}.${String(now.getMinutes()).padStart(2, "0")} น.`;
+
+  return (
+    <section className="ot-dashboard">
+      {/* ── Header ── */}
+      <div className="panel ot-header">
+        <div className="ot-header-left">
+          <h2 className="ot-title">การติดตาม OT ภายในหน่วยงาน (พนักงาน)</h2>
+          {reportData && <span className="ot-sub">วันที่ {reportData.targetDate}</span>}
+        </div>
+        <div className="ot-header-right">
+          <span className="ot-pull-badge">ดึงข้อมูล {timeStr}</span>
+          <button
+            className={`ot-config-toggle${showConfig ? " active" : ""}`}
+            onClick={() => setShowConfig((v) => !v)}
+            type="button"
+          >
+            ⚙ ตั้งค่ากะ / เป้าหมาย
+          </button>
+        </div>
+      </div>
+
+      {/* ── Config Panel ── */}
+      {showConfig && (
+        <div className="panel ot-config">
+          <div className="ot-config-row">
+            <div className="ot-config-field">
+              <label>เป้าหมาย OT (ชม./คน/วัน)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                defaultValue={otTarget}
+                onBlur={(e) => saveOTTarget(e.target.value)}
+                className="ot-cfg-input"
+              />
+            </div>
+          </div>
+          {uniqueShifts.length > 0 && (
+            <div className="ot-config-shifts">
+              <p className="ot-config-subtitle">เวลาสิ้นสุดกะงาน (กำหนดเองได้ · ค่าเริ่มต้น = เวลาเข้า + 8 ชม.)</p>
+              <div className="ot-shifts-grid">
+                {uniqueShifts.map((shift) => {
+                  const sample = reportData?.records.find((r) => r.shift === shift);
+                  const defaultEnd = sample ? addHoursToTime(sample.shiftStart, 8) : "16:00";
+                  return (
+                    <div key={shift} className="ot-shift-cfg-row">
+                      <span>{shift || "(ไม่ระบุกะ)"}</span>
+                      <input
+                        type="time"
+                        value={shiftEndMap[shift] || defaultEnd}
+                        onChange={(e) => saveShiftEnd(shift, e.target.value)}
+                        className="ot-cfg-input"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!reportData ? (
+        <div className="panel ot-empty">
+          <p>กรุณาเลือกวันที่และโหลดข้อมูลการเข้างานก่อนครับ</p>
+        </div>
+      ) : (
+        <>
+          {/* ── Bar Chart ── */}
+          <div className="panel ot-chart-panel">
+            <p className="ot-chart-title">
+              วันที่ {reportData.targetDate}&nbsp;&nbsp;เปรียบเทียบ เฉลี่ยชั่วโมง O.T. ต่อคน/วัน
+            </p>
+            <div className="ot-chart-layout">
+              {/* Y-axis labels */}
+              <div className="ot-yaxis-col" style={{ height: TRACK_H + XLAB_H }}>
+                {yTicks.slice().reverse().map((tick) => (
+                  <span
+                    key={tick}
+                    className="ot-ytick-label"
+                    style={{ bottom: (tick / yMax) * TRACK_H + XLAB_H - 7 }}
+                  >
+                    {tick}
+                  </span>
+                ))}
+              </div>
+              {/* Chart track */}
+              <div className="ot-chart-track-wrap" style={{ height: TRACK_H + XLAB_H }}>
+                {/* Gridlines */}
+                {yTicks.map((tick) => (
+                  <div
+                    key={tick}
+                    className={`ot-gridline-h${tick === 0 ? " ot-gridline-base" : ""}`}
+                    style={{ bottom: (tick / yMax) * TRACK_H + XLAB_H }}
+                  />
+                ))}
+                {/* Target line */}
+                <div
+                  className="ot-target-line-h"
+                  style={{ bottom: (otTarget / yMax) * TRACK_H + XLAB_H }}
+                />
+                {/* Bars */}
+                <div className="ot-bars-flex" style={{ height: TRACK_H, bottom: XLAB_H }}>
+                  {chartRows.map((row, i) => {
+                    const avg = row.activeWorkers > 0 ? row.totalOTHours / row.activeWorkers : 0;
+                    const barH = (avg / yMax) * TRACK_H;
+                    const isTotal = row.dept === "รวมทั้งหมด";
+                    const color = isTotal ? "#475569" : DEPT_BAR_COLORS[i % DEPT_BAR_COLORS.length];
+                    return (
+                      <div key={row.dept} className={`ot-bar-item-v2${isTotal ? " ot-bar-total-v2" : ""}`}>
+                        <div className="ot-bar-val-v2">{avg.toFixed(1)}</div>
+                        <div
+                          className="ot-bar-fill-v2"
+                          style={{ height: Math.max(barH, 0), backgroundColor: color }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* X-axis dept labels */}
+                <div className="ot-xaxis-row" style={{ height: XLAB_H, bottom: 0 }}>
+                  {chartRows.map((row) => (
+                    <div key={row.dept} className="ot-xlab-item" title={row.dept}>
+                      {row.dept}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Legend box */}
+              <div className="ot-legend-box">
+                <div className="ot-legend-box-inner">
+                  <div className="ot-legend-arrow">⬇</div>
+                  <strong>Target</strong>
+                  <div>OT น้อยกว่า {otTarget.toFixed(1)} ชม.</div>
+                  <div>ต่อคน ต่อวัน</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Summary Table ── */}
+          <div className="ot-table-scroll">
+            <table className="table ot-table">
+              <thead>
+                <tr>
+                  <th rowSpan={2} className="ot-th-sticky">
+                    หน่วยงาน<br />
+                    <span className="ot-th-date">{reportData.targetDate}</span>
+                  </th>
+                  <th rowSpan={2} className="ot-th-num">อัตรา<br />กำลัง</th>
+                  <th colSpan={5} className="ot-th-group">สถิติการมาทำงาน (คนงาน)</th>
+                  <th rowSpan={2} className="ot-th-num">% หยุดงาน</th>
+                  <th rowSpan={2} className="ot-th-num">พนักงาน<br />ที่ทำงาน</th>
+                  <th rowSpan={2} className="ot-th-num">% พนักงาน<br />ที่ OT</th>
+                  <th rowSpan={2} className="ot-th-num">พนักงาน<br />ที่ OT</th>
+                  <th rowSpan={2} className="ot-th-num">เป้าหมาย<br />(ชม.)</th>
+                  <th colSpan={4} className="ot-th-group ot-th-group-ot">เปรียบเทียบ ค่าล่วงเวลา (คนงาน)</th>
+                  <th rowSpan={2} className="ot-th-avg-yellow">เฉลี่ย<br />คน/วัน</th>
+                  <th rowSpan={2} className="ot-th-mgr">สถาพ / ผจก.</th>
+                </tr>
+                <tr>
+                  <th className="ot-th-sub">ลาป่วย</th>
+                  <th className="ot-th-sub">ลากิจ</th>
+                  <th className="ot-th-sub">ขาดงาน</th>
+                  <th className="ot-th-sub">มาสาย</th>
+                  <th className="ot-th-sub">วันหยุด</th>
+                  <th className="ot-th-sub">OT ปกติ<br /><small>1.5× (ชม.)</small></th>
+                  <th className="ot-th-sub">OT วันหยุด<br /><small>(ชม.)</small></th>
+                  <th className="ot-th-sub">รวม<br />(ชม.)</th>
+                  <th className="ot-th-sub">เฉลี่ย/คน</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deptOTRows.map((row) => {
+                  const activeNonOff = row.total - row.dayoff;
+                  const pctStop = activeNonOff > 0 ? Math.round((row.absent / activeNonOff) * 100) : 0;
+                  const pctOT = row.activeWorkers > 0 ? Math.round((row.otWorkers / row.activeWorkers) * 100) : 0;
+                  const avgOT = row.activeWorkers > 0 ? row.totalOTHours / row.activeWorkers : 0;
+                  const mgrsForDept = managerOptions.filter((m) => m.dept === row.dept);
+                  const mgrPool = mgrsForDept.length > 0 ? mgrsForDept : managerOptions;
+                  return (
+                    <tr
+                      key={row.dept}
+                      className={`ot-row${selectedDept === row.dept ? " ot-row-selected" : ""}`}
+                      onClick={() => setSelectedDept(selectedDept === row.dept ? null : row.dept)}
+                    >
+                      <td className="ot-td-dept">{row.dept}</td>
+                      <td className="ot-td-num">{row.total}</td>
+                      <td className="ot-td-num ot-td-muted">-</td>
+                      <td className="ot-td-num ot-td-muted">-</td>
+                      <td className="ot-td-num">{row.absent > 0 ? row.absent : ""}</td>
+                      <td className="ot-td-num">{row.late > 0 ? row.late : ""}</td>
+                      <td className="ot-td-num">{row.dayoff > 0 ? row.dayoff : ""}</td>
+                      <td className="ot-td-num">{pctStop}%</td>
+                      <td className="ot-td-num">{row.activeWorkers}</td>
+                      <td className="ot-td-num">{row.activeWorkers > 0 ? `${pctOT}%` : ""}</td>
+                      <td className={`ot-td-num${row.otWorkers > 0 ? " ot-hl-blue" : ""}`}>
+                        {row.otWorkers > 0 ? row.otWorkers : ""}
+                      </td>
+                      <td className="ot-td-num">{otTarget.toFixed(1)}</td>
+                      <td className="ot-td-num">{row.totalOTHours > 0 ? row.totalOTHours.toFixed(1) : "-"}</td>
+                      <td className="ot-td-num ot-td-muted">-</td>
+                      <td className="ot-td-num">{row.totalOTHours > 0 ? row.totalOTHours.toFixed(1) : "-"}</td>
+                      <td className="ot-td-num">{avgOT > 0 ? avgOT.toFixed(1) : "-"}</td>
+                      <td className={`ot-td-num ot-td-avg-yellow${avgOT > otTarget ? " ot-hl-red" : avgOT > 0 ? " ot-hl-green" : ""}`}>
+                        {avgOT.toFixed(1)}
+                      </td>
+                      <td className="ot-td-mgr" onClick={(e) => e.stopPropagation()}>
+                        <select
+                          className="ot-mgr-select"
+                          value={deptManagers[row.dept] ?? ""}
+                          onChange={(e) => saveDeptManager(row.dept, e.target.value)}
+                        >
+                          <option value="">-</option>
+                          {mgrPool.map((m) => (
+                            <option key={m.empId} value={m.name}>{m.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="ot-total-row">
+                  <td>รวมทั้งหมด</td>
+                  <td className="ot-td-num">{totals.total}</td>
+                  <td className="ot-td-num ot-td-muted">-</td>
+                  <td className="ot-td-num ot-td-muted">-</td>
+                  <td className="ot-td-num">{totals.absent > 0 ? totals.absent : ""}</td>
+                  <td className="ot-td-num">{totals.late > 0 ? totals.late : ""}</td>
+                  <td className="ot-td-num">{totals.dayoff > 0 ? totals.dayoff : ""}</td>
+                  <td className="ot-td-num">
+                    {totals.total - totals.dayoff > 0
+                      ? `${Math.round((totals.absent / (totals.total - totals.dayoff)) * 100)}%`
+                      : "0%"}
+                  </td>
+                  <td className="ot-td-num">{totals.activeWorkers}</td>
+                  <td className="ot-td-num">
+                    {totals.activeWorkers > 0
+                      ? `${Math.round((totals.otWorkers / totals.activeWorkers) * 100)}%`
+                      : ""}
+                  </td>
+                  <td className="ot-td-num">{totals.otWorkers > 0 ? totals.otWorkers : ""}</td>
+                  <td className="ot-td-num">{otTarget.toFixed(1)}</td>
+                  <td className="ot-td-num">{totals.totalOTHours > 0 ? totals.totalOTHours.toFixed(1) : "-"}</td>
+                  <td className="ot-td-num ot-td-muted">-</td>
+                  <td className="ot-td-num">{totals.totalOTHours > 0 ? totals.totalOTHours.toFixed(1) : "-"}</td>
+                  <td className="ot-td-num">{totalAvgOT > 0 ? totalAvgOT.toFixed(1) : "-"}</td>
+                  <td className="ot-td-num ot-td-avg-yellow">{totalAvgOT.toFixed(1)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* ── Employee Detail (drill-down) ── */}
+          {selectedDept && (
+            <div className="panel ot-detail-panel">
+              <div className="ot-detail-hdr">
+                <h3>รายละเอียด OT · {selectedDept}</h3>
+                <button type="button" className="ot-close-btn" onClick={() => setSelectedDept(null)}>
+                  ✕ ปิด
+                </button>
+              </div>
+              <div className="table-scroll">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>รหัส</th>
+                      <th>ชื่อ-นามสกุล</th>
+                      <th>กะ</th>
+                      <th>เริ่มกะ</th>
+                      <th>สิ้นสุดกะ</th>
+                      <th>สแกนเข้า</th>
+                      <th>สแกนออก</th>
+                      <th>สถานะ</th>
+                      <th>OT (ชม.)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedDeptRecords
+                      .slice()
+                      .sort((a, b) => b.otHours - a.otHours)
+                      .map((rec, i) => (
+                        <tr key={rec.empId + "-" + i} className={rec.otHours > 0 ? "ot-detail-has-ot" : ""}>
+                          <td>{rec.empId}</td>
+                          <td>{rec.name}</td>
+                          <td>{rec.shift}</td>
+                          <td>{rec.shiftStart}</td>
+                          <td>{rec.shiftEnd}</td>
+                          <td>{rec.scanIn}</td>
+                          <td>{rec.scanOut}</td>
+                          <td>
+                            <span className={`ot-status-badge ot-status-${rec.status.toLowerCase()}`}>
+                              {rec.status === "Present" ? "ตรงเวลา"
+                                : rec.status === "Late" ? "สาย"
+                                : rec.status === "Absent" ? "ขาด"
+                                : "หยุด"}
+                            </span>
+                          </td>
+                          <td className={rec.otHours > 0 ? "ot-td-positive" : "ot-td-zero"}>
+                            {rec.otHours > 0 ? rec.otHours.toFixed(2) : "-"}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
 }
