@@ -4447,6 +4447,22 @@ button.stacked-row {
   border-color: #059669;
 }
 
+.master-sub-tab-primary {
+  color: #047857;
+  background: #d1fae5;
+  border-color: #059669;
+  font-weight: 600;
+}
+.master-sub-tab-primary:hover {
+  background: #a7f3d0;
+  color: #065f46;
+}
+.master-sub-tab-primary.active {
+  background: #059669;
+  color: #ffffff;
+  border-color: #047857;
+}
+
 /* ── Holiday Master Page ── */
 .holiday-master-panel {
   padding: 24px;
