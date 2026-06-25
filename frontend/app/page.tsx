@@ -1019,19 +1019,44 @@ export default function Home() {
         <nav className="nav-list" aria-label="Main navigation">
           {navItems.map((item) => {
             const Icon = item.icon;
+            const isActive = activeTab === item.id;
             return (
-              <button
-                className={`nav-item ${activeTab === item.id ? "active" : ""}`}
-                key={item.label}
-                onClick={() => { setActiveTab(item.id as TabId); setError(""); setMessage(""); }}
-                type="button"
-              >
-                <Icon size={19} />
-                <span>{item.label}</span>
-                {item.label === "Master Data" || item.label === "Report & Dashboard" ? (
-                  <ChevronDown className="nav-chevron" size={15} />
+              <div key={item.label}>
+                <button
+                  className={`nav-item ${isActive ? "active" : ""}`}
+                  onClick={() => { setActiveTab(item.id as TabId); setError(""); setMessage(""); }}
+                  type="button"
+                >
+                  <Icon size={19} />
+                  <span>{item.label}</span>
+                  {item.label === "Master Data" || item.label === "Report & Dashboard" ? (
+                    <ChevronDown className={`nav-chevron${isActive ? " open" : ""}`} size={15} />
+                  ) : null}
+                </button>
+                {item.id === "master" && isActive ? (
+                  <div className="nav-sub-list">
+                    {([
+                      { id: "files", icon: FileSpreadsheet, label: "Master Files" },
+                      { id: "holidays", icon: CalendarDays, label: "วันพระ" },
+                      { id: "public_holidays", icon: CalendarDays, label: "วันหยุดประจำปี" },
+                      { id: "dayoff_shift", icon: CalendarClock, label: "Shift & Dayoff" },
+                    ] as const).map((sub) => {
+                      const SubIcon = sub.icon;
+                      return (
+                        <button
+                          key={sub.id}
+                          className={`nav-sub-item${masterSubTab === sub.id ? " active" : ""}${sub.id === "dayoff_shift" ? " primary" : ""}`}
+                          onClick={() => setMasterSubTab(sub.id)}
+                          type="button"
+                        >
+                          <SubIcon size={14} />
+                          <span>{sub.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : null}
-              </button>
+              </div>
             );
           })}
         </nav>
