@@ -2762,7 +2762,7 @@ function buildCombinedExcelWorkbook(
       "Last Name (Local)": String(row["Last Name (Local)"] ?? "").trim(),
       "หน่วยงาน": String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim(),
       "Title (Position)": String(row["Title (Position)"] ?? row["position"] ?? "").trim(),
-      "หน้างาน": skillCFMap.get(empId) ?? "",
+      "หน่วยงานย่อย/Skill": skillCFMap.get(empId) ?? "",
       "กะ": ds?.shift ?? "",
       "เวลาเข้างาน": ds?.shiftStart ?? "",
       "วันหยุดประจำสัปดาห์": ds?.dayoff ?? "",
@@ -2787,7 +2787,7 @@ function buildCombinedExcelWorkbook(
 function parseCombinedSheet1(rows: Record<string, unknown>[]): CombinedEmployeeRow[] {
   const FIXED = new Set([
     "employee id", "first name (local)", "last name (local)",
-    "หน่วยงาน", "title (position)", "หน้างาน", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
+    "หน่วยงาน", "title (position)", "หน่วยงานย่อย/skill", "หน้างาน", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
   ]);
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   if (rows.length > 0) {
@@ -2810,7 +2810,7 @@ function parseCombinedSheet1(rows: Record<string, unknown>[]): CombinedEmployeeR
       lastName: String(row["Last Name (Local)"] ?? "").trim(),
       dept: String(row["หน่วยงาน"] ?? "").trim(),
       position: String(row["Title (Position)"] ?? "").trim(),
-      jobSite: String(row["หน้างาน"] ?? "").trim(),
+      jobSite: String(row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim(),
       shift: String(row["กะ"] ?? "").trim(),
       shiftStart: normalizeTimeText(row["เวลาเข้างาน"]),
       dayoff: String(row["วันหยุดประจำสัปดาห์"] ?? "").trim(),
@@ -3018,7 +3018,7 @@ function MasterDataPage({
   function downloadCombinedTemplate() {
     const headers = [
       "Employee ID", "First Name (Local)", "Last Name (Local)",
-      "หน่วยงาน", "Title (Position)", "หน้างาน", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
+      "หน่วยงาน", "Title (Position)", "หน่วยงานย่อย/Skill", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
     ];
     const examples = [
       ["EMP001", "สมชาย", "ใจดี", "งานเครื่องใน", "พนักงานผลิต", "ตะกร้า", "กะ 1", "07:00", "อาทิตย์"],
@@ -4114,8 +4114,7 @@ function DayoffShiftEditor({
             row["หน่วยงาน"] ?? row["Name (Section)"] ?? row["Department"] ?? "",
           ).trim();
           if (empId && dept) deptMap.set(empId, dept);
-          // อ่านหน้างานจาก employee_master (คอลัมน์ "หน้างาน")
-          const jobSite = String(row["หน้างาน"] ?? "").trim();
+          const jobSite = String(row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim();
           if (empId && jobSite) {
             skillCFMap.set(empId, jobSite);
             allJobSites.add(jobSite);
@@ -4180,7 +4179,7 @@ function DayoffShiftEditor({
         : field === "shift"
         ? ["อยู่กะไหน", "shift", "กะ", "Shift"]
         : field === "jobSite"
-        ? ["หน้างาน", "job_site", "Job Site"]
+        ? ["หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"]
         : ["เวลาเข้างาน", "เวลาเข้า", "shift_start"];
     setRows((current) =>
       current.map((row) =>
@@ -4419,7 +4418,7 @@ function DayoffShiftEditor({
               <th>Emp ID</th>
               <th>ชื่อ</th>
               <th>หน่วยงาน</th>
-              <th>หน้างาน</th>
+              <th>หน่วยงานย่อย/Skill</th>
               <th>Dayoff</th>
               <th>Shift</th>
               <th>เวลาเข้า</th>
