@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   BarChart3,
   BriefcaseBusiness,
+  CalendarClock,
   CalendarDays,
   CalendarOff,
   CheckCircle2,
@@ -2971,7 +2972,7 @@ function MasterDataPage({
   setMessage: (msg: string) => void;
   setMasterUploads: Dispatch<SetStateAction<MasterUploadState>>;
 }) {
-  const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays" | "public_holidays">("files");
+  const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays" | "public_holidays" | "dayoff_shift">("files");
   const [combinedFile, setCombinedFile] = useState<File | null>(null);
   const [isSavingCombined, setIsSavingCombined] = useState(false);
   const [diffResult, setDiffResult] = useState<EmployeeDiff | null>(null);
@@ -3246,6 +3247,13 @@ function MasterDataPage({
           <CalendarDays size={15} />
           วันหยุดประจำปี
         </button>
+        <button
+          className={`master-sub-tab${masterSubTab === "dayoff_shift" ? " active" : ""}`}
+          onClick={() => setMasterSubTab("dayoff_shift")}
+        >
+          <CalendarClock size={15} />
+          Shift & Dayoff
+        </button>
       </div>
 
       {masterSubTab === "holidays" ? (
@@ -3485,12 +3493,15 @@ function MasterDataPage({
 
       </div>{/* md-two-col */}
 
-      <DayoffShiftEditor
-        activeFile={activeMasterMap.dayoff_shift}
-        employeeMasterFile={activeMasterMap.employee_master}
-        saveDayoffShiftRows={saveDayoffShiftRows}
-      />
       </>) : null}
+
+      {masterSubTab === "dayoff_shift" ? (
+        <DayoffShiftEditor
+          activeFile={activeMasterMap.dayoff_shift}
+          employeeMasterFile={activeMasterMap.employee_master}
+          saveDayoffShiftRows={saveDayoffShiftRows}
+        />
+      ) : null}
     </section>
   );
 }
