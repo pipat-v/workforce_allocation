@@ -1963,7 +1963,7 @@ button {
 
 .dayoff-editor-panel {
   display: grid;
-  gap: 14px;
+  gap: 6px;
 }
 
 .dayoff-editor-panel .primary-button {
@@ -1975,7 +1975,7 @@ button {
   flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 6px;
 }
 
 .dayoff-editor-filters input[type="search"],
