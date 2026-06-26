@@ -2044,11 +2044,9 @@ function minutesBetween(shiftStart: string, scanIn: Date) {
 // Returns undefined when there is only one scan (clock-in only, no clock-out).
 function findScanOut(scans: Date[], scanIn: Date | undefined): Date | undefined {
   if (!scans.length || !scanIn) return undefined;
-  if (scans.length === 1) return undefined;
-  const sorted = [...scans].sort((a, b) => b.getTime() - a.getTime());
-  const latest = sorted[0];
-  if (latest.getTime() === scanIn.getTime()) return sorted[1];
-  return latest;
+  const after = scans.filter((t) => t.getTime() > scanIn.getTime());
+  if (!after.length) return undefined;
+  return after.sort((a, b) => b.getTime() - a.getTime())[0];
 }
 
 // Returns true when the time-of-day of `t` falls within the clock-in window:
@@ -2117,14 +2115,31 @@ function findScanIn(scans: Date[], shiftStart: string, isoTargetDate: string): D
     .filter((d) => !isoTargetDate || d <= isoTargetDate)
     .sort((a, b) => b.localeCompare(a)); // descending — most recent first
 
+  const hasScan = (date: string) => isoTargetDate
+    ? scans.some((t) => toIso(t) === date)
+    : true;
+
   for (const date of sortedDates) {
     const inWindow = (byDate.get(date) ?? []).filter((t) => isInClockInWindow(t, sh, sm));
-    if (inWindow.length) return pickClosest(inWindow);
+    if (inWindow.length) {
+      const candidate = pickClosest(inWindow);
+      // If clock-in is from a previous day, only accept it when the employee also
+      // has a scan on isoTargetDate (e.g. an OT clock-out proves they were present).
+      // Without this, absent employees with prior-day scans appear as Present.
+      if (isoTargetDate && toIso(candidate) < isoTargetDate && !hasScan(isoTargetDate)) {
+        return undefined;
+      }
+      return candidate;
+    }
   }
 
   // Fallback: earliest timestamp on or before isoTargetDate.
   const fallback = isoTargetDate ? scans.filter((t) => toIso(t) <= isoTargetDate) : scans;
-  return (fallback.length ? fallback : scans).sort((a, b) => a.getTime() - b.getTime())[0];
+  const candidate = (fallback.length ? fallback : scans).sort((a, b) => a.getTime() - b.getTime())[0];
+  if (candidate && isoTargetDate && toIso(candidate) < isoTargetDate && !hasScan(isoTargetDate)) {
+    return undefined;
+  }
+  return candidate;
 }
 
 const STATUS_TH: Record<string, string> = {
