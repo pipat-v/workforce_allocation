@@ -1120,7 +1120,7 @@ export default function Home() {
         </button>
       </aside>
 
-      <section className="main">
+      <section className="main" data-tab={activeTab}>
         <header className="topbar">
           <div>
             <h1 className="title">Workforce Allocation System</h1>
@@ -1407,6 +1407,7 @@ export default function Home() {
             otSubTab={otSubTab}
             setOtSubTab={setOtSubTab}
             scanUploadedAt={latestRun?.created_at ?? null}
+            holidayDates={holidayDates}
           />
         ) : null}
 
@@ -6540,6 +6541,7 @@ function OTDashboard({
   otSubTab,
   setOtSubTab,
   scanUploadedAt,
+  holidayDates,
 }: {
   reportData: ReportData | null;
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
@@ -6547,6 +6549,7 @@ function OTDashboard({
   otSubTab: "chart" | "summary" | "detail";
   setOtSubTab: Dispatch<SetStateAction<"chart" | "summary" | "detail">>;
   scanUploadedAt: string | null;
+  holidayDates: Set<string>;
 }) {
   const [shiftEndMap, setShiftEndMap] = useState<Record<string, string>>(() => {
     if (typeof window === "undefined") return {};
@@ -6619,15 +6622,21 @@ function OTDashboard({
     });
   }, [reportData, shiftEndMap]);
 
+  const isPublicHoliday = reportData?.isoTargetDate
+    ? holidayDates.has(reportData.isoTargetDate)
+    : false;
+
   const deptOTRows = useMemo(() => {
     const map = new Map<string, {
       dept: string; total: number; absent: number; late: number; dayoff: number;
-      otWorkers: number; totalOTHours: number; activeWorkers: number;
+      otWorkers: number; normalOTHours: number; publicHolidayOTHours: number;
+      totalOTHours: number; activeWorkers: number;
     }>();
     for (const rec of otRecords) {
       const cur = map.get(rec.dept) ?? {
         dept: rec.dept, total: 0, absent: 0, late: 0, dayoff: 0,
-        otWorkers: 0, totalOTHours: 0, activeWorkers: 0,
+        otWorkers: 0, normalOTHours: 0, publicHolidayOTHours: 0,
+        totalOTHours: 0, activeWorkers: 0,
       };
       cur.total += 1;
       if (rec.status === "Absent" || rec.status === "Pending") cur.absent += 1;
@@ -6635,12 +6644,20 @@ function OTDashboard({
       if (rec.status === "DayOff") cur.dayoff += 1;
       if (rec.status === "Present" || rec.status === "Late") {
         cur.activeWorkers += 1;
-        if (rec.otHours > 0) { cur.otWorkers += 1; cur.totalOTHours += rec.otHours; }
+        if (rec.otHours > 0) {
+          cur.otWorkers += 1;
+          cur.totalOTHours += rec.otHours;
+          if (isPublicHoliday) {
+            cur.publicHolidayOTHours += rec.otHours;
+          } else {
+            cur.normalOTHours += rec.otHours;
+          }
+        }
       }
       map.set(rec.dept, cur);
     }
     return Array.from(map.values()).sort((a, b) => a.dept.localeCompare(b.dept, "th"));
-  }, [otRecords]);
+  }, [otRecords, isPublicHoliday]);
 
   const totals = useMemo(() => ({
     total: deptOTRows.reduce((s, r) => s + r.total, 0),
@@ -6648,6 +6665,8 @@ function OTDashboard({
     late: deptOTRows.reduce((s, r) => s + r.late, 0),
     dayoff: deptOTRows.reduce((s, r) => s + r.dayoff, 0),
     otWorkers: deptOTRows.reduce((s, r) => s + r.otWorkers, 0),
+    normalOTHours: deptOTRows.reduce((s, r) => s + r.normalOTHours, 0),
+    publicHolidayOTHours: deptOTRows.reduce((s, r) => s + r.publicHolidayOTHours, 0),
     totalOTHours: deptOTRows.reduce((s, r) => s + r.totalOTHours, 0),
     activeWorkers: deptOTRows.reduce((s, r) => s + r.activeWorkers, 0),
   }), [deptOTRows]);
@@ -6671,22 +6690,21 @@ function OTDashboard({
     return [...new Set(base.map((r) => r.section))].filter(Boolean).sort();
   }, [otRecords, otDetailDeptFilter]);
   const otDetailShiftOptions = useMemo(() => {
-    let base = otRecords;
-    if (otDetailDeptFilter !== "all") base = base.filter((r) => r.dept === otDetailDeptFilter);
+    let base = selectedDept ? otRecords.filter((r) => r.dept === selectedDept) : otRecords;
     if (otDetailSectionFilter !== "all") base = base.filter((r) => r.section === otDetailSectionFilter);
     return [...new Set(base.map((r) => r.shift))].filter(Boolean).sort();
-  }, [otRecords, otDetailDeptFilter, otDetailSectionFilter]);
+  }, [otRecords, selectedDept, otDetailSectionFilter]);
 
   const filteredDetailRecords = useMemo((): OTRecord[] => {
     const q = otDetailSearch.trim().toLowerCase();
-    return selectedDeptRecords.filter((r) => {
-      if (otDetailDeptFilter !== "all" && r.dept !== otDetailDeptFilter) return false;
+    const base = selectedDept ? otRecords.filter((r) => r.dept === selectedDept) : otRecords;
+    return base.filter((r) => {
       if (otDetailSectionFilter !== "all" && r.section !== otDetailSectionFilter) return false;
       if (otDetailShiftFilter !== "all" && r.shift !== otDetailShiftFilter) return false;
       if (q && !r.empId.toLowerCase().includes(q) && !r.name.toLowerCase().includes(q) && !r.dept.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [selectedDeptRecords, otDetailSearch, otDetailDeptFilter, otDetailSectionFilter, otDetailShiftFilter]);
+  }, [otRecords, selectedDept, otDetailSearch, otDetailSectionFilter, otDetailShiftFilter]);
 
   const totalAvgOT = totals.activeWorkers > 0 ? totals.totalOTHours / totals.activeWorkers : 0;
   const chartRows = [
@@ -6888,31 +6906,39 @@ function OTDashboard({
             <table className="table ot-table">
               <thead>
                 <tr>
-                  <th rowSpan={2} className="ot-th-sticky">
+                  <th rowSpan={3} className="ot-th-sticky">
                     หน่วยงาน<br />
                     <span className="ot-th-date">{reportData.targetDate}</span>
                   </th>
-                  <th rowSpan={2} className="ot-th-num">อัตรา<br />กำลัง</th>
-                  <th colSpan={5} className="ot-th-group">สถิติการมาทำงาน</th>
-                  <th rowSpan={2} className="ot-th-num">%<br />หยุด</th>
-                  <th rowSpan={2} className="ot-th-num">ที่<br />ทำงาน</th>
-                  <th rowSpan={2} className="ot-th-num">%<br />OT</th>
-                  <th rowSpan={2} className="ot-th-num">คน<br />OT</th>
-                  <th rowSpan={2} className="ot-th-num">เป้า<br />(ชม.)</th>
-                  <th colSpan={4} className="ot-th-group ot-th-group-ot">เปรียบเทียบค่าล่วงเวลา</th>
-                  <th rowSpan={2} className="ot-th-avg-yellow">เฉลี่ย<br />คน/วัน</th>
-                  <th rowSpan={2} className="ot-th-mgr ot-th-mgr-header">สถาพ / ผจก.</th>
+                  <th rowSpan={3} className="ot-th-num">อัตรา<br />กำลังคน</th>
+                  <th colSpan={7} className="ot-th-group">สถิติการมาทำงาน (คนงาน)</th>
+                  <th rowSpan={3} className="ot-th-num">%<br />หยุดงาน</th>
+                  <th rowSpan={3} className="ot-th-num ot-th-pink">พนักงาน<br />ที่ทำงาน</th>
+                  <th rowSpan={3} className="ot-th-num ot-th-pink">%พนัก<br />ที่ OT</th>
+                  <th rowSpan={3} className="ot-th-num ot-th-pink">พนักงาน<br />ที่ OT</th>
+                  <th rowSpan={3} className="ot-th-num">เป้า<br />หมาย</th>
+                  <th colSpan={6} className="ot-th-group ot-th-group-ot">เปรียบเทียบ ค่าล่วงเวลา (คนงาน)</th>
+                  <th rowSpan={3} className="ot-th-avg-yellow">เฉลี่ย<br />คน/วัน</th>
+                  <th rowSpan={3} className="ot-th-mgr ot-th-mgr-header">สถาพ / ผจก.</th>
                 </tr>
                 <tr>
-                  <th className="ot-th-sub ot-th-vert">ลาป่วย</th>
-                  <th className="ot-th-sub ot-th-vert">ลากิจ</th>
-                  <th className="ot-th-sub ot-th-vert">ขาดงาน</th>
-                  <th className="ot-th-sub ot-th-vert">มาสาย</th>
-                  <th className="ot-th-sub ot-th-vert">วันหยุด</th>
-                  <th className="ot-th-sub ot-th-vert-num">ปกติ 1.5×</th>
-                  <th className="ot-th-sub ot-th-vert-num">วันหยุด</th>
-                  <th className="ot-th-sub ot-th-vert-num">รวม ชม.</th>
-                  <th className="ot-th-sub ot-th-vert-num">เฉลี่ย</th>
+                  <th rowSpan={2} className="ot-th-sub ot-th-vert">ลาป่วย</th>
+                  <th rowSpan={2} className="ot-th-sub ot-th-vert">ลากิจ</th>
+                  <th rowSpan={2} className="ot-th-sub ot-th-vert">ลาบวช<br />คลอด</th>
+                  <th rowSpan={2} className="ot-th-sub ot-th-vert">ลาพัก<br />ผ่อน</th>
+                  <th rowSpan={2} className="ot-th-sub ot-th-vert ot-th-absent">ขาดงาน</th>
+                  <th rowSpan={2} className="ot-th-sub ot-th-vert">ลาไม่<br />จ่าย</th>
+                  <th rowSpan={2} className="ot-th-sub ot-th-vert">รวมวัน<br />หยุดงาน</th>
+                  <th className="ot-th-sub ot-th-ot-normal ot-th-subgrp">OT วันปกติ</th>
+                  <th colSpan={3} className="ot-th-sub ot-th-holiday-grp ot-th-subgrp">OT วันหยุด</th>
+                  <th rowSpan={2} className="ot-th-sub ot-th-vert-num">รวม<br />ชม.</th>
+                  <th rowSpan={2} className="ot-th-sub ot-th-vert-num">เฉลี่ย<br />ต่อคน</th>
+                </tr>
+                <tr>
+                  <th className="ot-th-sub ot-th-vert-num ot-th-ot-normal">1.5<br />ชม</th>
+                  <th className="ot-th-sub ot-th-vert-num ot-th-holiday">1<br />ชม</th>
+                  <th className="ot-th-sub ot-th-vert-num ot-th-holiday">2<br />ชม</th>
+                  <th className="ot-th-sub ot-th-vert-num ot-th-holiday">3<br />ชม</th>
                 </tr>
               </thead>
               <tbody>
@@ -6933,8 +6959,10 @@ function OTDashboard({
                       <td className="ot-td-num">{row.total}</td>
                       <td className="ot-td-num ot-td-muted">-</td>
                       <td className="ot-td-num ot-td-muted">-</td>
-                      <td className="ot-td-num">{row.absent > 0 ? row.absent : ""}</td>
-                      <td className="ot-td-num">{row.late > 0 ? row.late : ""}</td>
+                      <td className="ot-td-num ot-td-muted">-</td>
+                      <td className="ot-td-num ot-td-muted">-</td>
+                      <td className="ot-td-num ot-td-absent-cell">{row.absent > 0 ? row.absent : ""}</td>
+                      <td className="ot-td-num ot-td-muted">-</td>
                       <td className="ot-td-num">{row.dayoff > 0 ? row.dayoff : ""}</td>
                       <td className="ot-td-num">{pctStop}%</td>
                       <td className="ot-td-num">{row.activeWorkers}</td>
@@ -6943,7 +6971,9 @@ function OTDashboard({
                         {row.otWorkers > 0 ? row.otWorkers : ""}
                       </td>
                       <td className="ot-td-num">{otTarget.toFixed(1)}</td>
-                      <td className="ot-td-num">{row.totalOTHours > 0 ? row.totalOTHours.toFixed(1) : "-"}</td>
+                      <td className="ot-td-num">{row.normalOTHours > 0 ? row.normalOTHours.toFixed(1) : "-"}</td>
+                      <td className="ot-td-num ot-td-muted">-</td>
+                      <td className={`ot-td-num${row.publicHolidayOTHours > 0 ? " ot-hl-orange" : " ot-td-muted"}`}>{row.publicHolidayOTHours > 0 ? row.publicHolidayOTHours.toFixed(1) : "-"}</td>
                       <td className="ot-td-num ot-td-muted">-</td>
                       <td className="ot-td-num">{row.totalOTHours > 0 ? row.totalOTHours.toFixed(1) : "-"}</td>
                       <td className="ot-td-num">{avgOT > 0 ? avgOT.toFixed(1) : "-"}</td>
@@ -6972,12 +7002,14 @@ function OTDashboard({
                   <td className="ot-td-num">{totals.total}</td>
                   <td className="ot-td-num ot-td-muted">-</td>
                   <td className="ot-td-num ot-td-muted">-</td>
-                  <td className="ot-td-num">{totals.absent > 0 ? totals.absent : ""}</td>
-                  <td className="ot-td-num">{totals.late > 0 ? totals.late : ""}</td>
+                  <td className="ot-td-num ot-td-muted">-</td>
+                  <td className="ot-td-num ot-td-muted">-</td>
+                  <td className="ot-td-num ot-td-absent-cell">{totals.absent > 0 ? totals.absent : ""}</td>
+                  <td className="ot-td-num ot-td-muted">-</td>
                   <td className="ot-td-num">{totals.dayoff > 0 ? totals.dayoff : ""}</td>
                   <td className="ot-td-num">
-                    {totals.total - totals.dayoff > 0
-                      ? `${Math.round((totals.absent / (totals.total - totals.dayoff)) * 100)}%`
+                    {Math.max(0, totals.total - totals.dayoff) > 0
+                      ? `${Math.round((totals.absent / Math.max(0, totals.total - totals.dayoff)) * 100)}%`
                       : "0%"}
                   </td>
                   <td className="ot-td-num">{totals.activeWorkers}</td>
@@ -6988,7 +7020,9 @@ function OTDashboard({
                   </td>
                   <td className="ot-td-num">{totals.otWorkers > 0 ? totals.otWorkers : ""}</td>
                   <td className="ot-td-num">{otTarget.toFixed(1)}</td>
-                  <td className="ot-td-num">{totals.totalOTHours > 0 ? totals.totalOTHours.toFixed(1) : "-"}</td>
+                  <td className="ot-td-num">{totals.normalOTHours > 0 ? totals.normalOTHours.toFixed(1) : "-"}</td>
+                  <td className="ot-td-num ot-td-muted">-</td>
+                  <td className={`ot-td-num${totals.publicHolidayOTHours > 0 ? " ot-hl-orange" : " ot-td-muted"}`}>{totals.publicHolidayOTHours > 0 ? totals.publicHolidayOTHours.toFixed(1) : "-"}</td>
                   <td className="ot-td-num ot-td-muted">-</td>
                   <td className="ot-td-num">{totals.totalOTHours > 0 ? totals.totalOTHours.toFixed(1) : "-"}</td>
                   <td className="ot-td-num">{totalAvgOT > 0 ? totalAvgOT.toFixed(1) : "-"}</td>
@@ -7028,7 +7062,13 @@ function OTDashboard({
                   {otDetailShiftOptions.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
                 {selectedDept && (
-                  <button type="button" className="ot-close-btn" onClick={() => setSelectedDept(null)}>
+                  <button type="button" className="ot-close-btn" onClick={() => {
+                    setSelectedDept(null);
+                    setOtSubTab("summary");
+                    setOtDetailSectionFilter("all");
+                    setOtDetailShiftFilter("all");
+                    setOtDetailSearch("");
+                  }}>
                     ✕ ล้างตัวกรอง
                   </button>
                 )}

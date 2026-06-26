@@ -193,6 +193,11 @@ button {
   flex-direction: column;
 }
 
+.main[data-tab="ot"] .dashboard-head {
+  margin-top: 0;
+  margin-bottom: 6px;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -647,7 +652,7 @@ button {
   display: grid;
   grid-template-columns: 7fr 3fr;
   gap: 16px;
-  margin-top: 16px;
+  margin-top: 0px;
 }
 
 .panel {
@@ -1385,7 +1390,7 @@ button {
 
 /* Employee detail attendance panel */
 .detail-attendance-panel {
-  margin-top: 16px;
+  margin-top: 10px;
 }
 
 .row-risk td {
@@ -3986,7 +3991,7 @@ button.stacked-row {
 
 /* ── Supervisor Check Panel ──────────────────────────────────── */
 .sup-check-panel {
-  margin-top: 20px;
+  margin-top: 10px;
 }
 
 .panel-collapse-trigger {
@@ -4202,7 +4207,8 @@ button.stacked-row {
   border: 1.5px solid #e2e8f0;
   border-radius: 12px;
   padding: 12px 18px;
-  margin-bottom: 14px;
+  margin-top: 10px;
+  margin-bottom: 10px;
   flex-wrap: wrap;
 }
 .confirm-card-top { flex: 1; min-width: 0; }
@@ -4878,11 +4884,9 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 .ot-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   padding: 0 16px 16px;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+  margin-top: 0;
 }
 
 /* Header */
@@ -4892,7 +4896,7 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px;
-  padding: 10px 16px;
+  padding: 6px 16px;
   background: linear-gradient(135deg, #1e293b 0%, #0f2027 100%);
   border-radius: 12px;
   border: none;
@@ -5035,21 +5039,29 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   border-radius: 12px;
   background: var(--panel);
   box-shadow: var(--shadow);
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .ot-table {
-  width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
+  min-width: 100%;
 }
 
 .ot-table th,
 .ot-table td {
   border-bottom: 1px solid var(--line);
-  padding: 5px 3px;
+  padding: 2px 3px;
   white-space: nowrap;
   font-size: 12px;
+}
+
+.ot-table thead th {
+  border-bottom: none !important;
+}
+
+.ot-table thead tr:last-child th {
+  border-bottom: 2px solid #334155 !important;
 }
 
 .ot-table thead tr:first-child th {
@@ -5088,26 +5100,26 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   writing-mode: vertical-lr;
   text-orientation: mixed;
   white-space: nowrap;
-  height: 82px;
+  height: 42px;
   text-align: center;
-  padding: 6px 1px !important;
+  padding: 0 1px !important;
   width: 20px;
   font-size: 11px;
   font-weight: 600;
-  vertical-align: bottom;
+  vertical-align: top;
 }
 
 .ot-th-vert-num {
   writing-mode: vertical-lr;
   text-orientation: mixed;
   white-space: nowrap;
-  height: 82px;
+  height: 42px;
   text-align: center;
-  padding: 6px 2px !important;
+  padding: 0 2px !important;
   width: 38px;
   font-size: 11px;
   font-weight: 600;
-  vertical-align: bottom;
+  vertical-align: top;
 }
 
 .ot-th-group {
@@ -5159,6 +5171,9 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 .ot-hl-blue { color: #1d4ed8; font-weight: 700; }
 .ot-hl-red  { color: #dc2626; font-weight: 700; }
 .ot-hl-green { color: #059669; font-weight: 700; }
+.ot-hl-orange { color: #c2410c; font-weight: 700; }
+
+.ot-th-holiday { background: #fff7ed !important; color: #9a3412; }
 
 .ot-total-row {
   background: #f8fafc;
@@ -5183,7 +5198,7 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 .ot-chart-panel {
   padding: 20px;
   flex: 1;
-  min-height: 0;
+  min-height: calc(100vh - 220px);
   display: flex;
   flex-direction: column;
 }
@@ -5300,7 +5315,26 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 
 /* Employee Detail Panel */
 .ot-detail-panel {
-  padding: 20px;
+  padding: 16px 18px;
+  flex: 1;
+  min-height: 0;
+  max-height: calc(100vh - 280px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ot-detail-panel .table-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  margin-top: 0;
+  overflow: auto;
+}
+
+.ot-detail-panel .table th,
+.ot-detail-panel .table td {
+  padding: 7px 10px;
 }
 
 .ot-detail-hdr {
@@ -5308,7 +5342,7 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   align-items: center;
   gap: 12px;
   flex-wrap: nowrap;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
   overflow: hidden;
 }
 
@@ -5397,6 +5431,78 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 /* ── Table additions ── */
 .ot-th-group-ot {
   background: #064e3b !important;
+}
+
+.ot-th-pink {
+  background: #9d174d !important;
+  color: #fce7f3 !important;
+  border-left: 2px solid #4a044e !important;
+}
+
+.ot-th-pink + th:not(.ot-th-pink) {
+  border-left: 2px solid #4a044e !important;
+}
+
+.ot-th-absent {
+  background: #92400e !important;
+  color: #fef3c7 !important;
+}
+
+.ot-th-holiday-grp {
+  background: #7c2d12 !important;
+  color: #fed7aa !important;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  border-left: 1px solid #9a3412 !important;
+  vertical-align: bottom;
+  padding: 3px 2px !important;
+}
+
+.ot-th-subgrp {
+  vertical-align: bottom;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 2px !important;
+  white-space: nowrap;
+}
+
+.ot-th-holiday {
+  background: #78350f !important;
+  color: #fed7aa !important;
+}
+
+.ot-td-absent-cell {
+  background: #fef9c3;
+  font-weight: 700;
+  text-align: center;
+  font-size: 12px;
+}
+
+.ot-th-group-ot,
+.ot-table thead tr th.ot-th-avg-yellow {
+  border-left: 2px solid #14532d !important;
+}
+
+.ot-table thead tr th.ot-th-mgr-header {
+  border-left: 2px solid #334155 !important;
+}
+
+.ot-th-ot-normal {
+  background: #1e3a5f !important;
+  color: #bfdbfe !important;
+  border-left: 2px solid #14532d !important;
+  vertical-align: bottom;
+}
+
+.ot-table thead tr:nth-child(3) th {
+  background: #0f172a;
+  color: #94a3b8;
+  font-size: 12px;
+  position: sticky;
+  top: 68px;
+  z-index: 2;
 }
 
 .ot-th-sub {
