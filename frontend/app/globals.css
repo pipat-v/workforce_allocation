@@ -95,6 +95,11 @@ button {
   flex: 1;
   min-height: 0;
   align-content: start;
+  scrollbar-width: none;
+}
+
+.nav-list::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-item,
