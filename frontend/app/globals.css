@@ -189,6 +189,8 @@ button {
   overflow-x: hidden;
   overflow-y: auto;
   padding: 20px 22px 28px;
+  display: flex;
+  flex-direction: column;
 }
 
 .topbar {
@@ -4876,9 +4878,11 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 .ot-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 24px;
-  overflow-y: auto;
+  gap: 12px;
+  padding: 0 16px 16px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Header */
@@ -4887,8 +4891,8 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 16px 20px;
+  gap: 10px;
+  padding: 10px 16px;
   background: linear-gradient(135deg, #1e293b 0%, #0f2027 100%);
   border-radius: 12px;
   border: none;
@@ -5178,6 +5182,10 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 /* Bar Chart */
 .ot-chart-panel {
   padding: 20px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .ot-chart-title {
@@ -5188,7 +5196,7 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 }
 
 .ot-chart-wrap {
-  overflow-x: auto;
+  overflow: hidden;
   padding-bottom: 8px;
 }
 
@@ -5219,8 +5227,7 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   align-items: center;
   gap: 4px;
   flex: 1;
-  min-width: 52px;
-  max-width: 80px;
+  min-width: 0;
   height: 100%;
 }
 
@@ -5299,14 +5306,61 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 .ot-detail-hdr {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: nowrap;
   margin-bottom: 14px;
+  overflow: hidden;
 }
 
 .ot-detail-hdr h3 {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.ot-detail-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.ot-detail-search {
+  flex: 2;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--fg);
+  outline: none;
+}
+
+.ot-detail-search:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+}
+
+.ot-detail-filters select {
+  height: 34px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") no-repeat right 8px center;
+  appearance: none;
+  color: var(--fg);
+  cursor: pointer;
+  outline: none;
+}
+
+.ot-detail-filters select:focus {
+  border-color: #3b82f6;
 }
 
 .ot-close-btn {
@@ -5383,8 +5437,10 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 /* ── New chart layout ── */
 .ot-chart-layout {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 6px;
+  flex: 1;
+  min-height: 0;
 }
 
 .ot-yaxis-col {
@@ -5406,8 +5462,7 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 .ot-chart-track-wrap {
   flex: 1;
   position: relative;
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: visible;
   min-width: 0;
 }
 
@@ -5442,13 +5497,11 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   align-items: flex-end;
   gap: 6px;
   padding: 0 6px;
-  min-width: max-content;
 }
 
 .ot-bar-item-v2 {
   flex: 1;
-  min-width: 48px;
-  max-width: 80px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -5486,21 +5539,26 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   align-items: flex-start;
   padding: 4px 6px 0;
   gap: 6px;
-  min-width: max-content;
 }
 
 .ot-xlab-item {
   flex: 1;
-  min-width: 44px;
-  max-width: 80px;
+  min-width: 0;
+  height: 0;
+  overflow: visible;
+  position: relative;
+}
+
+.ot-xlab-item span {
+  position: absolute;
+  top: 4px;
+  right: 50%;
+  white-space: nowrap;
   font-size: 11px;
   font-weight: 500;
   color: #1e293b;
-  text-align: center;
-  white-space: nowrap;
-  writing-mode: vertical-lr;
-  height: 88px;
-  overflow: visible;
+  transform: rotate(-20deg);
+  transform-origin: top right;
 }
 
 .ot-legend-box {

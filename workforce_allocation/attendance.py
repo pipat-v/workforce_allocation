@@ -1,20 +1,24 @@
+import datetime
+
 import pandas as pd
 
 from .utils import clean_emp_id, clean_name
 
 
-def _exclude_am_scans_for_pm_shift_workers(
+def _redate_am_scans_for_pm_shift_workers(
     scan: pd.DataFrame,
     employee: pd.DataFrame,
     manpower_plan: pd.DataFrame,
 ) -> pd.DataFrame:
     """
     For employees whose dept has only PM shifts (all shift_start ≥ 12:00),
-    remove AM timestamps so they aren't used as clock-in.
+    move AM timestamps back one day instead of discarding them.
 
-    Night-shift workers (e.g., 22:00–06:00) generate early-morning exit scans.
-    Without this filter, scan_in = min(time) would pick the AM exit time and
-    incorrectly report the worker as late for their PM shift.
+    Night-shift workers (e.g., 22:00–06:00) produce early-morning exit scans
+    (e.g., 02:00 on date D). If kept on date D, scan_in = min(time) would pick
+    02:00 as clock-in, making the worker look very late for their PM shift.
+    By moving those scans to D-1, they become scan_out for the night shift on
+    D-1 and are no longer available as clock-in on D.
     """
     dept_shifts = (
         manpower_plan[["dept", "shift_start"]]
@@ -32,7 +36,11 @@ def _exclude_am_scans_for_pm_shift_workers(
     if not pm_depts:
         return scan
 
-    pm_emp_ids = set(employee.loc[employee["dept"].astype(str).str.strip().isin(pm_depts), "emp_id"].dropna())
+    pm_emp_ids = set(
+        employee.loc[
+            employee["dept"].astype(str).str.strip().isin(pm_depts), "emp_id"
+        ].dropna()
+    )
     if not pm_emp_ids:
         return scan
 
@@ -40,8 +48,12 @@ def _exclude_am_scans_for_pm_shift_workers(
     scan["_time_dt"] = pd.to_datetime(scan["time"], format="%H:%M", errors="coerce")
     is_pm_worker = scan["emp_id"].isin(pm_emp_ids)
     is_am_scan = scan["_time_dt"].dt.hour < 12
+    redate_mask = is_pm_worker & is_am_scan
 
-    return scan[~(is_pm_worker & is_am_scan)].drop(columns=["_time_dt"])
+    scan.loc[redate_mask, "date"] = scan.loc[redate_mask, "date"].apply(
+        lambda d: d - datetime.timedelta(days=1)
+    )
+    return scan.drop(columns=["_time_dt"])
 
 
 def rebuild_attendance(
@@ -78,7 +90,7 @@ def rebuild_attendance(
     ]
 
     if manpower_plan is not None:
-        scan = _exclude_am_scans_for_pm_shift_workers(scan, employee, manpower_plan)
+        scan = _redate_am_scans_for_pm_shift_workers(scan, employee, manpower_plan)
 
     attendance = (
         scan.groupby(["emp_id", "Employee Name", "date"])

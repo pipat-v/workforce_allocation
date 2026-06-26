@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -130,7 +130,7 @@ type AttendanceRecord = {
   shiftStart: string;
   scanIn: string;
   scanOut: string;
-  status: "Present" | "Late" | "Absent" | "DayOff";
+  status: "Present" | "Late" | "Absent" | "DayOff" | "Pending" | "NoScanIn";
   minutesLate: number;
 };
 
@@ -191,6 +191,7 @@ const publicWorkspace = "public";
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays" | "public_holidays" | "dayoff_shift">("files");
+  const [otSubTab, setOtSubTab] = useState<"chart" | "summary" | "detail">("chart");
   const [masterUploads, setMasterUploads] = useState<MasterUploadState>({
     employee_master: null,
     manpower_plan: null,
@@ -1056,7 +1057,7 @@ export default function Home() {
                 >
                   <Icon size={19} />
                   <span>{item.label}</span>
-                  {item.label === "Master Data" || item.label === "Report & Dashboard" ? (
+                  {item.label === "Master Data" || item.label === "Report & Dashboard" || item.label === "OT Dashboard" ? (
                     <ChevronDown className={`nav-chevron${isActive ? " open" : ""}`} size={15} />
                   ) : null}
                 </button>
@@ -1074,6 +1075,27 @@ export default function Home() {
                           key={sub.id}
                           className={`nav-sub-item${masterSubTab === sub.id ? " active" : ""}${sub.id === "dayoff_shift" ? " primary" : ""}`}
                           onClick={() => setMasterSubTab(sub.id)}
+                          type="button"
+                        >
+                          <SubIcon size={14} />
+                          <span>{sub.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : item.id === "ot" && isActive ? (
+                  <div className="nav-sub-list">
+                    {([
+                      { id: "chart", icon: BarChart3, label: "แผนภูมิ" },
+                      { id: "summary", icon: LayoutGrid, label: "สรุปรายหน่วยงาน" },
+                      { id: "detail", icon: UsersRound, label: "สรุปรายพนักงาน" },
+                    ] as const).map((sub) => {
+                      const SubIcon = sub.icon;
+                      return (
+                        <button
+                          key={sub.id}
+                          className={`nav-sub-item${otSubTab === sub.id ? " active" : ""}`}
+                          onClick={() => setOtSubTab(sub.id)}
                           type="button"
                         >
                           <SubIcon size={14} />
@@ -1151,6 +1173,12 @@ export default function Home() {
                 <button className={`master-sub-tab${masterSubTab === "holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("holidays")}><CalendarDays size={15} />วันพระ</button>
                 <button className={`master-sub-tab${masterSubTab === "public_holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("public_holidays")}><CalendarDays size={15} />วันหยุดประจำปี</button>
                 <button className={`master-sub-tab master-sub-tab-primary${masterSubTab === "dayoff_shift" ? " active" : ""}`} onClick={() => setMasterSubTab("dayoff_shift")}><CalendarClock size={15} />Shift & Dayoff</button>
+              </div>
+            ) : activeTab === "ot" ? (
+              <div className="master-sub-tabs">
+                <button className={`master-sub-tab${otSubTab === "chart" ? " active" : ""}`} onClick={() => setOtSubTab("chart")}><BarChart3 size={15} />แผนภูมิ</button>
+                <button className={`master-sub-tab${otSubTab === "summary" ? " active" : ""}`} onClick={() => setOtSubTab("summary")}><LayoutGrid size={15} />สรุปรายหน่วยงาน</button>
+                <button className={`master-sub-tab${otSubTab === "detail" ? " active" : ""}`} onClick={() => setOtSubTab("detail")}><UsersRound size={15} />สรุปรายพนักงาน</button>
               </div>
             ) : null}
             {activeTab === "dashboard" && allDeptOptions.length > 0 ? (
@@ -1376,6 +1404,9 @@ export default function Home() {
             reportData={reportData}
             activeMasterMap={activeMasterMap}
             isLoadingReport={isLoadingReport}
+            otSubTab={otSubTab}
+            setOtSubTab={setOtSubTab}
+            scanUploadedAt={latestRun?.created_at ?? null}
           />
         ) : null}
 
@@ -1503,6 +1534,10 @@ function buildReportData(
   const targetMonthKey = latestTimestamp
     ? `${latestTimestamp.getFullYear()}-${String(latestTimestamp.getMonth() + 1).padStart(2, "0")}`
     : "";
+  const _now = new Date();
+  const todayIso = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
+  const nowMinutes = _now.getHours() * 60 + _now.getMinutes();
+  const isTargetToday = isoTargetDate === todayIso;
 
   // For night shift workers (e.g. 22:00–07:00) whose only scans today are early-morning
   // clock-outs, pull in the previous day's evening scans (≥20:00) as the real clock-in.
@@ -1604,9 +1639,35 @@ function buildReportData(
       minutesLate: 0,
     }];
 
-    const scanOut = findScanOut(scans, scanIn);
+    const [ssH = 7, ssM = 0] = shiftStart.split(":").map(Number);
+    const shiftStartMinutes = ssH * 60 + ssM;
+
+    // Detect "forgot to scan in": no valid clock-in, but there is a scan on the
+    // target date that falls outside the clock-in window (a probable clock-out).
+    let scanOut = findScanOut(scans, scanIn);
+    let noScanIn = false;
+    if (!scanIn && isoTargetDate) {
+      const toIsoStr = (t: Date) =>
+        `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+      const postWindow = scans.filter(
+        (t) => toIsoStr(t) === isoTargetDate && !isInClockInWindow(t, ssH, ssM, 360)
+      );
+      if (postWindow.length > 0) {
+        noScanIn = true;
+        scanOut = postWindow.sort((a, b) => b.getTime() - a.getTime())[0];
+      }
+    }
+
     const minutesLate = scanIn ? Math.max(0, minutesBetween(shiftStart, scanIn)) : 0;
-    const status = !scanIn ? "Absent" : minutesLate > 5 ? "Late" : "Present";
+    // If we're in the early hours (before 06:00) and the shift starts in the evening
+    // (18:00+), we've crossed midnight — the shift already started. Without this guard,
+    // nowMinutes=30 < shiftStartMinutes=1320 would incorrectly show Pending at 00:30 AM
+    // for a 22:00 shift that started 2.5 hours ago.
+    const crossedMidnight = nowMinutes < 360 && shiftStartMinutes >= 1080;
+    const shiftNotStarted = isTargetToday && !scanIn && !noScanIn && !crossedMidnight && nowMinutes < shiftStartMinutes;
+    const status = !scanIn
+      ? (noScanIn ? "NoScanIn" : shiftNotStarted ? "Pending" : "Absent")
+      : minutesLate > 5 ? "Late" : "Present";
 
     return [{
       empId: employee.empId,
@@ -1636,7 +1697,8 @@ function buildReportData(
     current.total += 1;
     if (record.status === "Present") current.present += 1;
     if (record.status === "Late") current.late += 1;
-    if (record.status === "Absent") current.absent += 1;
+    if (record.status === "Absent" || record.status === "Pending") current.absent += 1;
+    if (record.status === "NoScanIn") current.present += 1;
     if (record.status === "DayOff") current.dayoff += 1;
     deptMap.set(record.dept, current);
   }
@@ -1646,9 +1708,9 @@ function buildReportData(
     isoTargetDate,
     targetMonthKey,
     totalEmployees: records.length,
-    present: records.filter((record) => record.status === "Present").length,
+    present: records.filter((record) => record.status === "Present" || record.status === "NoScanIn").length,
     late: records.filter((record) => record.status === "Late").length,
-    absent: records.filter((record) => record.status === "Absent").length,
+    absent: records.filter((record) => record.status === "Absent" || record.status === "Pending").length,
     dayoff: records.filter((record) => record.status === "DayOff").length,
     deptRows: Array.from(deptMap.values())
       .sort((a, b) => b.total - a.total),
@@ -2176,6 +2238,16 @@ function findScanIn(scans: Date[], shiftStart: string, isoTargetDate: string): D
   if (candidate && isoTargetDate && toIso(candidate) < isoTargetDate && !hasScan(isoTargetDate)) {
     return undefined;
   }
+  // For PM shifts (shiftStart ≥ 12:00), an AM fallback scan is an exit from the
+  // previous night's shift — treat it as absent rather than a very-late clock-in.
+  if (candidate && sh >= 12 && candidate.getHours() < 12) {
+    return undefined;
+  }
+  // A fallback scan more than 6 h outside the normal clock-in window is more likely
+  // an OT exit than a late arrival — don't misidentify it as clock-in.
+  if (candidate && !isInClockInWindow(candidate, sh, sm, 360)) {
+    return undefined;
+  }
   return candidate;
 }
 
@@ -2184,6 +2256,8 @@ const STATUS_TH: Record<string, string> = {
   Late: "มาสาย",
   Absent: "ขาดงาน",
   DayOff: "วันหยุด",
+  Pending: "รอเข้างาน",
+  NoScanIn: "ขาดสแกนเข้า",
 };
 
 function formatLateTime(minutes: number): string {
@@ -6463,10 +6537,16 @@ function OTDashboard({
   reportData,
   activeMasterMap,
   isLoadingReport,
+  otSubTab,
+  setOtSubTab,
+  scanUploadedAt,
 }: {
   reportData: ReportData | null;
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   isLoadingReport: boolean;
+  otSubTab: "chart" | "summary" | "detail";
+  setOtSubTab: Dispatch<SetStateAction<"chart" | "summary" | "detail">>;
+  scanUploadedAt: string | null;
 }) {
   const [shiftEndMap, setShiftEndMap] = useState<Record<string, string>>(() => {
     if (typeof window === "undefined") return {};
@@ -6484,6 +6564,19 @@ function OTDashboard({
   const [managerOptions, setManagerOptions] = useState<Array<{ empId: string; name: string; dept: string }>>([]);
   const [showConfig, setShowConfig] = useState(false);
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
+  const chartPanelRef = useRef<HTMLDivElement>(null);
+  const [chartTrackH, setChartTrackH] = useState(200);
+
+  const chartObserverRef = useRef<ResizeObserver | null>(null);
+  const chartLayoutRef = (el: HTMLDivElement | null) => {
+    if (chartObserverRef.current) { chartObserverRef.current.disconnect(); chartObserverRef.current = null; }
+    if (!el) return;
+    const obs = new ResizeObserver(([entry]) => {
+      setChartTrackH(Math.max(150, Math.floor(entry.contentRect.height - 96)));
+    });
+    obs.observe(el);
+    chartObserverRef.current = obs;
+  };
 
   useEffect(() => {
     const path = activeMasterMap.dayoff_shift?.file_path;
@@ -6521,7 +6614,7 @@ function OTDashboard({
       const shiftEnd = shiftEndMap[rec.shift] || addHoursToTime(rec.shiftStart, 8);
       const otHours = (rec.status === "Present" || rec.status === "Late")
         ? calcOTHoursForRecord(rec.scanOut, shiftEnd)
-        : 0;
+        : 0; // NoScanIn, Absent, Pending, DayOff → OT = 0
       return { ...rec, shiftEnd, otHours };
     });
   }, [reportData, shiftEndMap]);
@@ -6537,7 +6630,7 @@ function OTDashboard({
         otWorkers: 0, totalOTHours: 0, activeWorkers: 0,
       };
       cur.total += 1;
-      if (rec.status === "Absent") cur.absent += 1;
+      if (rec.status === "Absent" || rec.status === "Pending") cur.absent += 1;
       if (rec.status === "Late") cur.late += 1;
       if (rec.status === "DayOff") cur.dayoff += 1;
       if (rec.status === "Present" || rec.status === "Late") {
@@ -6560,9 +6653,40 @@ function OTDashboard({
   }), [deptOTRows]);
 
   const selectedDeptRecords = useMemo((): OTRecord[] => {
-    if (!selectedDept) return [];
+    if (!selectedDept) return otRecords;
     return otRecords.filter((r) => r.dept === selectedDept);
   }, [otRecords, selectedDept]);
+
+  const [otDetailSearch, setOtDetailSearch] = useState("");
+  const [otDetailDeptFilter, setOtDetailDeptFilter] = useState("all");
+  const [otDetailSectionFilter, setOtDetailSectionFilter] = useState("all");
+  const [otDetailShiftFilter, setOtDetailShiftFilter] = useState("all");
+
+  const otDetailDeptOptions = useMemo(
+    () => [...new Set(otRecords.map((r) => r.dept))].filter(Boolean).sort(),
+    [otRecords],
+  );
+  const otDetailSectionOptions = useMemo(() => {
+    const base = otDetailDeptFilter === "all" ? otRecords : otRecords.filter((r) => r.dept === otDetailDeptFilter);
+    return [...new Set(base.map((r) => r.section))].filter(Boolean).sort();
+  }, [otRecords, otDetailDeptFilter]);
+  const otDetailShiftOptions = useMemo(() => {
+    let base = otRecords;
+    if (otDetailDeptFilter !== "all") base = base.filter((r) => r.dept === otDetailDeptFilter);
+    if (otDetailSectionFilter !== "all") base = base.filter((r) => r.section === otDetailSectionFilter);
+    return [...new Set(base.map((r) => r.shift))].filter(Boolean).sort();
+  }, [otRecords, otDetailDeptFilter, otDetailSectionFilter]);
+
+  const filteredDetailRecords = useMemo((): OTRecord[] => {
+    const q = otDetailSearch.trim().toLowerCase();
+    return selectedDeptRecords.filter((r) => {
+      if (otDetailDeptFilter !== "all" && r.dept !== otDetailDeptFilter) return false;
+      if (otDetailSectionFilter !== "all" && r.section !== otDetailSectionFilter) return false;
+      if (otDetailShiftFilter !== "all" && r.shift !== otDetailShiftFilter) return false;
+      if (q && !r.empId.toLowerCase().includes(q) && !r.name.toLowerCase().includes(q) && !r.dept.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [selectedDeptRecords, otDetailSearch, otDetailDeptFilter, otDetailSectionFilter, otDetailShiftFilter]);
 
   const totalAvgOT = totals.activeWorkers > 0 ? totals.totalOTHours / totals.activeWorkers : 0;
   const chartRows = [
@@ -6576,7 +6700,7 @@ function OTDashboard({
   );
   const yMax = Math.max(Math.ceil(maxAvgOT) + 1, 5);
   const yTicks = Array.from({ length: yMax + 1 }, (_, i) => i);
-  const TRACK_H = 200;
+  const TRACK_H = chartTrackH;
   const XLAB_H = 96;
   const DEPT_BAR_COLORS = [
     "#ef4444", "#8b5cf6", "#3b82f6", "#10b981", "#f59e0b",
@@ -6614,10 +6738,18 @@ function OTDashboard({
       <div className="panel ot-header">
         <div className="ot-header-left">
           <h2 className="ot-title">การติดตาม OT ภายในหน่วยงาน (พนักงาน)</h2>
-          {reportData && <span className="ot-sub">วันที่ {reportData.targetDate}</span>}
         </div>
         <div className="ot-header-right">
-          <span className="ot-pull-badge">ดึงข้อมูล {timeStr}</span>
+          <span className="ot-pull-badge">
+            ดึงข้อมูล {scanUploadedAt
+              ? (() => {
+                  const d = new Date(scanUploadedAt);
+                  const date = d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+                  const time = d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+                  return date + "      " + time + " น.";
+                })()
+              : timeStr}
+          </span>
           <button
             className={`ot-config-toggle${showConfig ? " active" : ""}`}
             onClick={() => setShowConfig((v) => !v)}
@@ -6680,11 +6812,11 @@ function OTDashboard({
       ) : (
         <>
           {/* ── Bar Chart ── */}
-          <div className="panel ot-chart-panel">
+          {otSubTab === "chart" && <div className="panel ot-chart-panel" ref={chartPanelRef}>
             <p className="ot-chart-title">
               วันที่ {reportData.targetDate}&nbsp;&nbsp;เปรียบเทียบ เฉลี่ยชั่วโมง O.T. ต่อคน/วัน
             </p>
-            <div className="ot-chart-layout">
+            <div className="ot-chart-layout" ref={chartLayoutRef}>
               {/* Y-axis labels */}
               <div className="ot-yaxis-col" style={{ height: TRACK_H + XLAB_H }}>
                 {yTicks.slice().reverse().map((tick) => (
@@ -6734,7 +6866,7 @@ function OTDashboard({
                 <div className="ot-xaxis-row" style={{ height: XLAB_H, bottom: 0 }}>
                   {chartRows.map((row) => (
                     <div key={row.dept} className="ot-xlab-item" title={row.dept}>
-                      {row.dept}
+                      <span>{row.dept}</span>
                     </div>
                   ))}
                 </div>
@@ -6749,10 +6881,10 @@ function OTDashboard({
                 </div>
               </div>
             </div>
-          </div>
+          </div>}
 
           {/* ── Summary Table ── */}
-          <div className="ot-table-scroll">
+          {otSubTab === "summary" && <div className="ot-table-scroll">
             <table className="table ot-table">
               <thead>
                 <tr>
@@ -6795,7 +6927,7 @@ function OTDashboard({
                     <tr
                       key={row.dept}
                       className={`ot-row${selectedDept === row.dept ? " ot-row-selected" : ""}`}
-                      onClick={() => setSelectedDept(selectedDept === row.dept ? null : row.dept)}
+                      onClick={() => { const next = selectedDept === row.dept ? null : row.dept; setSelectedDept(next); setOtSubTab(next ? "detail" : "summary"); setOtDetailDeptFilter("all"); setOtDetailSectionFilter("all"); setOtDetailShiftFilter("all"); setOtDetailSearch(""); }}
                     >
                       <td className="ot-td-dept">{row.dept}</td>
                       <td className="ot-td-num">{row.total}</td>
@@ -6865,63 +6997,114 @@ function OTDashboard({
                 </tr>
               </tfoot>
             </table>
-          </div>
+          </div>}
 
-          {/* ── Employee Detail (drill-down) ── */}
-          {selectedDept && (
-            <div className="panel ot-detail-panel">
-              <div className="ot-detail-hdr">
-                <h3>รายละเอียด OT · {selectedDept}</h3>
-                <button type="button" className="ot-close-btn" onClick={() => setSelectedDept(null)}>
-                  ✕ ปิด
+          {/* ── Employee Detail Table ── */}
+          {otSubTab === "detail" && <div className="panel ot-detail-panel">
+            <div className="ot-detail-hdr">
+              <h3>
+                รายละเอียดรายคน
+                {selectedDept ? ` · ${selectedDept}` : ""}
+                <span className="ot-detail-count"> ({filteredDetailRecords.length} คน)</span>
+              </h3>
+              <div className="ot-detail-filters">
+                <input
+                  type="text"
+                  className="ot-detail-search"
+                  placeholder="ค้นหา รหัส ชื่อ หน่วยงาน"
+                  value={otDetailSearch}
+                  onChange={(e) => setOtDetailSearch(e.target.value)}
+                />
+                <select value={otDetailDeptFilter} onChange={(e) => { setOtDetailDeptFilter(e.target.value); setOtDetailSectionFilter("all"); setOtDetailShiftFilter("all"); }}>
+                  <option value="all">ทุกหน่วยงาน</option>
+                  {otDetailDeptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+                <select style={{ width: 130 }} value={otDetailSectionFilter} onChange={(e) => { setOtDetailSectionFilter(e.target.value); setOtDetailShiftFilter("all"); }}>
+                  <option value="all">ทุกหน่วยงานย่อย</option>
+                  {otDetailSectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <select value={otDetailShiftFilter} onChange={(e) => setOtDetailShiftFilter(e.target.value)}>
+                  <option value="all">ทุก Shift</option>
+                  {otDetailShiftOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                {selectedDept && (
+                  <button type="button" className="ot-close-btn" onClick={() => setSelectedDept(null)}>
+                    ✕ ล้างตัวกรอง
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="primary-button small"
+                  disabled={filteredDetailRecords.length === 0}
+                  onClick={() => {
+                    const rows = filteredDetailRecords.slice().sort((a, b) => b.otHours - a.otHours).map((r) => ({
+                      "รหัส": r.empId,
+                      "ชื่อ-นามสกุล": r.name,
+                      "หน่วยงาน": r.dept,
+                      "หน่วยงานย่อย": r.section,
+                      "กะ": r.shift,
+                      "เริ่มกะ": r.shiftStart,
+                      "สิ้นสุดกะ": r.shiftEnd,
+                      "สแกนเข้า": r.scanIn,
+                      "สแกนออก": r.scanOut,
+                      "สถานะ": STATUS_TH[r.status] ?? r.status,
+                      "OT (ชม.)": r.otHours > 0 ? r.otHours.toFixed(2) : "",
+                    }));
+                    const ws = XLSX.utils.json_to_sheet(rows);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "OT Detail");
+                    XLSX.writeFile(wb, `OT-รายละเอียดรายคน.xlsx`);
+                  }}
+                >
+                  <Download size={14} />
+                  Export Excel
                 </button>
               </div>
-              <div className="table-scroll">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>รหัส</th>
-                      <th>ชื่อ-นามสกุล</th>
-                      <th>กะ</th>
-                      <th>เริ่มกะ</th>
-                      <th>สิ้นสุดกะ</th>
-                      <th>สแกนเข้า</th>
-                      <th>สแกนออก</th>
-                      <th>สถานะ</th>
-                      <th>OT (ชม.)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedDeptRecords
-                      .slice()
-                      .sort((a, b) => b.otHours - a.otHours)
-                      .map((rec, i) => (
-                        <tr key={rec.empId + "-" + i} className={rec.otHours > 0 ? "ot-detail-has-ot" : ""}>
-                          <td>{rec.empId}</td>
-                          <td>{rec.name}</td>
-                          <td>{rec.shift}</td>
-                          <td>{rec.shiftStart}</td>
-                          <td>{rec.shiftEnd}</td>
-                          <td>{rec.scanIn}</td>
-                          <td>{rec.scanOut}</td>
-                          <td>
-                            <span className={`ot-status-badge ot-status-${rec.status.toLowerCase()}`}>
-                              {rec.status === "Present" ? "ตรงเวลา"
-                                : rec.status === "Late" ? "สาย"
-                                : rec.status === "Absent" ? "ขาด"
-                                : "หยุด"}
-                            </span>
-                          </td>
-                          <td className={rec.otHours > 0 ? "ot-td-positive" : "ot-td-zero"}>
-                            {rec.otHours > 0 ? rec.otHours.toFixed(2) : "-"}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
             </div>
-          )}
+            <div className="table-scroll">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>รหัส</th>
+                    <th>ชื่อ-นามสกุล</th>
+                    <th>หน่วยงาน</th>
+                    <th>กะ</th>
+                    <th>เริ่มกะ</th>
+                    <th>สิ้นสุดกะ</th>
+                    <th>สแกนเข้า</th>
+                    <th>สแกนออก</th>
+                    <th>สถานะ</th>
+                    <th>OT (ชม.)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredDetailRecords
+                    .slice()
+                    .sort((a, b) => b.otHours - a.otHours)
+                    .map((rec, i) => (
+                      <tr key={rec.empId + "-" + i} className={rec.otHours > 0 ? "ot-detail-has-ot" : ""}>
+                        <td>{rec.empId}</td>
+                        <td>{rec.name}</td>
+                        <td>{rec.dept}</td>
+                        <td>{rec.shift}</td>
+                        <td>{rec.shiftStart}</td>
+                        <td>{rec.shiftEnd}</td>
+                        <td>{rec.scanIn}</td>
+                        <td>{rec.scanOut}</td>
+                        <td>
+                          <span className={`ot-status-badge ot-status-${rec.status.toLowerCase()}`}>
+                            {STATUS_TH[rec.status] ?? rec.status}
+                          </span>
+                        </td>
+                        <td className={rec.otHours > 0 ? "ot-td-positive" : "ot-td-zero"}>
+                          {rec.otHours > 0 ? rec.otHours.toFixed(2) : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>}
         </>
       )}
     </section>
