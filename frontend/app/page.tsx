@@ -124,6 +124,7 @@ type AttendanceRecord = {
   empId: string;
   name: string;
   dept: string;
+  section: string;
   position: string;
   shift: string;
   shiftStart: string;
@@ -217,6 +218,7 @@ export default function Home() {
   const [selectedReportDept, setSelectedReportDept] = useState("all");
   const [masterFileHistory, setMasterFileHistory] = useState<MasterFile[]>([]);
   const [dashboardDeptFilter, setDashboardDeptFilter] = useState("all");
+  const [dashboardSectionFilter, setDashboardSectionFilter] = useState("all");
   const [detailStatusFilter, setDetailStatusFilter] = useState("all");
   const scrollToDetail = (filter: string) => {
     setDetailStatusFilter(filter);
@@ -279,11 +281,30 @@ export default function Home() {
     [reportData],
   );
 
+  const allSectionOptions = useMemo(() => {
+    const base = dashboardDeptFilter === "all"
+      ? (reportData?.records ?? [])
+      : (reportData?.records ?? []).filter((r) => r.dept === dashboardDeptFilter);
+    return Array.from(new Set(base.map((r) => r.section).filter(Boolean))).sort();
+  }, [reportData, dashboardDeptFilter]);
+
   const dashboardReport = useMemo<ReportData | null>(() => {
     if (!reportData) return null;
-    if (dashboardDeptFilter === "all") return reportData;
-    const filtered = reportData.records.filter((r) => r.dept === dashboardDeptFilter);
+    let filtered = reportData.records;
+    if (dashboardDeptFilter !== "all") filtered = filtered.filter((r) => r.dept === dashboardDeptFilter);
+    if (dashboardSectionFilter !== "all") filtered = filtered.filter((r) => r.section === dashboardSectionFilter);
+    if (filtered === reportData.records) return reportData;
     const lateFiltered = filtered.filter((r) => r.status === "Late");
+    const deptMap = new Map<string, { dept: string; present: number; late: number; absent: number; dayoff: number; total: number }>();
+    for (const r of filtered) {
+      const cur = deptMap.get(r.dept) ?? { dept: r.dept, present: 0, late: 0, absent: 0, dayoff: 0, total: 0 };
+      cur.total += 1;
+      if (r.status === "Present") cur.present += 1;
+      if (r.status === "Late") cur.late += 1;
+      if (r.status === "Absent") cur.absent += 1;
+      if (r.status === "DayOff") cur.dayoff += 1;
+      deptMap.set(r.dept, cur);
+    }
     return {
       ...reportData,
       records: filtered,
@@ -294,9 +315,9 @@ export default function Home() {
       absent: filtered.filter((r) => r.status === "Absent").length,
       dayoff: filtered.filter((r) => r.status === "DayOff").length,
       lateRows: [...lateFiltered].sort((a, b) => b.minutesLate - a.minutesLate),
-      deptRows: reportData.deptRows.filter((r) => r.dept === dashboardDeptFilter),
+      deptRows: [...deptMap.values()],
     };
-  }, [reportData, dashboardDeptFilter]);
+  }, [reportData, dashboardDeptFilter, dashboardSectionFilter]);
 
   const totalEmployees = dashboardReport?.totalEmployees ?? 0;
   const presentPeople = dashboardReport?.present ?? 0;
@@ -1137,11 +1158,24 @@ export default function Home() {
                 aria-label="กรองหน่วยงาน"
                 className="dept-filter-select"
                 value={dashboardDeptFilter}
-                onChange={(e) => setDashboardDeptFilter(e.target.value)}
+                onChange={(e) => { setDashboardDeptFilter(e.target.value); setDashboardSectionFilter("all"); }}
               >
                 <option value="all">ทุกหน่วยงาน</option>
                 {allDeptOptions.map((dept) => (
                   <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
+            ) : null}
+            {activeTab === "dashboard" && allSectionOptions.length > 0 ? (
+              <select
+                aria-label="กรองหน่วยงานย่อย"
+                className="dept-filter-select"
+                value={dashboardSectionFilter}
+                onChange={(e) => setDashboardSectionFilter(e.target.value)}
+              >
+                <option value="all">ทุกหน่วยงานย่อย</option>
+                {allSectionOptions.map((s) => (
+                  <option key={s} value={s}>{s}</option>
                 ))}
               </select>
             ) : null}
@@ -1560,6 +1594,7 @@ function buildReportData(
       empId: employee.empId,
       name: employee.name,
       dept: employee.dept,
+      section: dayoffShift?.section ?? "",
       position: employee.position,
       shift,
       shiftStart,
@@ -1577,6 +1612,7 @@ function buildReportData(
       empId: employee.empId,
       name: employee.name,
       dept: employee.dept,
+      section: dayoffShift?.section ?? "",
       position: employee.position,
       shift,
       shiftStart,
@@ -1694,7 +1730,7 @@ function setRowCol(row: Record<string, unknown>, value: string, ...targets: stri
 }
 
 function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
-  const map = new Map<string, { dayoff: string; shift: string; shiftStart: string }>();
+  const map = new Map<string, { dayoff: string; shift: string; shiftStart: string; section: string }>();
   for (const row of rows) {
     const empId = cleanEmpId(
       row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]
@@ -1704,6 +1740,7 @@ function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
       dayoff: findRowCol(row, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"),
       shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
       shiftStart: normalizeTimeText(findRowCol(row, "เวลาเข้างาน", "เวลาเข้า", "shift_start")),
+      section: findRowCol(row, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"),
     });
   }
   return map;
