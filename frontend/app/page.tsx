@@ -1757,7 +1757,7 @@ function toDayoffShiftEditorRow(row: Record<string, unknown>, index: number): Da
     empId,
     name: `${firstName} ${lastName}`.trim() || fallbackName || empId,
     dept: findRowCol(row, "หน่วยงาน", "Org. Unit Description", "Name (Section)", "แผนก", "Department"),
-    jobSite: "",
+    jobSite: findRowCol(row, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"),
     dayoff: findRowCol(row, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"),
     shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
     shiftStart: normalizeTimeText(shiftStartRaw),
@@ -4187,7 +4187,6 @@ function DayoffShiftEditor({
             allJobSites.add(jobSite);
           }
         }
-        setJobSiteOptions(Array.from(allJobSites).filter(Boolean).sort());
         // ดึงเวลาเข้าจาก column index ตาม shift (AI=กะ1, AL=กะ2, AO=กะ3)
         const hdrIdx = empRawRows.findIndex((r) =>
           (r as unknown[]).some((c) =>
@@ -4218,10 +4217,12 @@ function DayoffShiftEditor({
         const parsed = dayoffRows.map((row, i) => {
           const r = toDayoffShiftEditorRow(row, i);
           if (!r.dept && deptMap.has(r.empId)) r.dept = deptMap.get(r.empId)!;
-          r.jobSite = skillCFMap.get(r.empId) ?? "";
+          if (!r.jobSite) r.jobSite = skillCFMap.get(r.empId) ?? "";
+          if (r.jobSite) allJobSites.add(r.jobSite);
           if (!r.shiftStart && timeMap.has(r.empId)) r.shiftStart = timeMap.get(r.empId)!;
           return r;
         });
+        setJobSiteOptions(Array.from(allJobSites).filter(Boolean).sort());
         setRows(parsed);
         setOriginalRows(parsed);
         setSelectedIds(new Set());
