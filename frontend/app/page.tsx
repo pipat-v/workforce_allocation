@@ -675,6 +675,15 @@ export default function Home() {
       throw new Error(uploadError.message);
     }
 
+    const { data: prevActiveSkill } = await supabase
+      .from("master_data_files")
+      .select("id")
+      .is("owner_id", null)
+      .eq("file_type", "skill_matrix")
+      .eq("is_active", true)
+      .maybeSingle();
+    const prevActiveSkillId: string | null = prevActiveSkill?.id ?? null;
+
     const { error: deactivateError } = await supabase
       .from("master_data_files")
       .update({ is_active: false })
@@ -697,6 +706,9 @@ export default function Home() {
       });
 
     if (insertError) {
+      if (prevActiveSkillId) {
+        await supabase.from("master_data_files").update({ is_active: true }).eq("id", prevActiveSkillId);
+      }
       setError(insertError.message);
       throw new Error(insertError.message);
     }
@@ -2453,9 +2465,11 @@ function exportLateAbsentToExcel(
   deptLabel: string,
 ) {
   const exportRows = rows
-    .filter((r) => r.status === "Late" || r.status === "Absent")
+    .filter((r) => r.status === "Late" || r.status === "Absent" || r.status === "NoScanIn" || r.status === "Pending")
     .sort((a, b) => {
-      if (a.status !== b.status) return a.status === "Absent" ? -1 : 1;
+      const order: Record<string, number> = { Absent: 0, Pending: 1, NoScanIn: 2, Late: 3 };
+      const ao = order[a.status] ?? 9, bo = order[b.status] ?? 9;
+      if (ao !== bo) return ao - bo;
       return b.minutesLate - a.minutesLate;
     })
     .map((r, i) => ({
@@ -2476,7 +2490,9 @@ function exportLateAbsentToExcel(
   const ws = XLSX.utils.json_to_sheet(exportRows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Late-Absent");
-  const filename = `late-absent_${deptLabel}_${new Date().toLocaleDateString("th-TH").replace(/\//g, "-")}.xlsx`;
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const filename = `late-absent_${deptLabel}_${dateStr}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
 
@@ -2519,20 +2535,19 @@ function DashboardPanels({
     if (!isoTargetDate) return;
     let cancelled = false;
     setLeaveError("");
-    const absentIds = (reportData?.records ?? [])
-      .filter((r: { status: string }) => r.status === "Absent")
-      .map((r: { empId: string }) => r.empId);
     supabase.from("leave_records").select("emp_id, leave_type").eq("leave_date", isoTargetDate)
       .then(({ data: rows, error }) => {
         if (cancelled) return;
         if (error) { setLeaveError(`โหลดข้อมูลการลาไม่สำเร็จ: ${error.message}`); return; }
         const map = new Map((rows ?? []).map((r: { emp_id: string; leave_type: string }) => [r.emp_id, r.leave_type]));
-        // Pre-populate local UI default only — don't write to DB until user explicitly saves
+        const absentIds = (reportData?.records ?? [])
+          .filter((r: { status: string }) => r.status === "Absent")
+          .map((r: { empId: string }) => r.empId);
         absentIds.filter((id: string) => !map.has(id)).forEach((id: string) => map.set(id, "ขาดงาน"));
         setLeaveMap(map);
       });
     return () => { cancelled = true; };
-  }, [isoTargetDate, reportData]);
+  }, [isoTargetDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveLeave = async (empId: string, leaveType: string) => {
     if (!isoTargetDate || !leaveType) return;
@@ -4051,6 +4066,7 @@ function PublicHolidayPage({
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<"public_holiday" | "company_holiday">("public_holiday");
   const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
+  const seededRef = useRef(false);
 
   useEffect(() => {
     void loadHolidays();
@@ -4059,18 +4075,21 @@ function PublicHolidayPage({
   async function loadHolidays() {
     setLoading(true);
 
-    // fetch ALL dates to avoid overwriting Buddhist holy days
-    const { data: allDates } = await supabase.from("holidays").select("date");
-    const allExistingDates = new Set((allDates ?? []).map((r: { date: string }) => r.date));
+    if (!seededRef.current) {
+      seededRef.current = true;
+      // fetch ALL dates to avoid overwriting Buddhist holy days
+      const { data: allDates } = await supabase.from("holidays").select("date");
+      const allExistingDates = new Set((allDates ?? []).map((r: { date: string }) => r.date));
 
-    const toInsert = Object.values(cpfPublicHolidaysByYear)
-      .flat()
-      .filter((e) => !allExistingDates.has(e.date))
-      .map((e) => ({ date: e.date, name: e.name, type: "public_holiday" as const }));
+      const toInsert = Object.values(cpfPublicHolidaysByYear)
+        .flat()
+        .filter((e) => !allExistingDates.has(e.date))
+        .map((e) => ({ date: e.date, name: e.name, type: "public_holiday" as const }));
 
-    if (toInsert.length > 0) {
-      const { error: insertError } = await supabase.from("holidays").insert(toInsert);
-      if (insertError) console.error("[PublicHolidayPage] auto-seed failed:", insertError.message);
+      if (toInsert.length > 0) {
+        const { error: insertError } = await supabase.from("holidays").insert(toInsert);
+        if (insertError) console.error("[PublicHolidayPage] auto-seed failed:", insertError.message);
+      }
     }
 
     // fetch public/company holidays + Buddhist holy days that overlap with CPF dates
@@ -5620,6 +5639,8 @@ function TimestampWithDeptPage({
           <option value="Late">มาสาย</option>
           <option value="Absent">ขาดงาน</option>
           <option value="DayOff">วันหยุด</option>
+          <option value="NoScanIn">ขาดสแกนเข้า</option>
+          <option value="Pending">รอเข้างาน</option>
         </select>
         <button
           className="ghost-button"
@@ -5793,8 +5814,8 @@ function ResultsPanel({
               <th><SortButton columnKey="name" setSort={setSort} sort={sort}>ชื่อ-สกุล</SortButton></th>
               <th><SortButton columnKey="dept" setSort={setSort} sort={sort}>หน่วยงาน</SortButton></th>
               <th><SortButton columnKey="position" setSort={setSort} sort={sort}>ตำแหน่ง</SortButton></th>
-              <th>สถานีงานที่จัดสรร</th>
-              <th>ระดับ Skill</th>
+              <th>หน่วยงานย่อย</th>
+              <th>กะ</th>
               <th><SortButton columnKey="scanIn" setSort={setSort} sort={sort}>เวลาเข้า</SortButton></th>
               <th><SortButton columnKey="status" setSort={setSort} sort={sort}>สถานะ</SortButton></th>
             </tr>
@@ -5807,8 +5828,8 @@ function ResultsPanel({
                 <td>{row.name}</td>
                 <td>{row.dept}</td>
                 <td>{row.position}</td>
-                <td>{row.dept}</td>
-                <td>-</td>
+                <td>{row.section || "-"}</td>
+                <td>{row.shift || "-"}</td>
                 <td>{row.scanIn}</td>
                 <td>
                   <span className={`status-pill ${row.status.toLowerCase()}`}>
@@ -5910,6 +5931,7 @@ function ReportDashboard({
   const setSort = setSort_ as (sort: SortState) => void;
   const [tableStatusFilter, setTableStatusFilter] = useState<"all" | "Late" | "Absent" | "DayOff">("all");
   const [leaveMap, setLeaveMap] = useState<Map<string, string>>(new Map());
+  const [leaveError, setLeaveError] = useState("");
 
   const isoDate = reportData?.isoTargetDate ?? "";
   const [deptConfirmations, setDeptConfirmations] = useState<Map<string, { confirmed_by: string; confirmed_at: string }>>(new Map());
@@ -5921,7 +5943,12 @@ function ReportDashboard({
     supabase.from("leave_records").select("emp_id, leave_type").eq("leave_date", isoDate)
       .then(({ data: rows }) => {
         if (!rows) return;
-        setLeaveMap(new Map(rows.map((r: { emp_id: string; leave_type: string }) => [r.emp_id, r.leave_type])));
+        const map = new Map(rows.map((r: { emp_id: string; leave_type: string }) => [r.emp_id, r.leave_type]));
+        const absentIds = (reportData?.records ?? [])
+          .filter((r: { status: string }) => r.status === "Absent")
+          .map((r: { empId: string }) => r.empId);
+        absentIds.filter((id: string) => !map.has(id)).forEach((id: string) => map.set(id, "ขาดงาน"));
+        setLeaveMap(map);
       });
     supabase.from("daily_confirmations")
       .select("dept, confirmed_by, confirmed_at")
@@ -5930,7 +5957,7 @@ function ReportDashboard({
         if (!rows) return;
         setDeptConfirmations(new Map(rows.map((r: { dept: string; confirmed_by: string; confirmed_at: string }) => [r.dept, { confirmed_by: r.confirmed_by, confirmed_at: r.confirmed_at }])));
       });
-  }, [isoDate]);
+  }, [isoDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveLeave = async (empId: string, leaveType: string) => {
     if (!isoDate || !leaveType) return;
@@ -5942,6 +5969,8 @@ function ReportDashboard({
     );
     if (error) {
       setLeaveMap(m => { const n = new Map(m); prev === undefined ? n.delete(empId) : n.set(empId, prev); return n; });
+      setLeaveError(`บันทึกการลาไม่สำเร็จ: ${error.message}`);
+      setTimeout(() => setLeaveError(""), 4000);
     }
   };
 
@@ -6041,6 +6070,9 @@ function ReportDashboard({
 
   return (
     <section className="report-page">
+      {leaveError && (
+        <div className="error-bar" style={{ marginBottom: 12 }}>{leaveError}</div>
+      )}
       <section className="kpi-grid">
         <KpiCard
           icon={<UsersRound size={34} />}
@@ -6604,7 +6636,7 @@ function KpiCard({
           <b>{unit}</b>
         </div>
         <p>{note}</p>
-        {progress ? (
+        {progress != null ? (
           <div className="progress-wrap">
             <div className="progress-line">
               <i style={{ width: `${progress}%` }} />
@@ -6646,9 +6678,11 @@ function TrendBadge({ curr, prev }: { curr: number; prev: number }) {
 }
 
 function formatDateTH(isoDate: string) {
-  const parts = isoDate.split("-");
+  const parts = isoDate?.split("-");
+  if (!parts || parts.length < 3) return isoDate ?? "-";
   const m = Number(parts[1]);
   const d = Number(parts[2]);
+  if (isNaN(m) || isNaN(d) || m < 1 || m > 12) return isoDate;
   const thaiMonths = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
   return `${d} ${thaiMonths[m]}`;
 }
@@ -6662,7 +6696,10 @@ function calcOTHoursForRecord(scanOut: string, shiftEnd: string): number {
   if (!scanOut.includes(":") || !shiftEnd.includes(":")) return 0;
   const [soH, soM] = scanOut.split(":").map(Number);
   const [seH, seM] = shiftEnd.split(":").map(Number);
-  let diff = (soH * 60 + soM) - (seH * 60 + seM);
+  const soTotal = soH * 60 + soM;
+  // "00:00" from addHoursToTime wrapping past midnight means 24:00 (1440 min)
+  const seTotal = (seH === 0 && seM === 0) ? 1440 : seH * 60 + seM;
+  let diff = soTotal - seTotal;
   // Handle night-shift crossing midnight (e.g. shiftEnd=23:00, scanOut=01:30 → diff negative large)
   if (diff < -720) diff += 1440;
   return Math.max(0, diff / 60);
@@ -6778,7 +6815,7 @@ function OTDashboard({
       if (rec.status === "Absent" || rec.status === "Pending") cur.absent += 1;
       if (rec.status === "Late") cur.late += 1;
       if (rec.status === "DayOff") cur.dayoff += 1;
-      if (rec.status === "Present" || rec.status === "Late") {
+      if (rec.status === "Present" || rec.status === "Late" || rec.status === "NoScanIn") {
         cur.activeWorkers += 1;
         if (rec.otHours > 0) {
           cur.otWorkers += 1;
@@ -6926,6 +6963,7 @@ function OTDashboard({
             <div className="ot-config-field">
               <label>เป้าหมาย OT (ชม./คน/วัน)</label>
               <input
+                key={otTarget}
                 type="number"
                 min="0"
                 step="0.5"
