@@ -7172,10 +7172,10 @@ function OTDashboard({
                 <col style={{width: 130}} />{/* หน่วยงาน */}
                 <col style={{width: 44}} />{/* อัตรา */}
                 <col style={{width: 24}} /><col style={{width: 24}} /><col style={{width: 24}} />
-                <col style={{width: 24}} />{/* ลาป่วย ลากิจ ลาบวช ลาพักผ่อน (แค่ "-") */}
-                <col style={{width: 30}} />{/* ขาดงาน (มีตัวเลข) */}
+                <col style={{width: 24}} />{/* ลาป่วย ลากิจ ลาบวช ลาพักผ่อน */}
+                <col style={{width: 36}} />{/* ขาดงาน */}
                 <col style={{width: 24}} />{/* ลาไม่จ่าย */}
-                <col style={{width: 30}} />{/* รวมวันหยุด (มีตัวเลข) */}
+                <col style={{width: 36}} />{/* รวมวันหยุด */}
                 <col style={{width: 44}} />{/* %หยุด */}
                 <col style={{width: 44}} />{/* ทำงาน */}
                 <col style={{width: 44}} />{/* %OT */}
@@ -7183,9 +7183,8 @@ function OTDashboard({
                 <col style={{width: 38}} />{/* เป้า */}
                 <col style={{width: 46}} />{/* 1.5 */}
                 <col style={{width: 36}} /><col style={{width: 36}} /><col style={{width: 36}} />{/* holiday ×3 */}
-                <col style={{width: 46}} />{/* รวมชม. */}
-                <col style={{width: 46}} />{/* เฉลี่ยต่อคน */}
-                <col style={{width: 54}} />{/* เฉลี่ยคน/วัน */}
+                <col style={{width: 50}} />{/* รวมชม. */}
+                <col style={{width: 58}} />{/* เฉลี่ยคน/วัน */}
                 <col style={{width: 108}} />{/* ผจก. */}
               </colgroup>
               <thead>
@@ -7201,7 +7200,7 @@ function OTDashboard({
                   <th rowSpan={3} className="ot-th-num ot-th-pink">%พนัก<br />ที่ OT</th>
                   <th rowSpan={3} className="ot-th-num ot-th-pink">พนักงาน<br />ที่ OT</th>
                   <th rowSpan={3} className="ot-th-num">เป้า<br />หมาย</th>
-                  <th colSpan={6} className="ot-th-group ot-th-group-ot">เปรียบเทียบ ค่าล่วงเวลา (คนงาน)</th>
+                  <th colSpan={5} className="ot-th-group ot-th-group-ot">เปรียบเทียบ ค่าล่วงเวลา (คนงาน)</th>
                   <th rowSpan={3} className="ot-th-avg-yellow">เฉลี่ย<br />คน/วัน</th>
                   <th rowSpan={3} className="ot-th-mgr ot-th-mgr-header">สถาพ / ผจก.</th>
                 </tr>
@@ -7216,7 +7215,6 @@ function OTDashboard({
                   <th className="ot-th-sub ot-th-ot-normal ot-th-subgrp">OT วันปกติ</th>
                   <th colSpan={3} className="ot-th-sub ot-th-holiday-grp ot-th-subgrp">OT วันหยุด</th>
                   <th rowSpan={2} className="ot-th-sub ot-th-vert-num">รวม<br />ชม.</th>
-                  <th rowSpan={2} className="ot-th-sub ot-th-vert-num">เฉลี่ย<br />ต่อคน</th>
                 </tr>
                 <tr>
                   <th className="ot-th-sub ot-th-vert-num ot-th-ot-normal">1.5<br />ชม</th>
@@ -7260,9 +7258,8 @@ function OTDashboard({
                       <td className={`ot-td-num${row.publicHolidayOTHours > 0 ? " ot-hl-orange" : " ot-td-muted"}`}>{row.publicHolidayOTHours > 0 ? row.publicHolidayOTHours.toFixed(1) : "-"}</td>
                       <td className="ot-td-num ot-td-muted">-</td>
                       <td className="ot-td-num">{row.totalOTHours > 0 ? row.totalOTHours.toFixed(1) : "-"}</td>
-                      <td className="ot-td-num">{avgOT > 0 ? avgOT.toFixed(1) : "-"}</td>
                       <td className={`ot-td-num ot-td-avg-yellow${avgOT > otTarget ? " ot-hl-red" : avgOT > 0 ? " ot-hl-green" : ""}`}>
-                        {avgOT.toFixed(1)}
+                        {avgOT > 0 ? avgOT.toFixed(1) : "-"}
                       </td>
                       <td className="ot-td-mgr" onClick={(e) => e.stopPropagation()}>
                         <select
@@ -7309,8 +7306,7 @@ function OTDashboard({
                   <td className={`ot-td-num${totals.publicHolidayOTHours > 0 ? " ot-hl-orange" : " ot-td-muted"}`}>{totals.publicHolidayOTHours > 0 ? totals.publicHolidayOTHours.toFixed(1) : "-"}</td>
                   <td className="ot-td-num ot-td-muted">-</td>
                   <td className="ot-td-num">{totals.totalOTHours > 0 ? totals.totalOTHours.toFixed(1) : "-"}</td>
-                  <td className="ot-td-num">{totalAvgOT > 0 ? totalAvgOT.toFixed(1) : "-"}</td>
-                  <td className="ot-td-num ot-td-avg-yellow">{totalAvgOT.toFixed(1)}</td>
+                  <td className="ot-td-num ot-td-avg-yellow">{totalAvgOT > 0 ? totalAvgOT.toFixed(1) : "-"}</td>
                   <td />
                 </tr>
               </tfoot>
