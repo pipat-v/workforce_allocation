@@ -6803,6 +6803,7 @@ function OTDashboard({
   });
   const [managerOptions, setManagerOptions] = useState<Array<{ empId: string; name: string; dept: string }>>([]);
   const [showConfig, setShowConfig] = useState(false);
+  const [showShiftEnd, setShowShiftEnd] = useState(false);
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
   const chartPanelRef = useRef<HTMLDivElement>(null);
   const [chartTrackH, setChartTrackH] = useState(200);
@@ -7039,23 +7040,44 @@ function OTDashboard({
           </div>
           {uniqueShifts.length > 0 && (
             <div className="ot-config-shifts">
-              <p className="ot-config-subtitle">เวลาสิ้นสุดกะงาน (กำหนดเองได้ · ค่าเริ่มต้น = เวลาเข้า + 8 ชม.)</p>
-              <div className="ot-shifts-grid">
-                {uniqueShifts.map((shift) => {
-                  const sample = reportData?.records.find((r) => r.shift === shift);
-                  const defaultEnd = sample ? addHoursToTime(sample.shiftStart, 8) : "16:00";
-                  return (
-                    <div key={shift} className="ot-shift-cfg-row">
-                      <span>{shift || "(ไม่ระบุกะ)"}</span>
-                      <TimeInput24
-                        value={shiftEndMap[shift] || defaultEnd}
-                        onChange={(v) => saveShiftEnd(shift, v)}
-                        className="time24-btn ot-cfg-input"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+              <button
+                type="button"
+                className="ot-shiftend-toggle"
+                onClick={() => setShowShiftEnd((v) => !v)}
+              >
+                <ChevronDown size={14} className={showShiftEnd ? "ot-chevron-open" : ""} />
+                เวลาสิ้นสุดกะงาน
+                {!showShiftEnd && (
+                  <span className="ot-shiftend-preview">
+                    {uniqueShifts.map((shift) => {
+                      const sample = reportData?.records.find((r) => r.shift === shift);
+                      const end = shiftEndMap[shift] || (sample ? addHoursToTime(sample.shiftStart, 8) : "16:00");
+                      return `${shift || "ไม่ระบุ"} ${end}`;
+                    }).join(" · ")}
+                  </span>
+                )}
+              </button>
+              {showShiftEnd && (
+                <>
+                  <p className="ot-config-subtitle">กำหนดเองได้ · ค่าเริ่มต้น = เวลาเข้า + 8 ชม.</p>
+                  <div className="ot-shifts-grid">
+                    {uniqueShifts.map((shift) => {
+                      const sample = reportData?.records.find((r) => r.shift === shift);
+                      const defaultEnd = sample ? addHoursToTime(sample.shiftStart, 8) : "16:00";
+                      return (
+                        <div key={shift} className="ot-shift-cfg-row">
+                          <span>{shift || "(ไม่ระบุกะ)"}</span>
+                          <TimeInput24
+                            value={shiftEndMap[shift] || defaultEnd}
+                            onChange={(v) => saveShiftEnd(shift, v)}
+                            className="time24-btn ot-cfg-input"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

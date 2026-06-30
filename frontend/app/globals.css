@@ -4996,6 +4996,27 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   border-top: 1px solid var(--line);
 }
 
+.ot-shiftend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  padding: 0;
+}
+.ot-shiftend-toggle svg { flex-shrink: 0; transition: transform 0.2s; }
+.ot-shiftend-toggle .ot-chevron-open { transform: rotate(180deg); }
+.ot-shiftend-preview {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: 4px;
+}
+
 .ot-config-subtitle {
   margin: 0 0 8px;
   font-size: 12px;
