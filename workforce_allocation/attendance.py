@@ -77,7 +77,8 @@ def rebuild_attendance(
         .drop_duplicates("name_key")
     )
     name_to_emp = dict(zip(name_lookup["name_key"], name_lookup["emp_id"]))
-    condition_missing = test_merge["dept"].isna()
+    missing_emp_ids = set(test_merge.loc[test_merge["dept"].isna(), "emp_id"])
+    condition_missing = scan["emp_id"].isin(missing_emp_ids)
 
     scan.loc[condition_missing, "emp_id_by_name"] = scan.loc[
         condition_missing,
@@ -93,10 +94,13 @@ def rebuild_attendance(
         scan = _redate_am_scans_for_pm_shift_workers(scan, employee, manpower_plan)
 
     attendance = (
-        scan.groupby(["emp_id", "Employee Name", "date"])
-        .agg(scan_in=("time", "min"), scan_out=("time", "max"))
+        scan.groupby(["emp_id", "date"])
+        .agg(
+            scan_name=("Employee Name", "first"),
+            scan_in=("time", "min"),
+            scan_out=("time", "max"),
+        )
         .reset_index()
-        .rename(columns={"Employee Name": "scan_name"})
     )
     return attendance
 
@@ -185,9 +189,10 @@ def detect_shift_and_availability(
                 "shift_detect_reason": "No shift found for dept",
             })
 
-        possible_shifts["diff_minutes"] = (
+        raw_diff = (
             possible_shifts["shift_start_dt"] - scan_time
         ).abs().dt.total_seconds() / 60
+        possible_shifts["diff_minutes"] = raw_diff.apply(lambda d: min(d, 1440 - d))
         closest = possible_shifts.sort_values("diff_minutes").iloc[0]
         return pd.Series({
             "shift": closest["shift"],

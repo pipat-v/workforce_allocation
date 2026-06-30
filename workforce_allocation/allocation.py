@@ -83,7 +83,7 @@ def solve_allocation(
     assigned_rows = [
         row.to_dict()
         for i, row in options_df.iterrows()
-        if x[i].value() == 1
+        if x[i].varValue is not None and x[i].varValue > 0.5
     ]
     return pd.DataFrame(assigned_rows), LpStatus[model.status]
 
@@ -191,7 +191,7 @@ def rebalance_within_same_dept_shift(
                 new_row["allocation_type"] = (
                     f"Moved from {donor_ws} to {target_ws} within same shift"
                 )
-                move_rows.append(new_row)
+                move_rows.append(new_row.to_dict())
                 allocation_result = allocation_result.drop(index=idx)
 
             need_hc -= move_count

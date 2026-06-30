@@ -387,7 +387,7 @@ export default function Home() {
     }
 
     void loadReportDashboard();
-  }, [reportSourceKey, loadedReportKey, isLoadingReport]);
+  }, [reportSourceKey, loadedReportKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isoTargetDate) return;
@@ -1570,13 +1570,23 @@ function buildReportData(
   const latestTimestamp = Array.from(scanByEmp.values())
     .flatMap((entry) => entry.times)
     .sort((a, b) => b.getTime() - a.getTime())[0];
-  const targetDate = latestTimestamp?.toLocaleDateString("th-TH") ?? "-";
-  const isoTargetDate = latestTimestamp
-    ? `${latestTimestamp.getFullYear()}-${String(latestTimestamp.getMonth() + 1).padStart(2, "0")}-${String(latestTimestamp.getDate()).padStart(2, "0")}`
-    : "";
-  const targetMonthKey = latestTimestamp
-    ? `${latestTimestamp.getFullYear()}-${String(latestTimestamp.getMonth() + 1).padStart(2, "0")}`
-    : "";
+
+  // Use mode of scan dates rather than max to avoid night-shift scan-outs on D+1
+  // skewing the target date when a scan file spans midnight.
+  const allScanTimes = Array.from(scanByEmp.values()).flatMap((e) => e.times);
+  const isoCounts = new Map<string, number>();
+  for (const t of allScanTimes) {
+    const iso = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+    isoCounts.set(iso, (isoCounts.get(iso) ?? 0) + 1);
+  }
+  const isoTargetDate = isoCounts.size > 0
+    ? [...isoCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+    : latestTimestamp
+      ? `${latestTimestamp.getFullYear()}-${String(latestTimestamp.getMonth() + 1).padStart(2, "0")}-${String(latestTimestamp.getDate()).padStart(2, "0")}`
+      : "";
+  const targetTimestamp = isoTargetDate ? new Date(`${isoTargetDate}T12:00:00`) : latestTimestamp;
+  const targetDate = targetTimestamp?.toLocaleDateString("th-TH") ?? "-";
+  const targetMonthKey = isoTargetDate ? isoTargetDate.slice(0, 7) : "";
   const _now = new Date();
   const todayIso = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
   const nowMinutes = _now.getHours() * 60 + _now.getMinutes();
@@ -1665,8 +1675,8 @@ function buildReportData(
     // For night shifts (e.g. shiftStart=22:00) this selects the evening scan,
     // not the early-morning clock-out that a plain min() would return.
     const scanIn = findScanIn(scans, shiftStart, isoTargetDate);
-    const isScheduledOff = latestTimestamp
-      ? isEmployeeDayOff(dayoffShift?.dayoff, latestTimestamp, holidaySet)
+    const isScheduledOff = targetTimestamp
+      ? isEmployeeDayOff(dayoffShift?.dayoff, targetTimestamp, holidaySet)
       : false;
     if (isScheduledOff) return [{
       empId: employee.empId,
@@ -2516,8 +2526,8 @@ function exportLateAbsentToExcel(
       "ตำแหน่ง": r.position,
       "กะ": r.shift,
       "เวลาเข้างาน": r.shiftStart,
-      "Scan In": r.scanIn,
-      "Scan Out": r.scanOut,
+      "Scan In": r.scanInDate ? `${r.scanInDate} ${r.scanIn}` : r.scanIn,
+      "Scan Out": r.scanOutDate ? `${r.scanOutDate} ${r.scanOut}` : r.scanOut,
       "สถานะ": STATUS_TH[r.status] ?? r.status,
       "สาย (นาที)": r.minutesLate,
       "สายสะสมเดือนนี้ (ครั้ง)": monthlyLateCounts[r.empId] ?? 0,
@@ -2583,7 +2593,7 @@ function DashboardPanels({
         setLeaveMap(map);
       });
     return () => { cancelled = true; };
-  }, [isoTargetDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isoTargetDate, reportData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveLeave = async (empId: string, leaveType: string) => {
     if (!isoTargetDate || !leaveType) return;
@@ -6877,7 +6887,7 @@ function OTDashboard({
         totalOTHours: 0, activeWorkers: 0,
       };
       cur.total += 1;
-      if (rec.status === "Absent" || rec.status === "Pending") cur.absent += 1;
+      if (rec.status === "Absent") cur.absent += 1;
       if (rec.status === "Late") cur.late += 1;
       if (rec.status === "DayOff") cur.dayoff += 1;
       if (rec.status === "Present" || rec.status === "Late" || rec.status === "NoScanIn") {

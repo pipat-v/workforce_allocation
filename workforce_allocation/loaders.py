@@ -27,7 +27,7 @@ def load_scan(scan_file: Path) -> tuple[pd.DataFrame, str]:
     scan["date"] = scan["Timestamp"].dt.date
     scan["time"] = scan["Timestamp"].dt.strftime("%H:%M")
 
-    target_date = str(scan["date"].max())
+    target_date = str(scan["date"].mode().iloc[0])
     return scan, target_date
 
 
@@ -134,7 +134,7 @@ def load_manpower_plan(manpower_file: Path, target_date: str) -> pd.DataFrame:
 
 def load_skill_matrix(skill_file: Path) -> pd.DataFrame:
     skill_matrix = pd.read_excel(skill_file)
-    skill_matrix = skill_matrix.rename(columns={
+    rename_candidates = {
         "Employee ID": "emp_id",
         "Emp ID": "emp_id",
         "รหัสพนักงาน": "emp_id",
@@ -144,7 +144,14 @@ def load_skill_matrix(skill_file: Path) -> pd.DataFrame:
         "ระดับ": "level",
         "Can Do": "can_do",
         "ทำได้": "can_do",
-    })
+    }
+    seen_targets: set[str] = set()
+    filtered_rename: dict[str, str] = {}
+    for src, tgt in rename_candidates.items():
+        if src in skill_matrix.columns and tgt not in seen_targets:
+            filtered_rename[src] = tgt
+            seen_targets.add(tgt)
+    skill_matrix = skill_matrix.rename(columns=filtered_rename)
     skill_matrix["emp_id"] = skill_matrix["emp_id"].apply(clean_emp_id)
     skill_matrix["skill"] = skill_matrix["skill"].astype(str).str.strip()
 
