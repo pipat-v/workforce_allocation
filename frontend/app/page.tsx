@@ -7168,6 +7168,26 @@ function OTDashboard({
           {/* ── Summary Table ── */}
           {otSubTab === "summary" && <div className="ot-table-scroll">
             <table className="table ot-table">
+              <colgroup>
+                <col style={{width: 130}} />{/* หน่วยงาน */}
+                <col style={{width: 44}} />{/* อัตรา */}
+                <col style={{width: 24}} /><col style={{width: 24}} /><col style={{width: 24}} />
+                <col style={{width: 24}} />{/* ลาป่วย ลากิจ ลาบวช ลาพักผ่อน (แค่ "-") */}
+                <col style={{width: 30}} />{/* ขาดงาน (มีตัวเลข) */}
+                <col style={{width: 24}} />{/* ลาไม่จ่าย */}
+                <col style={{width: 30}} />{/* รวมวันหยุด (มีตัวเลข) */}
+                <col style={{width: 44}} />{/* %หยุด */}
+                <col style={{width: 44}} />{/* ทำงาน */}
+                <col style={{width: 44}} />{/* %OT */}
+                <col style={{width: 44}} />{/* OT คน */}
+                <col style={{width: 38}} />{/* เป้า */}
+                <col style={{width: 46}} />{/* 1.5 */}
+                <col style={{width: 36}} /><col style={{width: 36}} /><col style={{width: 36}} />{/* holiday ×3 */}
+                <col style={{width: 46}} />{/* รวมชม. */}
+                <col style={{width: 46}} />{/* เฉลี่ยต่อคน */}
+                <col style={{width: 54}} />{/* เฉลี่ยคน/วัน */}
+                <col style={{width: 108}} />{/* ผจก. */}
+              </colgroup>
               <thead>
                 <tr>
                   <th rowSpan={3} className="ot-th-sticky">
