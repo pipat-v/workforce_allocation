@@ -2376,11 +2376,14 @@ function findScanIn(scans: Date[], shiftStart: string, isoTargetDate: string): D
     const inWindow = (byDate.get(date) ?? []).filter((t) => isInClockInWindow(t, sh, sm));
     if (inWindow.length) {
       const candidate = pickClosest(inWindow);
-      // If clock-in is from a previous day, only accept it when the employee also
-      // has a scan on isoTargetDate (e.g. an OT clock-out proves they were present).
-      // Without this, absent employees with prior-day scans appear as Present.
-      if (isoTargetDate && toIso(candidate) < isoTargetDate && !hasScan(isoTargetDate)) {
-        return undefined;
+      // If clock-in candidate is from a previous day, only accept it when the employee's
+      // scans on isoTargetDate are ALL before noon — this indicates a night-shift clock-out
+      // pattern (e.g. scanIn yesterday at 17:00, scanOut today at 01:30).
+      // For day/afternoon workers, a previous-day scan must NOT be used as today's clock-in.
+      if (isoTargetDate && toIso(candidate) < isoTargetDate) {
+        const todayScans = byDate.get(isoTargetDate) ?? [];
+        const isNightShiftClockout = todayScans.length > 0 && todayScans.every((t) => t.getHours() < 12);
+        if (!isNightShiftClockout) return undefined;
       }
       return candidate;
     }
@@ -2389,8 +2392,10 @@ function findScanIn(scans: Date[], shiftStart: string, isoTargetDate: string): D
   // Fallback: earliest timestamp on or before isoTargetDate.
   const fallback = isoTargetDate ? scans.filter((t) => toIso(t) <= isoTargetDate) : scans;
   const candidate = (fallback.length ? fallback : scans).sort((a, b) => a.getTime() - b.getTime())[0];
-  if (candidate && isoTargetDate && toIso(candidate) < isoTargetDate && !hasScan(isoTargetDate)) {
-    return undefined;
+  if (candidate && isoTargetDate && toIso(candidate) < isoTargetDate) {
+    const todayScans = byDate.get(isoTargetDate) ?? [];
+    const isNightShiftClockout = todayScans.length > 0 && todayScans.every((t) => t.getHours() < 12);
+    if (!isNightShiftClockout) return undefined;
   }
   // For PM shifts (shiftStart ≥ 12:00), an AM fallback scan is an exit from the
   // previous night's shift — treat it as absent rather than a very-late clock-in.
