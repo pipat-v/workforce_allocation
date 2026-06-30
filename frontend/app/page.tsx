@@ -2354,6 +2354,16 @@ function findScanIn(scans: Date[], shiftStart: string, isoTargetDate: string): D
       })
       .sort((a, b) => a.diff - b.diff)[0].t;
 
+  // Shared helper: accept a previous-day candidate only when it is from exactly
+  // the preceding calendar day. An overnight shift spans at most 1 day boundary,
+  // so a scan from 2+ days ago is always stale data from a multi-day scan file.
+  const isPrevDayOnly = (candidateIso: string): boolean => {
+    const [cy, cm, cd] = candidateIso.split("-").map(Number);
+    const [ty, tm, td] = isoTargetDate.split("-").map(Number);
+    const diffMs = new Date(ty, tm - 1, td).getTime() - new Date(cy, cm - 1, cd).getTime();
+    return Math.round(diffMs / 86400000) === 1;
+  };
+
   if (sh >= 20) {
     // Night shift — use tight +2 h window to exclude early-morning clock-outs
     // (e.g. 02:05 AM exit for a 22:00 shift would fall inside a +4 h window).
@@ -2361,7 +2371,14 @@ function findScanIn(scans: Date[], shiftStart: string, isoTargetDate: string): D
     // clock-outs from the previous night; return undefined so the caller marks
     // this day as Absent instead of misidentifying the exit scan as a clock-in.
     const inWindow = scans.filter((t) => isInClockInWindow(t, sh, sm, 120));
-    return inWindow.length ? pickClosest(inWindow) : undefined;
+    if (!inWindow.length) return undefined;
+    const candidate = pickClosest(inWindow);
+    // Reject stale night-shift clock-ins from multi-day scan files (e.g. a 22:00
+    // scan from 2 days ago would still pass the window check).
+    if (isoTargetDate && toIso(candidate) < isoTargetDate && !isPrevDayOnly(toIso(candidate))) {
+      return undefined;
+    }
+    return candidate;
   }
 
   // Day / afternoon shift — group by date and walk backwards.
@@ -2373,20 +2390,6 @@ function findScanIn(scans: Date[], shiftStart: string, isoTargetDate: string): D
   const sortedDates = [...byDate.keys()]
     .filter((d) => !isoTargetDate || d <= isoTargetDate)
     .sort((a, b) => b.localeCompare(a)); // descending — most recent first
-
-  const hasScan = (date: string) => isoTargetDate
-    ? scans.some((t) => toIso(t) === date)
-    : true;
-
-  // Helper: return true only when candidateIso is exactly 1 calendar day before isoTargetDate.
-  // An overnight shift spans at most 1 calendar boundary, so candidates 2+ days old are stale
-  // data from a multi-day scan file and must never be used as today's clock-in.
-  const isPrevDayOnly = (candidateIso: string): boolean => {
-    const [cy, cm, cd] = candidateIso.split("-").map(Number);
-    const [ty, tm, td] = isoTargetDate.split("-").map(Number);
-    const diffMs = new Date(ty, tm - 1, td).getTime() - new Date(cy, cm - 1, cd).getTime();
-    return Math.round(diffMs / 86400000) === 1;
-  };
 
   for (const date of sortedDates) {
     const inWindow = (byDate.get(date) ?? []).filter((t) => isInClockInWindow(t, sh, sm));
@@ -2601,6 +2604,7 @@ function DashboardPanels({
 
   useEffect(() => {
     if (!isoTargetDate) { setConfirmation(undefined); setConfirmName(""); return; }
+    let cancelled = false;
     setConfirmation(undefined);
     setConfirmName("");
     let deptKey = dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter;
@@ -2611,12 +2615,15 @@ function DashboardPanels({
       .eq("dept", deptKey)
       .maybeSingle()
       .then(({ data, error }) => {
+        if (cancelled) return;
         if (error) { console.error("daily_confirmations load error:", error.message); setConfirmation(null); return; }
         setConfirmation(data ?? null);
       });
+    return () => { cancelled = true; };
   }, [isoTargetDate, dashboardDeptFilter, dashboardSectionFilter]);
 
   const handleConfirm = async () => {
+    if (isConfirming) return;
     if (!confirmName.trim()) {
       const input = document.querySelector<HTMLInputElement>(".confirm-name-input");
       input?.focus();
