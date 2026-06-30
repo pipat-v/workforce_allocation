@@ -5647,89 +5647,107 @@ function TimestampWithDeptPage({
     setPage(1);
   }
 
+  function handleExport() {
+    const isoDate = reportData?.isoTargetDate ?? "";
+    const data = sortedRows.map((row) => ({
+      "รหัส": row.empId,
+      "ชื่อ-สกุล": row.name,
+      "หน่วยงาน": row.dept,
+      "ตำแหน่ง": row.position,
+      "กะ": row.shift,
+      "เริ่มกะ": row.shiftStart,
+      "Scan In": row.scanInDate ? `${row.scanInDate} ${row.scanIn}` : row.scanIn,
+      "Scan Out": row.scanOutDate ? `${row.scanOutDate} ${row.scanOut}` : row.scanOut,
+      "สถานะ": STATUS_TH[row.status] ?? row.status,
+      "สาย": row.status === "Late" ? row.minutesLate : 0,
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Timestamp");
+    XLSX.writeFile(wb, `timestamp_${isoDate || "export"}.xlsx`);
+  }
+
   return (
     <section className="panel results-panel">
-      <div className="panel-title-row">
-        <h3>Timestamp With Dept</h3>
-        <span className="table-count">{allRows.length} rows</span>
-      </div>
-      <div className="table-filters">
-        <input
-          aria-label="ค้นหา timestamp"
-          placeholder="ค้นหา รหัส ชื่อ หน่วยงาน สถานะ"
-          type="search"
-          value={query}
-          onChange={(event) => updateFilter(() => setQuery(event.target.value))}
-        />
-        <select
-          aria-label="หน่วยงาน"
-          value={deptFilter}
-          onChange={(event) => updateFilter(() => setDeptFilter(event.target.value))}
-        >
-          <option value="all">ทุกหน่วยงาน</option>
-          {deptOptions.map((dept) => (
-            <option key={dept} value={dept}>{dept}</option>
-          ))}
-        </select>
-        <select
-          aria-label="สถานะ"
-          value={statusFilter}
-          onChange={(event) => updateFilter(() => setStatusFilter(event.target.value))}
-        >
-          <option value="all">ทุกสถานะ</option>
-          <option value="Present">ตรงเวลา</option>
-          <option value="Late">มาสาย</option>
-          <option value="Absent">ขาดงาน</option>
-          <option value="DayOff">วันหยุด</option>
-          <option value="NoScanIn">ขาดสแกนเข้า</option>
-          <option value="Pending">รอเข้างาน</option>
-        </select>
-        <button
-          className="ghost-button"
-          onClick={() => updateFilter(() => {
-            setQuery("");
-            setDeptFilter("all");
-            setStatusFilter("all");
-          })}
-          type="button"
-        >
-          Clear
-        </button>
+      <div className="ot-detail-hdr">
+        <h3>Timestamp With Dept<span className="ot-detail-count"> ({allRows.length} rows)</span></h3>
+        <div className="ot-detail-filters">
+          <input
+            className="ot-detail-search"
+            aria-label="ค้นหา timestamp"
+            placeholder="ค้นหา รหัส ชื่อ หน่วยงาน สถานะ"
+            type="search"
+            value={query}
+            onChange={(event) => updateFilter(() => setQuery(event.target.value))}
+          />
+          <select
+            aria-label="หน่วยงาน"
+            value={deptFilter}
+            onChange={(event) => updateFilter(() => setDeptFilter(event.target.value))}
+          >
+            <option value="all">ทุกหน่วยงาน</option>
+            {deptOptions.map((dept) => (
+              <option key={dept} value={dept}>{dept}</option>
+            ))}
+          </select>
+          <select
+            aria-label="สถานะ"
+            value={statusFilter}
+            onChange={(event) => updateFilter(() => setStatusFilter(event.target.value))}
+          >
+            <option value="all">ทุกสถานะ</option>
+            <option value="Present">ตรงเวลา</option>
+            <option value="Late">มาสาย</option>
+            <option value="Absent">ขาดงาน</option>
+            <option value="DayOff">วันหยุด</option>
+            <option value="NoScanIn">ขาดสแกนเข้า</option>
+            <option value="Pending">รอเข้างาน</option>
+          </select>
+          <button
+            className="ghost-button"
+            onClick={() => updateFilter(() => { setQuery(""); setDeptFilter("all"); setStatusFilter("all"); })}
+            type="button"
+          >
+            Clear
+          </button>
+          <button type="button" className="primary-button small" onClick={handleExport} disabled={allRows.length === 0}>
+            <Download size={14} />
+            Export Excel
+          </button>
+        </div>
       </div>
       <div className="table-scroll">
-        <table className="table data-table">
+        <table className="table data-table ts-dept-table">
           <thead>
             <tr>
-              <th><SortButton columnKey="empId" setSort={setSort} sort={sort}>Employee ID</SortButton></th>
-              <th><SortButton columnKey="name" setSort={setSort} sort={sort}>Name</SortButton></th>
-              <th><SortButton columnKey="dept" setSort={setSort} sort={sort}>Dept</SortButton></th>
-              <th><SortButton columnKey="position" setSort={setSort} sort={sort}>Position</SortButton></th>
-              <th><SortButton columnKey="shift" setSort={setSort} sort={sort}>Shift</SortButton></th>
-              <th><SortButton columnKey="shiftStart" setSort={setSort} sort={sort}>Shift Start</SortButton></th>
+              <th><SortButton columnKey="empId" setSort={setSort} sort={sort}>รหัส</SortButton></th>
+              <th><SortButton columnKey="name" setSort={setSort} sort={sort}>ชื่อ-สกุล</SortButton></th>
+              <th><SortButton columnKey="dept" setSort={setSort} sort={sort}>หน่วยงาน</SortButton></th>
+              <th><SortButton columnKey="shift" setSort={setSort} sort={sort}>กะ</SortButton></th>
+              <th><SortButton columnKey="shiftStart" setSort={setSort} sort={sort}>เริ่มกะ</SortButton></th>
               <th><SortButton columnKey="scanIn" setSort={setSort} sort={sort}>Scan In</SortButton></th>
               <th><SortButton columnKey="scanOut" setSort={setSort} sort={sort}>Scan Out</SortButton></th>
-              <th><SortButton columnKey="status" setSort={setSort} sort={sort}>Status</SortButton></th>
-              <th><SortButton columnKey="minutesLate" setSort={setSort} sort={sort}>Minutes Late</SortButton></th>
+              <th><SortButton columnKey="status" setSort={setSort} sort={sort}>สถานะ</SortButton></th>
+              <th><SortButton columnKey="minutesLate" setSort={setSort} sort={sort}>สาย</SortButton></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr key={`${row.empId}-${row.scanIn}`}>
-                <td>{row.empId}</td>
-                <td>{row.name}</td>
-                <td>{row.dept}</td>
-                <td>{row.position}</td>
+                <td className="ts-col-id">{row.empId}</td>
+                <td className="ts-col-name" title={row.name}>{row.name}</td>
+                <td className="ts-col-dept" title={row.dept}>{row.dept}</td>
                 <td>{row.shift}</td>
                 <td>{row.shiftStart}</td>
                 <td className="scan-cell">{scanDateBadge(row.scanInDate)}{row.scanIn}</td>
                 <td className="scan-cell">{scanDateBadge(row.scanOutDate)}{row.scanOut}</td>
                 <td><span className={`status-pill ${row.status.toLowerCase()}`}>{STATUS_TH[row.status] ?? row.status}</span></td>
-                <td>{row.minutesLate}</td>
+                <td className="ts-col-late">{row.status === "Late" ? formatLateTime(row.minutesLate) : "-"}</td>
               </tr>
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={10}>ยังไม่มี timestamp ที่ merge หน่วยงานแล้ว</td>
+                <td colSpan={9}>ยังไม่มี timestamp ที่ merge หน่วยงานแล้ว</td>
               </tr>
             ) : null}
           </tbody>
