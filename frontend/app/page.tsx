@@ -2378,15 +2378,26 @@ function findScanIn(scans: Date[], shiftStart: string, isoTargetDate: string): D
     ? scans.some((t) => toIso(t) === date)
     : true;
 
+  // Helper: return true only when candidateIso is exactly 1 calendar day before isoTargetDate.
+  // An overnight shift spans at most 1 calendar boundary, so candidates 2+ days old are stale
+  // data from a multi-day scan file and must never be used as today's clock-in.
+  const isPrevDayOnly = (candidateIso: string): boolean => {
+    const [cy, cm, cd] = candidateIso.split("-").map(Number);
+    const [ty, tm, td] = isoTargetDate.split("-").map(Number);
+    const diffMs = new Date(ty, tm - 1, td).getTime() - new Date(cy, cm - 1, cd).getTime();
+    return Math.round(diffMs / 86400000) === 1;
+  };
+
   for (const date of sortedDates) {
     const inWindow = (byDate.get(date) ?? []).filter((t) => isInClockInWindow(t, sh, sm));
     if (inWindow.length) {
       const candidate = pickClosest(inWindow);
-      // If clock-in candidate is from a previous day, only accept it when the employee's
-      // scans on isoTargetDate are ALL before noon — this indicates a night-shift clock-out
-      // pattern (e.g. scanIn yesterday at 17:00, scanOut today at 01:30).
-      // For day/afternoon workers, a previous-day scan must NOT be used as today's clock-in.
+      // If clock-in candidate is from a previous day, it is only valid when:
+      // 1. It is from exactly the preceding calendar day (overnight shift, not 2+ days old).
+      // 2. ALL of today's scans are before noon — the employee clocked out this morning,
+      //    confirming a night-shift pattern (e.g. scanIn yesterday 17:00, scanOut today 01:30).
       if (isoTargetDate && toIso(candidate) < isoTargetDate) {
+        if (!isPrevDayOnly(toIso(candidate))) return undefined;
         const todayScans = byDate.get(isoTargetDate) ?? [];
         const isNightShiftClockout = todayScans.length > 0 && todayScans.every((t) => t.getHours() < 12);
         if (!isNightShiftClockout) return undefined;
@@ -2399,6 +2410,7 @@ function findScanIn(scans: Date[], shiftStart: string, isoTargetDate: string): D
   const fallback = isoTargetDate ? scans.filter((t) => toIso(t) <= isoTargetDate) : scans;
   const candidate = (fallback.length ? fallback : scans).sort((a, b) => a.getTime() - b.getTime())[0];
   if (candidate && isoTargetDate && toIso(candidate) < isoTargetDate) {
+    if (!isPrevDayOnly(toIso(candidate))) return undefined;
     const todayScans = byDate.get(isoTargetDate) ?? [];
     const isNightShiftClockout = todayScans.length > 0 && todayScans.every((t) => t.getHours() < 12);
     if (!isNightShiftClockout) return undefined;
