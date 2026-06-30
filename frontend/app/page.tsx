@@ -129,8 +129,10 @@ type AttendanceRecord = {
   position: string;
   shift: string;
   shiftStart: string;
-  scanIn: string;
-  scanOut: string;
+  scanIn: string;      // HH:MM or "-"
+  scanOut: string;     // HH:MM or "-"
+  scanInDate: string;  // YYYY-MM-DD when different from isoTargetDate, else ""
+  scanOutDate: string; // YYYY-MM-DD when different from isoTargetDate, else ""
   status: "Present" | "Late" | "Absent" | "DayOff" | "Pending" | "NoScanIn";
   minutesLate: number;
 };
@@ -1670,6 +1672,8 @@ function buildReportData(
       shiftStart,
       scanIn: "-",
       scanOut: "-",
+      scanInDate: "",
+      scanOutDate: "",
       status: "DayOff" as const,
       minutesLate: 0,
     }];
@@ -1704,6 +1708,10 @@ function buildReportData(
       ? (noScanIn ? "NoScanIn" : shiftNotStarted ? "Pending" : "Absent")
       : minutesLate > 5 ? "Late" : "Present";
 
+    const toIsoDate = (t: Date) =>
+      `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+    const scanInDateVal = scanIn ? toIsoDate(scanIn) : "";
+    const scanOutDateVal = scanOut ? toIsoDate(scanOut) : "";
     return [{
       empId: employee.empId,
       name: employee.name,
@@ -1714,6 +1722,8 @@ function buildReportData(
       shiftStart,
       scanIn: scanIn ? toTimeText(scanIn) : "-",
       scanOut: scanOut ? toTimeText(scanOut) : "-",
+      scanInDate: scanInDateVal !== isoTargetDate ? scanInDateVal : "",
+      scanOutDate: scanOutDateVal !== isoTargetDate ? scanOutDateVal : "",
       status,
       minutesLate,
     }];
@@ -2725,6 +2735,7 @@ function DashboardPanels({
                 <tr>
                   <th>ชื่อ</th>
                   <th>หน่วยงาน</th>
+                  <th>วันที่สแกน</th>
                   <th>เข้างาน</th>
                   <th>สาย</th>
                   <th>เตือนสะสม</th>
@@ -2741,6 +2752,7 @@ function DashboardPanels({
                   <tr key={`dashboard-late-${row.empId}-${row.scanIn}`} className={warned ? "row-warned" : ""}>
                     <td>{row.name}</td>
                     <td><span className="dept-chip">{row.dept}</span></td>
+                    <td>{row.scanInDate ? <span className="scan-date-badge">{formatDateTH(row.scanInDate)}</span> : <span className="scan-date-today">วันนี้</span>}</td>
                     <td>{row.scanIn}</td>
                     <td><span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span></td>
                     <td>
@@ -2764,7 +2776,7 @@ function DashboardPanels({
                   );
                 })}
                 {dashboardLateRows.length === 0 ? (
-                  <tr><td colSpan={6}>ยังไม่มีข้อมูลคนมาสาย</td></tr>
+                  <tr><td colSpan={7}>ยังไม่มีข้อมูลคนมาสาย</td></tr>
                 ) : null}
               </tbody>
             </table>
@@ -2976,7 +2988,7 @@ function DashboardPanels({
                     <td>{row.dept}</td>
                     <td>{row.shift}</td>
                     <td>{row.shiftStart}</td>
-                    <td>{row.scanIn}</td>
+                    <td className="scan-cell">{scanDateBadge(row.scanInDate)}{row.scanIn}</td>
                     <td>
                       {row.status === "Absent" ? (() => {
                         const lt = leaveMap.get(row.empId) ?? "ขาดงาน";
@@ -5679,8 +5691,8 @@ function TimestampWithDeptPage({
                 <td>{row.position}</td>
                 <td>{row.shift}</td>
                 <td>{row.shiftStart}</td>
-                <td>{row.scanIn}</td>
-                <td>{row.scanOut}</td>
+                <td className="scan-cell">{scanDateBadge(row.scanInDate)}{row.scanIn}</td>
+                <td className="scan-cell">{scanDateBadge(row.scanOutDate)}{row.scanOut}</td>
                 <td><span className={`status-pill ${row.status.toLowerCase()}`}>{STATUS_TH[row.status] ?? row.status}</span></td>
                 <td>{row.minutesLate}</td>
               </tr>
@@ -6675,6 +6687,17 @@ function TrendBadge({ curr, prev }: { curr: number; prev: number }) {
   if (curr > prev) return <span className="trend-up" title={`+${curr - prev} จากเดือนก่อน`}>↑{curr - prev}</span>;
   if (curr < prev) return <span className="trend-down" title={`-${prev - curr} จากเดือนก่อน`}>↓{prev - curr}</span>;
   return <span className="trend-same" title="เท่ากับเดือนก่อน">→</span>;
+}
+
+function scanDateBadge(date: string) {
+  if (!date) return null;
+  const parts = date.split("-");
+  if (parts.length < 3) return null;
+  return (
+    <span className="scan-date-badge" title={date}>
+      {Number(parts[2])}/{Number(parts[1])}
+    </span>
+  );
 }
 
 function formatDateTH(isoDate: string) {
