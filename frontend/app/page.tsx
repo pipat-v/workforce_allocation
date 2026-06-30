@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   BarChart3,
@@ -603,6 +604,15 @@ export default function Home() {
       throw new Error(uploadError.message);
     }
 
+    const { data: prevActive } = await supabase
+      .from("master_data_files")
+      .select("id")
+      .is("owner_id", null)
+      .eq("file_type", "dayoff_shift")
+      .eq("is_active", true)
+      .maybeSingle();
+    const prevActiveId: string | null = prevActive?.id ?? null;
+
     const { error: deactivateError } = await supabase
       .from("master_data_files")
       .update({ is_active: false })
@@ -625,6 +635,9 @@ export default function Home() {
       });
 
     if (insertError) {
+      if (prevActiveId) {
+        await supabase.from("master_data_files").update({ is_active: true }).eq("id", prevActiveId);
+      }
       setError(insertError.message);
       throw new Error(insertError.message);
     }
@@ -1862,12 +1875,117 @@ function addHoursToTime(timeStr: string, hours: number): string {
   return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
 }
 
-function toAmPm(timeStr: string): string {
-  if (!timeStr) return "";
-  const [h, m] = timeStr.split(":").map(Number);
-  const period = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 || 12;
-  return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
+function TimeInput24({
+  value,
+  onChange,
+  className,
+  style,
+  title,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+  style?: React.CSSProperties;
+  title?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
+  const parsed = value.match(/^(\d{1,2}):(\d{2})$/);
+  const selH = parsed ? Number(parsed[1]) : 0;
+  const selM = parsed ? Number(parsed[2]) : 0;
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+  const hourRef = useRef<HTMLDivElement>(null);
+  const minRef = useRef<HTMLDivElement>(null);
+
+  const calcPos = () => {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + 4, left: rect.left });
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    let rafId = requestAnimationFrame(() => {
+      const hEl = hourRef.current?.children[selH] as HTMLElement | undefined;
+      const mEl = minRef.current?.children[selM] as HTMLElement | undefined;
+      hEl?.scrollIntoView({ block: "center" });
+      mEl?.scrollIntoView({ block: "center" });
+    });
+    const handleDown = (e: MouseEvent) => {
+      const clickedPortal = dropRef.current?.contains(e.target as Node);
+      const clickedBtn = btnRef.current?.contains(e.target as Node);
+      if (!clickedPortal && !clickedBtn) setOpen(false);
+    };
+    const handleScroll = () => calcPos();
+    document.addEventListener("mousedown", handleDown);
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("resize", handleScroll);
+    return () => {
+      cancelAnimationFrame(rafId);
+      document.removeEventListener("mousedown", handleDown);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", handleScroll);
+    };
+  }, [open, selH, selM]);
+
+  const handleToggle = () => {
+    if (!open) calcPos();
+    setOpen((o) => !o);
+  };
+
+  const pick = (h: number, m: number, close = false) => {
+    onChange(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    if (close) setOpen(false);
+  };
+
+  const dropdown = open && typeof document !== "undefined"
+    ? createPortal(
+        <div
+          ref={dropRef}
+          className="time24-dropdown"
+          style={{ position: "fixed", top: dropPos.top, left: dropPos.left, zIndex: 9999 }}
+        >
+          <div className="time24-col" ref={hourRef}>
+            {Array.from({ length: 24 }, (_, i) => (
+              <button key={i} type="button"
+                className={`time24-item${i === selH ? " time24-selected" : ""}`}
+                onClick={() => pick(i, selM)}>
+                {String(i).padStart(2, "0")}
+              </button>
+            ))}
+          </div>
+          <div className="time24-col" ref={minRef}>
+            {Array.from({ length: 60 }, (_, i) => (
+              <button key={i} type="button"
+                className={`time24-item${i === selM ? " time24-selected" : ""}`}
+                onClick={() => pick(selH, i, true)}>
+                {String(i).padStart(2, "0")}
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className={className ?? "time24-btn"}
+        style={style}
+        title={title}
+        onClick={handleToggle}
+      >
+        <Clock size={13} className="time24-icon" />
+        {value || "--:--"}
+      </button>
+      {dropdown}
+    </>
+  );
 }
 
 function isHolidayDate(date: Date, holidaySet?: Set<string>) {
@@ -2437,7 +2555,8 @@ function DashboardPanels({
     if (!isoTargetDate) { setConfirmation(undefined); setConfirmName(""); return; }
     setConfirmation(undefined);
     setConfirmName("");
-    const deptKey = dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter;
+    let deptKey = dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter;
+    if (dashboardSectionFilter !== "all") deptKey = `${deptKey}/${dashboardSectionFilter}`;
     supabase.from("daily_confirmations")
       .select("confirmed_by, confirmed_at")
       .eq("confirm_date", isoTargetDate)
@@ -2447,7 +2566,7 @@ function DashboardPanels({
         if (error) { console.error("daily_confirmations load error:", error.message); setConfirmation(null); return; }
         setConfirmation(data ?? null);
       });
-  }, [isoTargetDate, dashboardDeptFilter]);
+  }, [isoTargetDate, dashboardDeptFilter, dashboardSectionFilter]);
 
   const handleConfirm = async () => {
     if (!confirmName.trim()) {
@@ -4541,12 +4660,11 @@ function DayoffShiftEditor({
             <option value="">เปลี่ยน Shift...</option>
             {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
-          <input
-            type="time"
+          <TimeInput24
             value={bulkShiftStart}
-            onChange={(e) => setBulkShiftStart(e.target.value)}
+            onChange={(v) => setBulkShiftStart(v)}
             title="เปลี่ยนเวลาเข้างาน"
-            style={{ height: 32, fontSize: 12, padding: "0 6px", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", cursor: "pointer" }}
+            style={{ height: 32, fontSize: 12 }}
           />
           <button
             className="primary-button"
@@ -4636,17 +4754,11 @@ function DayoffShiftEditor({
                   {row.shift === "ผู้จัดการ" ? (
                     <span style={{ color: "#94a3b8", fontSize: 13 }}>—</span>
                   ) : (
-                    <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
-                      <input
-                        className="shift-time-input"
-                        type="time"
-                        value={row.shiftStart}
-                        onChange={(e) => updateRow(row.id, "shiftStart", e.target.value)}
-                        onKeyDown={(e) => { if (!["Tab", "Escape"].includes(e.key)) e.preventDefault(); }}
-                        style={!row.shiftStart ? { opacity: 0, position: "absolute", inset: 0, width: "100%", height: "100%", cursor: "pointer" } : undefined}
-                      />
-                      {!row.shiftStart && <span style={{ color: "#94a3b8", fontSize: 13, padding: "0 8px", userSelect: "none" }}>——</span>}
-                    </div>
+                    <TimeInput24
+                      value={row.shiftStart}
+                      onChange={(v) => updateRow(row.id, "shiftStart", v)}
+                      className="time24-btn shift-time-input"
+                    />
                   )}
                 </td>
                 <td className="shift-end-cell">
@@ -4656,7 +4768,7 @@ function DayoffShiftEditor({
                     const nextDay = sh + 9 >= 24;
                     return (
                       <span>
-                        {toAmPm(end)}
+                        {end}
                         {nextDay && <span style={{ fontSize: 10, color: "#fcd34d", fontWeight: 600, marginLeft: 3 }}>+1D</span>}
                       </span>
                     );
@@ -5446,6 +5558,8 @@ function TimestampWithDeptPage({
   const [sort, setSort_] = useState<SortState>(null);
   const setSort = setSort_ as (sort: SortState) => void;
 
+  useEffect(() => { setPage(1); }, [reportData]);
+
   const sourceRows = reportData?.timestampRows ?? [];
   const deptOptions = Array.from(new Set(sourceRows.map((record) => record.dept))).sort();
   const normalizedQuery = query.trim().toLowerCase();
@@ -5852,7 +5966,7 @@ function ReportDashboard({
     ? data.records
     : data.records.filter((row) => row.dept === selectedDept);
   const scopedTotal = scopedRecords.length;
-  const scopedPresent = scopedRecords.filter((row) => row.status === "Present").length;
+  const scopedPresent = scopedRecords.filter((row) => row.status === "Present" || row.status === "NoScanIn").length;
   const scopedLate = scopedRecords.filter((row) => row.status === "Late").length;
   const scopedAbsent = scopedRecords.filter((row) => row.status === "Absent").length;
   const scopedDayoff = scopedRecords.filter((row) => row.status === "DayOff").length;
@@ -6636,10 +6750,10 @@ function OTDashboard({
   const otRecords = useMemo((): OTRecord[] => {
     if (!reportData) return [];
     return reportData.records.map((rec) => {
-      const shiftEnd = shiftEndMap[rec.shift] || addHoursToTime(rec.shiftStart, 8);
-      const otHours = (rec.status === "Present" || rec.status === "Late" || rec.status === "NoScanIn")
+      const shiftEnd = shiftEndMap[rec.shift] || (rec.shiftStart ? addHoursToTime(rec.shiftStart, 8) : "");
+      const otHours = shiftEnd && (rec.status === "Present" || rec.status === "Late" || rec.status === "NoScanIn")
         ? calcOTHoursForRecord(rec.scanOut, shiftEnd)
-        : 0; // Absent, Pending, DayOff → OT = 0
+        : 0;
       return { ...rec, shiftEnd, otHours };
     });
   }, [reportData, shiftEndMap]);
@@ -6831,11 +6945,10 @@ function OTDashboard({
                   return (
                     <div key={shift} className="ot-shift-cfg-row">
                       <span>{shift || "(ไม่ระบุกะ)"}</span>
-                      <input
-                        type="time"
+                      <TimeInput24
                         value={shiftEndMap[shift] || defaultEnd}
-                        onChange={(e) => saveShiftEnd(shift, e.target.value)}
-                        className="ot-cfg-input"
+                        onChange={(v) => saveShiftEnd(shift, v)}
+                        className="time24-btn ot-cfg-input"
                       />
                     </div>
                   );
@@ -7076,7 +7189,7 @@ function OTDashboard({
                   value={otDetailSearch}
                   onChange={(e) => setOtDetailSearch(e.target.value)}
                 />
-                <select value={otDetailDeptFilter} onChange={(e) => { setOtDetailDeptFilter(e.target.value); setOtDetailSectionFilter("all"); setOtDetailShiftFilter("all"); }}>
+                <select value={otDetailDeptFilter} onChange={(e) => { setSelectedDept(null); setOtDetailDeptFilter(e.target.value); setOtDetailSectionFilter("all"); setOtDetailShiftFilter("all"); }}>
                   <option value="all">ทุกหน่วยงาน</option>
                   {otDetailDeptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>

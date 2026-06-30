@@ -5704,3 +5704,68 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 .ot-status-late    { background: #fef3c7; color: #92400e; }
 .ot-status-absent  { background: #fee2e2; color: #dc2626; }
 .ot-status-dayoff  { background: #f1f5f9; color: #64748b; }
+
+/* ── Custom 24-hour Time Picker ─────────────────────────────────────── */
+.time24-wrap {
+  position: relative;
+  display: inline-block;
+}
+.time24-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 88px;
+}
+.time24-btn:hover { border-color: #94a3b8; }
+.time24-btn:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px #dbeafe;
+}
+.time24-btn .time24-icon { color: #94a3b8; flex-shrink: 0; }
+.time24-dropdown {
+  /* position/top/left/z-index set via inline style (portal, fixed) */
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.13);
+  overflow: hidden;
+}
+.time24-col {
+  height: 192px;
+  overflow-y: auto;
+  width: 56px;
+  scrollbar-width: none;
+}
+.time24-col::-webkit-scrollbar { display: none; }
+.time24-col + .time24-col { border-left: 1px solid var(--line); }
+.time24-item {
+  display: block;
+  width: 100%;
+  padding: 7px 0;
+  text-align: center;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text);
+  line-height: 1;
+}
+.time24-item:hover { background: #f1f5f9; }
+.time24-item.time24-selected {
+  background: var(--blue);
+  color: #fff;
+  font-weight: 600;
+}
