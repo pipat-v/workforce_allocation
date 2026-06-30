@@ -300,9 +300,9 @@ export default function Home() {
     for (const r of filtered) {
       const cur = deptMap.get(r.dept) ?? { dept: r.dept, present: 0, late: 0, absent: 0, dayoff: 0, total: 0 };
       cur.total += 1;
-      if (r.status === "Present") cur.present += 1;
+      if (r.status === "Present" || r.status === "NoScanIn") cur.present += 1;
       if (r.status === "Late") cur.late += 1;
-      if (r.status === "Absent") cur.absent += 1;
+      if (r.status === "Absent" || r.status === "Pending") cur.absent += 1;
       if (r.status === "DayOff") cur.dayoff += 1;
       deptMap.set(r.dept, cur);
     }
@@ -311,9 +311,9 @@ export default function Home() {
       records: filtered,
       timestampRows: filtered,
       totalEmployees: filtered.length,
-      present: filtered.filter((r) => r.status === "Present").length,
+      present: filtered.filter((r) => r.status === "Present" || r.status === "NoScanIn").length,
       late: lateFiltered.length,
-      absent: filtered.filter((r) => r.status === "Absent").length,
+      absent: filtered.filter((r) => r.status === "Absent" || r.status === "Pending").length,
       dayoff: filtered.filter((r) => r.status === "DayOff").length,
       lateRows: [...lateFiltered].sort((a, b) => b.minutesLate - a.minutesLate),
       deptRows: [...deptMap.values()],
@@ -340,7 +340,7 @@ export default function Home() {
     year: "numeric",
   });
   const [workTime, setWorkTime] = useState(() =>
-    new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
+    new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false }),
   );
   const datePickerRef = useRef<HTMLDivElement>(null);
   const selectedDateKey = latestRun?.target_date ?? latestRun?.created_at?.slice(0, 10) ?? "";
@@ -367,7 +367,7 @@ export default function Home() {
 
   useEffect(() => {
     const tick = () =>
-      setWorkTime(new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }));
+      setWorkTime(new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false }));
     const id = setInterval(tick, 30_000);
     return () => clearInterval(id);
   }, []);
@@ -513,6 +513,16 @@ export default function Home() {
 
         if (uploadError) { setError(uploadError.message); return; }
 
+        // Capture the current active record ID before deactivating for precise rollback
+        const { data: prevActive } = await supabase
+          .from("master_data_files")
+          .select("id")
+          .is("owner_id", null)
+          .eq("file_type", item.key)
+          .eq("is_active", true)
+          .maybeSingle();
+        const prevActiveId: string | null = prevActive?.id ?? null;
+
         const { error: deactivateError } = await supabase
           .from("master_data_files")
           .update({ is_active: false })
@@ -533,15 +543,13 @@ export default function Home() {
           });
 
         if (insertError) {
-          // Rollback: re-activate the old file so the system is never left with no active master
-          await supabase
-            .from("master_data_files")
-            .update({ is_active: true })
-            .is("owner_id", null)
-            .eq("file_type", item.key)
-            .eq("is_active", false)
-            .order("created_at", { ascending: false })
-            .limit(1);
+          // Rollback: re-activate only the specific previous active record by ID
+          if (prevActiveId) {
+            await supabase
+              .from("master_data_files")
+              .update({ is_active: true })
+              .eq("id", prevActiveId);
+          }
           setError(insertError.message);
           return;
         }
@@ -1012,7 +1020,7 @@ export default function Home() {
     for (const row of report.timestampRows) {
       rowMap.set(row.empId, {
         run_id: runId,
-        target_date: report.targetDate,
+        target_date: report.isoTargetDate,
         emp_id: row.empId,
         name: row.name,
         dept: row.dept,
@@ -1303,6 +1311,7 @@ export default function Home() {
               activeMasterMap={activeMasterMap}
               assignedPeople={presentPeople}
               dashboardDeptFilter={dashboardDeptFilter}
+              dashboardSectionFilter={dashboardSectionFilter}
               detailStatusFilter={detailStatusFilter}
               setDetailStatusFilter={setDetailStatusFilter}
               isoTargetDate={isoTargetDate}
@@ -2112,8 +2121,12 @@ function normalizeTimeText(value: unknown) {
 }
 
 function excelSerialDateToDate(value: number) {
-  const excelEpoch = Date.UTC(1899, 11, 30);
-  return new Date(excelEpoch + value * 24 * 60 * 60 * 1000);
+  // Use local midnight as base so .getHours()/.getDate() return correct local values.
+  // Excel serial encodes wall-clock time, not UTC.
+  const days = Math.floor(value);
+  const ms = Math.round((value - days) * 86400000);
+  const base = new Date(1899, 11, 30); // local midnight Dec 30 1899
+  return new Date(base.getTime() + days * 86400000 + ms);
 }
 
 function toTimeText(value: Date) {
@@ -2353,6 +2366,7 @@ function DashboardPanels({
   activeMasterMap,
   assignedPeople,
   dashboardDeptFilter,
+  dashboardSectionFilter,
   detailStatusFilter,
   setDetailStatusFilter,
   isoTargetDate,
@@ -2366,6 +2380,7 @@ function DashboardPanels({
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   assignedPeople: number;
   dashboardDeptFilter: string;
+  dashboardSectionFilter: string;
   detailStatusFilter: string;
   setDetailStatusFilter: (v: string) => void;
   isoTargetDate: string;
@@ -2384,25 +2399,21 @@ function DashboardPanels({
 
   useEffect(() => {
     if (!isoTargetDate) return;
+    let cancelled = false;
     setLeaveError("");
     const absentIds = (reportData?.records ?? [])
       .filter((r: { status: string }) => r.status === "Absent")
       .map((r: { empId: string }) => r.empId);
     supabase.from("leave_records").select("emp_id, leave_type").eq("leave_date", isoTargetDate)
-      .then(async ({ data: rows, error }) => {
+      .then(({ data: rows, error }) => {
+        if (cancelled) return;
         if (error) { setLeaveError(`โหลดข้อมูลการลาไม่สำเร็จ: ${error.message}`); return; }
         const map = new Map((rows ?? []).map((r: { emp_id: string; leave_type: string }) => [r.emp_id, r.leave_type]));
-        const missing = absentIds.filter((id: string) => !map.has(id));
-        if (missing.length) {
-          const { error: upsertError } = await supabase.from("leave_records").upsert(
-            missing.map((empId: string) => ({ emp_id: empId, leave_date: isoTargetDate, leave_type: "ขาดงาน" })),
-            { onConflict: "emp_id,leave_date" }
-          );
-          if (upsertError) { setLeaveError(`บันทึกข้อมูลการลาไม่สำเร็จ: ${upsertError.message}`); }
-          else { missing.forEach((id: string) => map.set(id, "ขาดงาน")); }
-        }
+        // Pre-populate local UI default only — don't write to DB until user explicitly saves
+        absentIds.filter((id: string) => !map.has(id)).forEach((id: string) => map.set(id, "ขาดงาน"));
         setLeaveMap(map);
       });
+    return () => { cancelled = true; };
   }, [isoTargetDate, reportData]);
 
   const saveLeave = async (empId: string, leaveType: string) => {
@@ -2449,7 +2460,8 @@ function DashboardPanels({
     if (!isoTargetDate) return;
     setIsConfirming(true);
     try {
-      const deptKey = dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter;
+      let deptKey = dashboardDeptFilter === "all" ? "ทุกหน่วยงาน" : dashboardDeptFilter;
+      if (dashboardSectionFilter !== "all") deptKey = `${deptKey}/${dashboardSectionFilter}`;
       const leaveCounts: Record<string, number> = {};
       for (const lt of leaveMap.values()) leaveCounts[lt] = (leaveCounts[lt] ?? 0) + 1;
       const { data, error } = await supabase.from("daily_confirmations").upsert({
@@ -2540,7 +2552,7 @@ function DashboardPanels({
             ) : confirmation ? (
               <div className="confirm-done-row">
                 <CheckCircle2 size={15} className="confirm-done-icon" />
-                <span>รับทราบแล้วโดย <strong>{confirmation.confirmed_by}</strong> · {new Date(confirmation.confirmed_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</span>
+                <span>รับทราบแล้วโดย <strong>{confirmation.confirmed_by}</strong> · {new Date(confirmation.confirmed_at).toLocaleString("th-TH", { day: "numeric", month: "numeric", year: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}</span>
                 <button className="ghost-button small" onClick={() => setConfirmation(null)}>แก้ไข</button>
               </div>
             ) : (
@@ -3746,10 +3758,15 @@ function HolidayMasterPage({
 
   async function addHoliday() {
     if (!newDate || !newName.trim()) return;
+    const existing = holidays.find((h) => h.date === newDate);
+    if (existing) {
+      alert(`วันที่ ${newDate} มีอยู่แล้วเป็น "${existing.name}" (${existing.type})\nหากต้องการแก้ไข กรุณาลบรายการเดิมก่อน`);
+      return;
+    }
     setSaving(true);
     const { error } = await supabase
       .from("holidays")
-      .upsert({ date: newDate, name: newName.trim(), type: newType }, { onConflict: "date" });
+      .insert({ date: newDate, name: newName.trim(), type: newType });
     if (error) {
       alert(`เพิ่มไม่สำเร็จ: ${error.message}`);
     } else {
@@ -3955,10 +3972,15 @@ function PublicHolidayPage({
 
   async function addHoliday() {
     if (!newDate || !newName.trim()) return;
+    const existing = holidays.find((h) => h.date === newDate);
+    if (existing) {
+      alert(`วันที่ ${newDate} มีอยู่แล้วเป็น "${existing.name}" (${existing.type})\nหากต้องการแก้ไข กรุณาลบรายการเดิมก่อน`);
+      return;
+    }
     setSaving(true);
     const { error } = await supabase
       .from("holidays")
-      .upsert({ date: newDate, name: newName.trim(), type: newType }, { onConflict: "date" });
+      .insert({ date: newDate, name: newName.trim(), type: newType });
     if (error) {
       alert(`เพิ่มไม่สำเร็จ: ${error.message}`);
     } else {
@@ -4162,7 +4184,7 @@ function DayoffShiftEditor({
     { value: "ส,อา", label: "ส+อา — เสาร์&อาทิตย์" },
   ];
   const shiftOptions = Array.from(new Set([
-    "กะ1", "กะ2", "กะ3",
+    "กะ 1", "กะ 2", "กะ 3",
     ...rows.map((r) => r.shift).filter(Boolean),
   ]));
   const deptOptions = Array.from(new Set(rows.map((r) => r.dept).filter(Boolean))).sort();
@@ -6368,7 +6390,7 @@ function ReportDashboard({
                               : <span className="confirm-status-badge pending">รอยืนยัน</span>}
                           </td>
                           <td>{conf ? conf.confirmed_by : "—"}</td>
-                          <td className="muted-text">{conf ? new Date(conf.confirmed_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
+                          <td className="muted-text">{conf ? new Date(conf.confirmed_at).toLocaleString("th-TH", { day: "numeric", month: "numeric", year: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : "—"}</td>
                         </tr>
                       );
                     })}
@@ -6615,9 +6637,9 @@ function OTDashboard({
     if (!reportData) return [];
     return reportData.records.map((rec) => {
       const shiftEnd = shiftEndMap[rec.shift] || addHoursToTime(rec.shiftStart, 8);
-      const otHours = (rec.status === "Present" || rec.status === "Late")
+      const otHours = (rec.status === "Present" || rec.status === "Late" || rec.status === "NoScanIn")
         ? calcOTHoursForRecord(rec.scanOut, shiftEnd)
-        : 0; // NoScanIn, Absent, Pending, DayOff → OT = 0
+        : 0; // Absent, Pending, DayOff → OT = 0
       return { ...rec, shiftEnd, otHours };
     });
   }, [reportData, shiftEndMap]);
@@ -6690,21 +6712,26 @@ function OTDashboard({
     return [...new Set(base.map((r) => r.section))].filter(Boolean).sort();
   }, [otRecords, otDetailDeptFilter]);
   const otDetailShiftOptions = useMemo(() => {
-    let base = selectedDept ? otRecords.filter((r) => r.dept === selectedDept) : otRecords;
+    let base = selectedDept
+      ? otRecords.filter((r) => r.dept === selectedDept)
+      : otDetailDeptFilter !== "all"
+        ? otRecords.filter((r) => r.dept === otDetailDeptFilter)
+        : otRecords;
     if (otDetailSectionFilter !== "all") base = base.filter((r) => r.section === otDetailSectionFilter);
     return [...new Set(base.map((r) => r.shift))].filter(Boolean).sort();
-  }, [otRecords, selectedDept, otDetailSectionFilter]);
+  }, [otRecords, selectedDept, otDetailDeptFilter, otDetailSectionFilter]);
 
   const filteredDetailRecords = useMemo((): OTRecord[] => {
     const q = otDetailSearch.trim().toLowerCase();
-    const base = selectedDept ? otRecords.filter((r) => r.dept === selectedDept) : otRecords;
+    let base = selectedDept ? otRecords.filter((r) => r.dept === selectedDept) : otRecords;
+    if (!selectedDept && otDetailDeptFilter !== "all") base = base.filter((r) => r.dept === otDetailDeptFilter);
     return base.filter((r) => {
       if (otDetailSectionFilter !== "all" && r.section !== otDetailSectionFilter) return false;
       if (otDetailShiftFilter !== "all" && r.shift !== otDetailShiftFilter) return false;
       if (q && !r.empId.toLowerCase().includes(q) && !r.name.toLowerCase().includes(q) && !r.dept.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [otRecords, selectedDept, otDetailSearch, otDetailSectionFilter, otDetailShiftFilter]);
+  }, [otRecords, selectedDept, otDetailDeptFilter, otDetailSearch, otDetailSectionFilter, otDetailShiftFilter]);
 
   const totalAvgOT = totals.activeWorkers > 0 ? totals.totalOTHours / totals.activeWorkers : 0;
   const chartRows = [
@@ -6763,7 +6790,7 @@ function OTDashboard({
               ? (() => {
                   const d = new Date(scanUploadedAt);
                   const date = d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
-                  const time = d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+                  const time = d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false });
                   return date + "      " + time + " น.";
                 })()
               : timeStr}
