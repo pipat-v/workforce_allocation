@@ -5791,6 +5791,15 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 }
 .btn-export:hover { background: #059669; }
 
+/* Results table — fit without horizontal or vertical scroll */
+.results-table { table-layout: fixed; width: 100%; min-width: 0; }
+.results-table th,
+.results-table td { padding: 6px 10px; }
+.results-table .res-col-name    { width: 148px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.results-table .res-col-dept    { width: 136px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.results-table .res-col-pos     { width: 176px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.results-table .res-col-section { width: 108px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Timestamp With Dept table — fit without horizontal or vertical scroll */
 .ts-dept-table { table-layout: fixed; width: 100%; min-width: 0; }
 .ts-dept-table .ts-col-id   { width: 90px; }

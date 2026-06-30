@@ -5813,60 +5813,53 @@ function ResultsPanel({
 
   return (
     <section className={`panel results-panel ${standalone ? "standalone" : ""}`}>
-      <div className="panel-title-row">
-        <h3>ผลลัพธ์การจัดสรรล่าสุด</h3>
-        <div className="table-actions">
+      <div className="ot-detail-hdr">
+        <h3>ผลลัพธ์การจัดสรรล่าสุด<span className="ot-detail-count"> ({allRows.length} คน)</span></h3>
+        <div className="ot-detail-filters">
+          {standalone && <>
+            <input
+              className="ot-detail-search"
+              aria-label="ค้นหา"
+              placeholder="ค้นหา รหัส ชื่อ หน่วยงาน สถานะ"
+              type="search"
+              value={query}
+              onChange={(event) => updateFilter(() => setQuery?.(event.target.value))}
+            />
+            <select
+              aria-label="หน่วยงาน"
+              value={deptFilter}
+              onChange={(event) => updateFilter(() => setDeptFilter?.(event.target.value))}
+            >
+              <option value="all">ทุกหน่วยงาน</option>
+              {deptOptions.map((dept) => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
+            <select
+              aria-label="สถานะ"
+              value={statusFilter}
+              onChange={(event) => updateFilter(() => setStatusFilter?.(event.target.value))}
+            >
+              <option value="all">ทุกสถานะ</option>
+              <option value="Present">ตรงเวลา</option>
+              <option value="Late">มาสาย</option>
+            </select>
+            <button
+              className="ghost-button"
+              onClick={() => updateFilter(() => { setQuery?.(""); setDeptFilter?.("all"); setStatusFilter?.("all"); })}
+              type="button"
+            >
+              Clear
+            </button>
+          </>}
           <button className="ghost-button" type="button">ดูทั้งหมด</button>
           <button className="primary-button small" type="button">
-            Export <ChevronDown size={15} />
+            <Download size={14} /> Export <ChevronDown size={13} />
           </button>
         </div>
       </div>
-
-      
-      {standalone ? (
-        <div className="table-filters">
-          <input
-            aria-label="ค้นหา"
-            placeholder="ค้นหา รหัส ชื่อ หน่วยงาน สถานะ"
-            type="search"
-            value={query}
-            onChange={(event) => updateFilter(() => setQuery?.(event.target.value))}
-          />
-          <select
-            aria-label="หน่วยงาน"
-            value={deptFilter}
-            onChange={(event) => updateFilter(() => setDeptFilter?.(event.target.value))}
-          >
-            <option value="all">ทุกหน่วยงาน</option>
-            {deptOptions.map((dept) => (
-              <option key={dept} value={dept}>{dept}</option>
-            ))}
-          </select>
-          <select
-            aria-label="สถานะ"
-            value={statusFilter}
-            onChange={(event) => updateFilter(() => setStatusFilter?.(event.target.value))}
-          >
-            <option value="all">ทุกสถานะ</option>
-            <option value="Present">ตรงเวลา</option>
-            <option value="Late">มาสาย</option>
-          </select>
-          <button
-            className="ghost-button"
-            onClick={() => updateFilter(() => {
-              setQuery?.("");
-              setDeptFilter?.("all");
-              setStatusFilter?.("all");
-            })}
-            type="button"
-          >
-            Clear
-          </button>
-        </div>
-      ) : null}
       <div className="table-scroll">
-        <table className="table data-table">
+        <table className="table data-table results-table">
           <thead>
             <tr>
               <th>No.</th>
@@ -5885,15 +5878,15 @@ function ResultsPanel({
               <tr key={`${row.empId}-${row.scanIn}`}>
                 <td>{(safePage - 1) * pageSize + index + 1}</td>
                 <td>{row.empId}</td>
-                <td>{row.name}</td>
-                <td>{row.dept}</td>
-                <td>{row.position}</td>
-                <td>{row.section || "-"}</td>
+                <td className="res-col-name" title={row.name}>{row.name}</td>
+                <td className="res-col-dept" title={row.dept}>{row.dept}</td>
+                <td className="res-col-pos" title={row.position}>{row.position}</td>
+                <td className="res-col-section" title={row.section || "-"}>{row.section || "-"}</td>
                 <td>{row.shift || "-"}</td>
                 <td>{row.scanIn}</td>
                 <td>
                   <span className={`status-pill ${row.status.toLowerCase()}`}>
-                    {row.status === "DayOff" ? "วันหยุด" : row.status}
+                    {STATUS_TH[row.status] ?? row.status}
                   </span>
                 </td>
               </tr>
