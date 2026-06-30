@@ -391,19 +391,24 @@ export default function Home() {
 
   useEffect(() => {
     if (!isoTargetDate) return;
+    let cancelled = false;
     setWarnedIds(new Set());
     supabase
       .from("employee_warnings")
       .select("emp_id")
       .eq("warn_date", isoTargetDate)
       .then(({ data, error }) => {
+        if (cancelled) return;
         if (error) { setError(error.message); return; }
         if (data) setWarnedIds(new Set(data.map((r: { emp_id: string }) => r.emp_id)));
       });
+    return () => { cancelled = true; };
   }, [isoTargetDate]);
 
   useEffect(() => {
-    void loadWarnCountMap();
+    let cancelled = false;
+    void loadWarnCountMap(() => cancelled);
+    return () => { cancelled = true; };
   }, [reportData?.targetMonthKey]);
 
   useEffect(() => {
@@ -975,7 +980,7 @@ export default function Home() {
     }
   }
 
-  async function loadWarnCountMap() {
+  async function loadWarnCountMap(isCancelled?: () => boolean) {
     const monthKey = reportData?.targetMonthKey;
     if (!monthKey) return;
     const [year, month] = monthKey.split("-");
@@ -987,6 +992,7 @@ export default function Home() {
       .select("emp_id, warn_date")
       .gte("warn_date", startDate)
       .lte("warn_date", endDate);
+    if (isCancelled?.()) return;
     if (queryError) {
       setError(`โหลดจำนวนเตือนไม่สำเร็จ: ${queryError.message}`);
       return;
