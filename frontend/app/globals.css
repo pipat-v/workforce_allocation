@@ -198,6 +198,10 @@ button {
   margin-bottom: 6px;
 }
 
+.main[data-tab="timestamp_dept"] .results-panel {
+  margin-top: 0;
+}
+
 .topbar {
   display: flex;
   align-items: center;
