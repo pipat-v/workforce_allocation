@@ -64,6 +64,7 @@ type DayoffShiftEditorRow = {
   dayoff: string;
   shift: string;
   shiftStart: string;
+  shiftEnd: string;
   raw: Record<string, unknown>;
 };
 
@@ -129,6 +130,7 @@ type AttendanceRecord = {
   position: string;
   shift: string;
   shiftStart: string;
+  shiftEnd: string;
   scanIn: string;      // HH:MM or "-"
   scanOut: string;     // HH:MM or "-"
   scanInDate: string;  // YYYY-MM-DD when different from isoTargetDate, else ""
@@ -591,6 +593,7 @@ export default function Home() {
       raw = setRowCol(raw, row.dayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
       raw = setRowCol(raw, row.shift, "อยู่กะไหน", "shift", "กะ", "Shift");
       raw = setRowCol(raw, row.shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+      raw = setRowCol(raw, row.shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
       raw = setRowCol(raw, row.jobSite, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
       return raw;
     });
@@ -1547,6 +1550,7 @@ function buildReportData(
   const employeeMap = new Map(employees.map((employee) => [employee.empId, employee]));
   const dayoffShiftMap = buildDayoffShiftMap(dayoffShiftRows);
   const deptShiftStart = buildDeptShiftStart(manpowerRows);
+  const deptShiftEnd = buildDeptShiftEnd(manpowerRows);
   const scanByEmp = new Map<string, { name: string; times: Date[]; seenMs: Set<number> }>();
 
   for (const row of scanRows) {
@@ -1671,6 +1675,11 @@ function buildReportData(
       deptShiftStart.get(makeDeptShiftKey(employee.dept, shift)) ||
       deptShiftStart.get(makeDeptShiftKey(employee.dept, "")) ||
       "07:00";
+    const shiftEnd =
+      dayoffShift?.shiftEnd ||
+      deptShiftEnd.get(makeDeptShiftKey(employee.dept, shift)) ||
+      deptShiftEnd.get(makeDeptShiftKey(employee.dept, "")) ||
+      "";
     // Use the known shift start time to pick the correct clock-in timestamp.
     // For night shifts (e.g. shiftStart=22:00) this selects the evening scan,
     // not the early-morning clock-out that a plain min() would return.
@@ -1686,6 +1695,7 @@ function buildReportData(
       position: employee.position,
       shift,
       shiftStart,
+      shiftEnd,
       scanIn: "-",
       scanOut: "-",
       scanInDate: "",
@@ -1736,6 +1746,7 @@ function buildReportData(
       position: employee.position,
       shift,
       shiftStart,
+      shiftEnd,
       scanIn: scanIn ? toTimeText(scanIn) : "-",
       scanOut: scanOut ? toTimeText(scanOut) : "-",
       scanInDate: scanInDateVal !== isoTargetDate ? scanInDateVal : "",
@@ -1808,6 +1819,29 @@ function buildDeptShiftStart(rows: Record<string, unknown>[]) {
   return map;
 }
 
+function buildDeptShiftEnd(rows: Record<string, unknown>[]) {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const dept = String(row["หน่วยงาน"] ?? row["dept"] ?? "").trim();
+    const shift = normalizeShiftLabel(row["กะ"] ?? row["shift"] ?? row["อยู่กะไหน"]);
+    const shiftEnd = normalizeTimeText(row["เวลาออก"] ?? row["เวลาออกงาน"] ?? row["shift_end"]);
+    if (!dept || !shiftEnd) continue;
+
+    const defaultKey = makeDeptShiftKey(dept, "");
+    if (!map.has(defaultKey)) {
+      map.set(defaultKey, shiftEnd);
+    }
+
+    if (shift) {
+      const shiftKey = makeDeptShiftKey(dept, shift);
+      if (!map.has(shiftKey)) {
+        map.set(shiftKey, shiftEnd);
+      }
+    }
+  }
+  return map;
+}
+
 function findRowCol(row: Record<string, unknown>, ...targets: string[]): string {
   const val = findRowColRaw(row, ...targets);
   return val === undefined ? "" : String(val).trim();
@@ -1853,7 +1887,7 @@ function setRowCol(row: Record<string, unknown>, value: string, ...targets: stri
 }
 
 function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
-  const map = new Map<string, { dayoff: string; shift: string; shiftStart: string; section: string }>();
+  const map = new Map<string, { dayoff: string; shift: string; shiftStart: string; shiftEnd: string; section: string }>();
   for (const row of rows) {
     const empId = cleanEmpId(
       row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]
@@ -1863,6 +1897,7 @@ function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
       dayoff: findRowCol(row, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"),
       shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
       shiftStart: normalizeTimeText(findRowCol(row, "เวลาเข้างาน", "เวลาเข้า", "shift_start")),
+      shiftEnd: normalizeTimeText(findRowCol(row, "เวลาออก", "เวลาออกงาน", "shift_end")),
       section: findRowCol(row, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"),
     });
   }
@@ -1875,6 +1910,8 @@ function toDayoffShiftEditorRow(row: Record<string, unknown>, index: number): Da
   const lastName = String(row["Last Name (Local)"] ?? "").trim();
   const fallbackName = String(row["ชื่อ นามสกุล"] ?? row["Employee Name"] ?? row["Name"] ?? "").trim();
   const shiftStartRaw = findRowColRaw(row, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+  const shiftStart = normalizeTimeText(shiftStartRaw);
+  const shiftEnd = normalizeTimeText(findRowCol(row, "เวลาออก", "เวลาออกงาน", "shift_end")) || (shiftStart ? addHoursToTime(shiftStart, 9) : "");
   return {
     id: `${empId || "row"}-${index}`,
     empId,
@@ -1883,7 +1920,8 @@ function toDayoffShiftEditorRow(row: Record<string, unknown>, index: number): Da
     jobSite: findRowCol(row, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"),
     dayoff: findRowCol(row, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"),
     shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
-    shiftStart: normalizeTimeText(shiftStartRaw),
+    shiftStart,
+    shiftEnd,
     raw: row,
   };
 }
@@ -2775,7 +2813,7 @@ function DashboardPanels({
                 <tr>
                   <th>ชื่อ</th>
                   <th>หน่วยงาน</th>
-                  <th>วันที่สแกน</th>
+                  <th>เริ่มกะ</th>
                   <th>เข้างาน</th>
                   <th>สาย</th>
                   <th>เตือนสะสม</th>
@@ -2792,8 +2830,8 @@ function DashboardPanels({
                   <tr key={`dashboard-late-${row.empId}-${row.scanIn}`} className={warned ? "row-warned" : ""}>
                     <td>{row.name}</td>
                     <td><span className="dept-chip">{row.dept}</span></td>
-                    <td>{row.scanInDate ? <span className="scan-date-badge">{formatDateTH(row.scanInDate)}</span> : <span className="scan-date-today">วันนี้</span>}</td>
-                    <td>{row.scanIn}</td>
+                    <td><span className="shift-start-badge">{row.shiftStart}</span></td>
+                    <td className="scan-cell">{scanDateBadge(row.scanInDate || isoTargetDate)}{row.scanIn}</td>
                     <td><span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span></td>
                     <td>
                       <span className={`monthly-count-badge${riskLevel ? ` ${riskLevel}` : ""}`}>
@@ -3369,7 +3407,7 @@ function MasterDataPage({
     ws["!cols"] = [14, 18, 18, 22, 20, 16, 8, 14, 24].map((w) => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "พนักงาน");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["หน่วยงาน", "กะ", "เวลาเข้า"], ["งานเครื่องใน", "กะ 1", "07:00"]]), "Manpower Plan");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["หน่วยงาน", "กะ", "เวลาเข้า", "เวลาออก"], ["งานเครื่องใน", "กะ 1", "07:00", "16:00"]]), "Manpower Plan");
     XLSX.writeFile(wb, "template-master-พนักงาน.xlsx");
   }
 
@@ -4357,6 +4395,7 @@ function DayoffShiftEditor({
   const [bulkDayoff, setBulkDayoff] = useState("");
   const [bulkShift, setBulkShift] = useState("");
   const [bulkShiftStart, setBulkShiftStart] = useState("");
+  const [bulkShiftEnd, setBulkShiftEnd] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -4373,10 +4412,7 @@ function DayoffShiftEditor({
   const dayoffDouble = [
     { value: "ส,อา", label: "ส+อา — เสาร์&อาทิตย์" },
   ];
-  const shiftOptions = Array.from(new Set([
-    "กะ 1", "กะ 2", "กะ 3",
-    ...rows.map((r) => r.shift).filter(Boolean),
-  ]));
+  const shiftOptions = Array.from(new Set(rows.map((r) => r.shift).filter(Boolean))).sort();
   const deptOptions = Array.from(new Set(rows.map((r) => r.dept).filter(Boolean))).sort();
 
   // cascading: หน้างาน dropdown แสดงแค่ค่าที่มีในหน่วยงานที่เลือก
@@ -4507,6 +4543,7 @@ function DayoffShiftEditor({
           if (!r.jobSite) r.jobSite = skillCFMap.get(r.empId) ?? "";
           if (r.jobSite) allJobSites.add(r.jobSite);
           if (!r.shiftStart && timeMap.has(r.empId)) r.shiftStart = timeMap.get(r.empId)!;
+          if (!r.shiftEnd && r.shiftStart) r.shiftEnd = addHoursToTime(r.shiftStart, 9);
           return r;
         });
         setJobSiteOptions(Array.from(allJobSites).filter(Boolean).sort());
@@ -4527,7 +4564,7 @@ function DayoffShiftEditor({
     return () => { isMounted = false; };
   }, [activeFile?.file_path, employeeMasterFile?.file_path]);
 
-  function updateRow(id: string, field: "dayoff" | "shift" | "shiftStart" | "jobSite", value: string) {
+  function updateRow(id: string, field: "dayoff" | "shift" | "shiftStart" | "shiftEnd" | "jobSite", value: string) {
     const targets =
       field === "dayoff"
         ? ["วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"]
@@ -4535,13 +4572,21 @@ function DayoffShiftEditor({
         ? ["อยู่กะไหน", "shift", "กะ", "Shift"]
         : field === "jobSite"
         ? ["หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"]
+        : field === "shiftEnd"
+        ? ["เวลาออก", "เวลาออกงาน", "shift_end"]
         : ["เวลาเข้างาน", "เวลาเข้า", "shift_start"];
     setRows((current) =>
-      current.map((row) =>
-        row.id === id
-          ? { ...row, [field]: value, raw: setRowCol(row.raw, value, ...targets) }
-          : row,
-      ),
+      current.map((row) => {
+        if (row.id !== id) return row;
+        let raw = setRowCol(row.raw, value, ...targets);
+        const next: typeof row = { ...row, [field]: value, raw };
+        if (field === "shiftStart") {
+          const autoEnd = value ? addHoursToTime(value, 9) : "";
+          next.shiftEnd = autoEnd;
+          next.raw = setRowCol(raw, autoEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
+        }
+        return next;
+      }),
     );
   }
 
@@ -4570,7 +4615,7 @@ function DayoffShiftEditor({
   }
 
   function applyBulk() {
-    if (!bulkDayoff && !bulkShift && !bulkShiftStart) return;
+    if (!bulkDayoff && !bulkShift && !bulkShiftStart && !bulkShiftEnd) return;
     setRows((current) =>
       current.map((row) => {
         if (!selectedIds.has(row.id)) return row;
@@ -4578,11 +4623,14 @@ function DayoffShiftEditor({
         if (bulkDayoff) raw = setRowCol(raw, bulkDayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
         if (bulkShift) raw = setRowCol(raw, bulkShift, "อยู่กะไหน", "shift", "กะ", "Shift");
         if (bulkShiftStart) raw = setRowCol(raw, bulkShiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+        const effectiveShiftEnd = bulkShiftEnd || (bulkShiftStart ? addHoursToTime(bulkShiftStart, 9) : "");
+        if (effectiveShiftEnd) raw = setRowCol(raw, effectiveShiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
         return {
           ...row,
           dayoff: bulkDayoff || row.dayoff,
           shift: bulkShift || row.shift,
           shiftStart: bulkShiftStart || row.shiftStart,
+          shiftEnd: effectiveShiftEnd || row.shiftEnd,
           raw,
         };
       }),
@@ -4591,6 +4639,7 @@ function DayoffShiftEditor({
     setBulkDayoff("");
     setBulkShift("");
     setBulkShiftStart("");
+    setBulkShiftEnd("");
   }
 
   async function handleSave() {
@@ -4737,9 +4786,15 @@ function DayoffShiftEditor({
             title="เปลี่ยนเวลาเข้างาน"
             style={{ height: 32, fontSize: 12 }}
           />
+          <TimeInput24
+            value={bulkShiftEnd}
+            onChange={(v) => setBulkShiftEnd(v)}
+            title="เปลี่ยนเวลาออกงาน"
+            style={{ height: 32, fontSize: 12 }}
+          />
           <button
             className="primary-button"
-            disabled={!bulkDayoff && !bulkShift && !bulkShiftStart}
+            disabled={!bulkDayoff && !bulkShift && !bulkShiftStart && !bulkShiftEnd}
             onClick={applyBulk}
             style={{ height: 32, fontSize: 12, padding: "0 14px" }}
             type="button"
@@ -4833,17 +4888,15 @@ function DayoffShiftEditor({
                   )}
                 </td>
                 <td className="shift-end-cell">
-                  {row.shiftStart ? (() => {
-                    const end = addHoursToTime(row.shiftStart, 9);
-                    const [sh] = row.shiftStart.split(":").map(Number);
-                    const nextDay = sh + 9 >= 24;
-                    return (
-                      <span>
-                        {end}
-                        {nextDay && <span style={{ fontSize: 10, color: "#fcd34d", fontWeight: 600, marginLeft: 3 }}>+1D</span>}
-                      </span>
-                    );
-                  })() : "—"}
+                  {row.shift === "ผู้จัดการ" ? (
+                    <span style={{ color: "#94a3b8", fontSize: 13 }}>—</span>
+                  ) : (
+                    <TimeInput24
+                      value={row.shiftEnd}
+                      onChange={(v) => updateRow(row.id, "shiftEnd", v)}
+                      className="time24-btn shift-time-input"
+                    />
+                  )}
                 </td>
               </tr>
             ))}
@@ -4859,7 +4912,10 @@ function DayoffShiftEditor({
           </tbody>
         </table>
       </div>
-      {filteredRows.some((r) => r.shiftStart && (Number(r.shiftStart.split(":")[0]) + 9 >= 24)) && (
+      {filteredRows.some((r) => {
+        const end = r.shiftEnd || (r.shiftStart ? addHoursToTime(r.shiftStart, 9) : "");
+        return end && Number(end.split(":")[0]) < Number((r.shiftStart || "0").split(":")[0]);
+      }) && (
         <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>
           <span style={{ color: "#fcd34d", fontWeight: 600 }}>+1D</span> = เวลาออกงานเป็นวันถัดไป (กะกลางคืน)
         </p>
@@ -6862,7 +6918,7 @@ function OTDashboard({
   const otRecords = useMemo((): OTRecord[] => {
     if (!reportData) return [];
     return reportData.records.map((rec) => {
-      const shiftEnd = shiftEndMap[rec.shift] || (rec.shiftStart ? addHoursToTime(rec.shiftStart, 8) : "");
+      const shiftEnd = rec.shiftEnd || shiftEndMap[rec.shift] || (rec.shiftStart ? addHoursToTime(rec.shiftStart, 9) : "");
       const otHours = shiftEnd && (rec.status === "Present" || rec.status === "Late" || rec.status === "NoScanIn")
         ? calcOTHoursForRecord(rec.scanOut, shiftEnd)
         : 0;
@@ -7061,7 +7117,7 @@ function OTDashboard({
                   <span className="ot-shiftend-preview">
                     {uniqueShifts.map((shift) => {
                       const sample = reportData?.records.find((r) => r.shift === shift);
-                      const end = shiftEndMap[shift] || (sample ? addHoursToTime(sample.shiftStart, 8) : "16:00");
+                      const end = shiftEndMap[shift] || (sample ? addHoursToTime(sample.shiftStart, 9) : "17:00");
                       return `${shift || "ไม่ระบุ"} ${end}`;
                     }).join(" · ")}
                   </span>
@@ -7069,11 +7125,11 @@ function OTDashboard({
               </button>
               {showShiftEnd && (
                 <>
-                  <p className="ot-config-subtitle">กำหนดเองได้ · ค่าเริ่มต้น = เวลาเข้า + 8 ชม.</p>
+                  <p className="ot-config-subtitle">กำหนดเองได้ · ค่าเริ่มต้น = เวลาเข้า + 9 ชม.</p>
                   <div className="ot-shifts-grid">
                     {uniqueShifts.map((shift) => {
                       const sample = reportData?.records.find((r) => r.shift === shift);
-                      const defaultEnd = sample ? addHoursToTime(sample.shiftStart, 8) : "16:00";
+                      const defaultEnd = sample ? addHoursToTime(sample.shiftStart, 9) : "17:00";
                       return (
                         <div key={shift} className="ot-shift-cfg-row">
                           <span>{shift || "(ไม่ระบุกะ)"}</span>
