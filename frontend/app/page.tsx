@@ -2391,7 +2391,10 @@ function parseTimestamp(value: unknown) {
   if (!text) return null;
 
   // ISO-style YYYY-MM-DD[ T]HH:MM[:SS] — unambiguous, always year-month-day.
-  const isoStyle = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+  // Not anchored at the end so trailing content (milliseconds, "Z", a UTC offset, etc. — anything
+  // a device/export might append) is tolerated instead of falling through to the ambiguous
+  // native Date() parser below.
+  const isoStyle = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (isoStyle) {
     const [, year, month, day, hour = "0", minute = "0", second = "0"] = isoStyle;
     const m = Number(month);
@@ -2404,7 +2407,7 @@ function parseTimestamp(value: unknown) {
   // DD-MM-YYYY / DD/MM/YYYY / DD.MM.YYYY [HH:MM[:SS]] — the format the time-attendance device
   // exports. Always day-month-year (never month-day): treating it as month-day is what silently
   // shifted every day 1-12 of every month to the wrong month (see the June/July timestamp bug).
-  const dmyStyle = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+  const dmyStyle = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (dmyStyle) {
     const [, day, month, year, hour = "0", minute = "0", second = "0"] = dmyStyle;
     const m = Number(month);
@@ -5263,9 +5266,11 @@ function DayoffShiftEditor({
         if (row.id !== id) return row;
         let raw = setRowCol(row.raw, value, ...targets);
         const next: typeof row = { ...row, [field]: value, raw };
-        if (field === "shift") {
-          const locked = lookupManpower(row.dept, row.jobSite, value);
-          // ถ้าไม่พบเวลาใน Manpower สำหรับกะใหม่ ต้องล้างเวลาเก่าทิ้ง ไม่ใช่ปล่อยให้ค้างเวลาของกะเดิมไว้คู่กับกะใหม่
+        if (field === "shift" || field === "jobSite") {
+          const newJobSite = field === "jobSite" ? value : row.jobSite;
+          const newShift = field === "shift" ? value : row.shift;
+          const locked = lookupManpower(row.dept, newJobSite, newShift);
+          // ถ้าไม่พบเวลาใน Manpower สำหรับกะ/หน่วยงานย่อยใหม่ ต้องล้างเวลาเก่าทิ้ง ไม่ใช่ปล่อยให้ค้างเวลาของกะเดิมไว้คู่กับกะใหม่
           next.shiftStart = locked?.shiftStart ?? "";
           next.shiftEnd = locked?.shiftEnd ?? "";
           raw = setRowCol(raw, next.shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");

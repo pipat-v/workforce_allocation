@@ -5401,15 +5401,11 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 
 .ot-detail-hdr {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   margin-bottom: 8px;
-}
-
-.ot-detail-hdr > .holiday-master-title,
-.ot-detail-hdr > .primary-button {
-  margin-top: 3px;
+  overflow: hidden;
 }
 
 .ot-detail-hdr h3 {
@@ -5423,11 +5419,12 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .ot-detail-filters.no-wrap {
-  flex-wrap: nowrap;
   overflow-x: auto;
   padding-bottom: 2px;
 }
