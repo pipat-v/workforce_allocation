@@ -2206,6 +2206,23 @@ button {
   background: #ffffff;
 }
 
+.dayoff-editor-table input[type="text"] {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #ffffff;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.dayoff-editor-table input[type="text"]:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px #dbeafe;
+}
+
 /* Row states */
 .dayoff-editor-table tr.row-modified td {
   background: #fffbeb;

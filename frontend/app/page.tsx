@@ -68,6 +68,15 @@ type DayoffShiftEditorRow = {
   raw: Record<string, unknown>;
 };
 
+type ManpowerEditorRow = {
+  id: string;
+  dept: string;
+  jobSite: string;
+  shift: string;
+  shiftStart: string;
+  shiftEnd: string;
+};
+
 type SkillMatrixSaveRow = {
   empId: string;
   skill: string;
@@ -104,6 +113,7 @@ type CombinedEmployeeRow = {
   jobSite: string;
   shift: string;
   shiftStart: string;
+  shiftEnd: string;
   dayoff: string;
   skills: Record<string, number>;
 };
@@ -195,7 +205,7 @@ const publicWorkspace = "public";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
-  const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays" | "public_holidays" | "dayoff_shift">("files");
+  const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays" | "public_holidays" | "manpower" | "dayoff_shift">("files");
   const [otSubTab, setOtSubTab] = useState<"chart" | "summary" | "detail">("chart");
   const [masterUploads, setMasterUploads] = useState<MasterUploadState>({
     employee_master: null,
@@ -656,6 +666,81 @@ export default function Home() {
     await loadActiveMasters();
   }
 
+  async function saveManpowerRows(rows: ManpowerEditorRow[]) {
+    setError("");
+    setMessage("");
+
+    const fileId = crypto.randomUUID();
+    const path = `${publicWorkspace}/masters/manpower_plan/${fileId}.xlsx`;
+    const workbookRows = rows.map((row) => ({
+      "หน่วยงาน": row.dept,
+      "หน่วยงานย่อย": row.jobSite,
+      "กะ": row.shift,
+      "เวลาเข้า": row.shiftStart,
+      "เวลาออก": row.shiftEnd,
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(
+      workbookRows.length ? workbookRows : [{ "หน่วยงาน": "", "หน่วยงานย่อย": "", "กะ": "", "เวลาเข้า": "", "เวลาออก": "" }],
+    );
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Manpower Plan");
+    const output = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const file = new Blob([output], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    const { error: uploadError } = await supabase.storage
+      .from("workforce-inputs")
+      .upload(path, file, { upsert: true });
+
+    if (uploadError) {
+      setError(uploadError.message);
+      throw new Error(uploadError.message);
+    }
+
+    const { data: prevActive } = await supabase
+      .from("master_data_files")
+      .select("id")
+      .is("owner_id", null)
+      .eq("file_type", "manpower_plan")
+      .eq("is_active", true)
+      .maybeSingle();
+    const prevActiveId: string | null = prevActive?.id ?? null;
+
+    const { error: deactivateError } = await supabase
+      .from("master_data_files")
+      .update({ is_active: false })
+      .is("owner_id", null)
+      .eq("file_type", "manpower_plan");
+
+    if (deactivateError) {
+      setError(deactivateError.message);
+      throw new Error(deactivateError.message);
+    }
+
+    const { error: insertError } = await supabase
+      .from("master_data_files")
+      .insert({
+        owner_id: null,
+        file_type: "manpower_plan",
+        file_path: path,
+        original_filename: "manpower_plan-edited.xlsx",
+        file_size_bytes: file.size,
+        is_active: true,
+      });
+
+    if (insertError) {
+      if (prevActiveId) {
+        await supabase.from("master_data_files").update({ is_active: true }).eq("id", prevActiveId);
+      }
+      setError(insertError.message);
+      throw new Error(insertError.message);
+    }
+
+    setMessage("บันทึก Manpower Plan แล้ว");
+    await loadActiveMasters();
+  }
+
   async function saveSkillMatrixRows(rows: SkillMatrixSaveRow[]) {
     setError("");
     setMessage("");
@@ -1109,6 +1194,7 @@ export default function Home() {
                   <div className="nav-sub-list">
                     {([
                       { id: "files", icon: FileSpreadsheet, label: "Master Files" },
+                      { id: "manpower", icon: BarChart3, label: "Manpower" },
                       { id: "holidays", icon: CalendarDays, label: "วันพระ" },
                       { id: "public_holidays", icon: CalendarDays, label: "วันหยุดประจำปี" },
                       { id: "dayoff_shift", icon: CalendarClock, label: "Shift & Dayoff" },
@@ -1214,6 +1300,7 @@ export default function Home() {
             {activeTab === "master" ? (
               <div className="master-sub-tabs">
                 <button className={`master-sub-tab${masterSubTab === "files" ? " active" : ""}`} onClick={() => setMasterSubTab("files")}><FileSpreadsheet size={15} />Master Files</button>
+                <button className={`master-sub-tab${masterSubTab === "manpower" ? " active" : ""}`} onClick={() => setMasterSubTab("manpower")}><BarChart3 size={15} />Manpower</button>
                 <button className={`master-sub-tab${masterSubTab === "holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("holidays")}><CalendarDays size={15} />วันพระ</button>
                 <button className={`master-sub-tab${masterSubTab === "public_holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("public_holidays")}><CalendarDays size={15} />วันหยุดประจำปี</button>
                 <button className={`master-sub-tab master-sub-tab-primary${masterSubTab === "dayoff_shift" ? " active" : ""}`} onClick={() => setMasterSubTab("dayoff_shift")}><CalendarClock size={15} />Shift & Dayoff</button>
@@ -1372,6 +1459,7 @@ export default function Home() {
             onHolidaysChanged={(dates) => setHolidayDates(dates)}
             onMastersSaved={loadActiveMasters}
             saveDayoffShiftRows={saveDayoffShiftRows}
+            saveManpowerRows={saveManpowerRows}
             saveMasterFiles={saveMasterFiles}
             setError={setError}
             setMessage={setMessage}
@@ -1549,8 +1637,7 @@ function buildReportData(
 
   const employeeMap = new Map(employees.map((employee) => [employee.empId, employee]));
   const dayoffShiftMap = buildDayoffShiftMap(dayoffShiftRows);
-  const deptShiftStart = buildDeptShiftStart(manpowerRows);
-  const deptShiftEnd = buildDeptShiftEnd(manpowerRows);
+  const manpowerLookup = buildManpowerLookup(parseManpowerRows(manpowerRows));
   const scanByEmp = new Map<string, { name: string; times: Date[]; seenMs: Set<number> }>();
 
   for (const row of scanRows) {
@@ -1670,16 +1757,9 @@ function buildReportData(
     const dayoffShift = dayoffShiftMap.get(employee.empId);
     const scans = scanByEmp.get(employee.empId)?.times ?? [];
     const shift = normalizeShiftLabel(dayoffShift?.shift) || "กะ 1";
-    const shiftStart =
-      dayoffShift?.shiftStart ||
-      deptShiftStart.get(makeDeptShiftKey(employee.dept, shift)) ||
-      deptShiftStart.get(makeDeptShiftKey(employee.dept, "")) ||
-      "07:00";
-    const shiftEnd =
-      dayoffShift?.shiftEnd ||
-      deptShiftEnd.get(makeDeptShiftKey(employee.dept, shift)) ||
-      deptShiftEnd.get(makeDeptShiftKey(employee.dept, "")) ||
-      "";
+    const manpowerEntry = lookupManpowerTime(manpowerLookup, employee.dept, dayoffShift?.section ?? "", shift);
+    const shiftStart = dayoffShift?.shiftStart || manpowerEntry?.shiftStart || "07:00";
+    const shiftEnd = dayoffShift?.shiftEnd || manpowerEntry?.shiftEnd || "";
     // Use the known shift start time to pick the correct clock-in timestamp.
     // For night shifts (e.g. shiftStart=22:00) this selects the evening scan,
     // not the early-morning clock-out that a plain min() would return.
@@ -1796,50 +1876,63 @@ function buildReportData(
   };
 }
 
-function buildDeptShiftStart(rows: Record<string, unknown>[]) {
-  const map = new Map<string, string>();
-  for (const row of rows) {
-    const dept = String(row["หน่วยงาน"] ?? row["dept"] ?? "").trim();
-    const shift = normalizeShiftLabel(row["กะ"] ?? row["shift"] ?? row["อยู่กะไหน"]);
-    const shiftStart = normalizeTimeText(row["เวลาเข้า"] ?? row["shift_start"]);
-    if (!dept || !shiftStart) continue;
+type ManpowerRow = { dept: string; jobSite: string; shift: string; shiftStart: string; shiftEnd: string };
+type ManpowerLookupEntry = { shiftStart: string; shiftEnd: string };
+type ManpowerLookup = {
+  specific: Map<string, ManpowerLookupEntry>;
+  byShift: Map<string, ManpowerLookupEntry>;
+  byDept: Map<string, ManpowerLookupEntry>;
+};
 
-    const defaultKey = makeDeptShiftKey(dept, "");
-    if (!map.has(defaultKey)) {
-      map.set(defaultKey, shiftStart);
-    }
-
-    if (shift) {
-      const shiftKey = makeDeptShiftKey(dept, shift);
-      if (!map.has(shiftKey)) {
-        map.set(shiftKey, shiftStart);
-      }
-    }
-  }
-  return map;
+function parseManpowerRows(rows: Record<string, unknown>[]): ManpowerRow[] {
+  return rows
+    .map((row) => ({
+      dept: String(row["หน่วยงาน"] ?? row["dept"] ?? "").trim(),
+      jobSite: String(row["หน่วยงานย่อย"] ?? row["หน้างาน"] ?? row["job_site"] ?? "").trim(),
+      shift: normalizeShiftLabel(row["กะ"] ?? row["shift"] ?? row["อยู่กะไหน"]),
+      shiftStart: normalizeTimeText(row["เวลาเข้า"] ?? row["shift_start"] ?? row["เวลาเข้างาน"]),
+      shiftEnd: normalizeTimeText(row["เวลาออก"] ?? row["เวลาออกงาน"] ?? row["shift_end"]),
+    }))
+    .filter((r) => r.dept && (r.shiftStart || r.shiftEnd));
 }
 
-function buildDeptShiftEnd(rows: Record<string, unknown>[]) {
-  const map = new Map<string, string>();
-  for (const row of rows) {
-    const dept = String(row["หน่วยงาน"] ?? row["dept"] ?? "").trim();
-    const shift = normalizeShiftLabel(row["กะ"] ?? row["shift"] ?? row["อยู่กะไหน"]);
-    const shiftEnd = normalizeTimeText(row["เวลาออก"] ?? row["เวลาออกงาน"] ?? row["shift_end"]);
-    if (!dept || !shiftEnd) continue;
+// สามชั้น: เจาะจงหน่วยงาน+หน่วยงานย่อย+กะ -> เจาะจงหน่วยงาน+กะ (ไม่ระบุหน่วยงานย่อย) -> ค่า default ของทั้งหน่วยงาน
+function buildManpowerLookup(rows: ManpowerRow[]): ManpowerLookup {
+  const specific = new Map<string, ManpowerLookupEntry>();
+  const byShift = new Map<string, ManpowerLookupEntry>();
+  const byDept = new Map<string, ManpowerLookupEntry>();
+  for (const r of rows) {
+    if (!r.dept) continue;
+    const entry: ManpowerLookupEntry = { shiftStart: r.shiftStart, shiftEnd: r.shiftEnd };
 
-    const defaultKey = makeDeptShiftKey(dept, "");
-    if (!map.has(defaultKey)) {
-      map.set(defaultKey, shiftEnd);
-    }
+    const deptKey = makeDeptShiftKey(r.dept, "");
+    if (!byDept.has(deptKey)) byDept.set(deptKey, entry);
 
-    if (shift) {
-      const shiftKey = makeDeptShiftKey(dept, shift);
-      if (!map.has(shiftKey)) {
-        map.set(shiftKey, shiftEnd);
+    if (r.shift) {
+      const shiftKey = makeDeptShiftKey(r.dept, r.shift);
+      if (!byShift.has(shiftKey)) byShift.set(shiftKey, entry);
+
+      if (r.jobSite) {
+        const specificKey = `${r.dept}||${r.jobSite}||${normalizeShiftKey(r.shift)}`;
+        if (!specific.has(specificKey)) specific.set(specificKey, entry);
       }
     }
   }
-  return map;
+  return { specific, byShift, byDept };
+}
+
+function lookupManpowerTime(lookup: ManpowerLookup, dept: string, jobSite: string, shift: string): ManpowerLookupEntry | undefined {
+  // "ผู้จัดการ" หมายถึงไม่มีกะตายตัว ไม่ใช่ชื่อกะจริง ต้องไม่ resolve เวลาให้ (เหมือนไม่มีกะเลย)
+  if (!shift || shift === "ผู้จัดการ") return undefined;
+  if (jobSite && shift) {
+    const hit = lookup.specific.get(`${dept}||${jobSite}||${normalizeShiftKey(shift)}`);
+    if (hit) return hit;
+  }
+  if (shift) {
+    const hit = lookup.byShift.get(makeDeptShiftKey(dept, shift));
+    if (hit) return hit;
+  }
+  return lookup.byDept.get(makeDeptShiftKey(dept, ""));
 }
 
 function findRowCol(row: Record<string, unknown>, ...targets: string[]): string {
@@ -2312,6 +2405,11 @@ function normalizeTimeText(value: unknown) {
   const m = Number(match[2]);
   if (h > 23 || m > 59) return "";
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+// ยึดหน่วยงานย่อยที่ตั้งไว้ในระบบอยู่แล้วก่อน (ล่าสุด) — ใช้ SKILL CF เป็นแค่ค่าเริ่มต้นสำหรับคนที่ยังไม่มีข้อมูล
+function resolveCombinedJobSite(section: string | undefined, skillCF: string | undefined): string {
+  return section || skillCF || "";
 }
 
 function excelSerialDateToDate(value: number) {
@@ -3121,7 +3219,7 @@ function DashboardPanels({
 
 function buildCombinedExcelWorkbook(
   empRows: Record<string, unknown>[],
-  dayoffMap: Map<string, { dayoff: string; shift: string; shiftStart: string }>,
+  dayoffMap: Map<string, { dayoff: string; shift: string; shiftStart: string; shiftEnd: string; section: string }>,
   skillFlatRows: SkillFlatRow[],
   manpowerRows: Record<string, unknown>[],
   skillNames: string[],
@@ -3140,9 +3238,10 @@ function buildCombinedExcelWorkbook(
       "Last Name (Local)": String(row["Last Name (Local)"] ?? "").trim(),
       "หน่วยงาน": String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim(),
       "Title (Position)": String(row["Title (Position)"] ?? row["position"] ?? "").trim(),
-      "หน่วยงานย่อย/Skill": skillCFMap.get(empId) ?? "",
+      "หน่วยงานย่อย/Skill": resolveCombinedJobSite(ds?.section, skillCFMap.get(empId)),
       "กะ": ds?.shift ?? "",
       "เวลาเข้างาน": ds?.shiftStart ?? "",
+      "เวลาออก": ds?.shiftEnd ?? "",
       "วันหยุดประจำสัปดาห์": ds?.dayoff ?? "",
       ...skillCols,
     };
@@ -3150,7 +3249,7 @@ function buildCombinedExcelWorkbook(
   const ws1 = XLSX.utils.json_to_sheet(sheet1Rows as object[]);
   ws1["!cols"] = [
     { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 16 },
-    { wch: 8 }, { wch: 14 }, { wch: 24 },
+    { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 24 },
     ...skillNames.map(() => ({ wch: 14 })),
   ];
   const ws2 = XLSX.utils.json_to_sheet(
@@ -3165,7 +3264,7 @@ function buildCombinedExcelWorkbook(
 function parseCombinedSheet1(rows: Record<string, unknown>[]): CombinedEmployeeRow[] {
   const FIXED = new Set([
     "employee id", "first name (local)", "last name (local)",
-    "หน่วยงาน", "title (position)", "หน่วยงานย่อย/skill", "หน้างาน", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
+    "หน่วยงาน", "title (position)", "หน่วยงานย่อย/skill", "หน้างาน", "กะ", "เวลาเข้างาน", "เวลาออก", "วันหยุดประจำสัปดาห์",
   ]);
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   if (rows.length > 0) {
@@ -3191,6 +3290,7 @@ function parseCombinedSheet1(rows: Record<string, unknown>[]): CombinedEmployeeR
       jobSite: String(row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim(),
       shift: String(row["กะ"] ?? "").trim(),
       shiftStart: normalizeTimeText(row["เวลาเข้างาน"]),
+      shiftEnd: normalizeTimeText(row["เวลาออก"]),
       dayoff: String(row["วันหยุดประจำสัปดาห์"] ?? "").trim(),
       skills,
     };
@@ -3221,6 +3321,7 @@ function computeEmployeeDiff(
     chk("หน่วยงานย่อย/Skill", cur.jobSite, nr.jobSite);
     chk("กะ", cur.shift, nr.shift);
     chk("เวลาเข้างาน", cur.shiftStart, nr.shiftStart);
+    chk("เวลาออก", cur.shiftEnd, nr.shiftEnd);
     chk("วันหยุด", cur.dayoff, nr.dayoff);
     const allSkills = new Set([...Object.keys(cur.skills), ...Object.keys(nr.skills)]);
     for (const s of allSkills) {
@@ -3368,6 +3469,7 @@ function MasterDataPage({
   onHolidaysChanged,
   onMastersSaved,
   saveDayoffShiftRows,
+  saveManpowerRows,
   saveMasterFiles,
   setError,
   setMessage,
@@ -3376,12 +3478,13 @@ function MasterDataPage({
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   isSavingMasters: boolean;
   masterFileHistory: MasterFile[];
-  masterSubTab: "files" | "holidays" | "public_holidays" | "dayoff_shift";
+  masterSubTab: "files" | "holidays" | "public_holidays" | "manpower" | "dayoff_shift";
   masterUploads: MasterUploadState;
   onDeleteMasterFile: (file: MasterFile) => Promise<void>;
   onHolidaysChanged: (dates: Set<string>) => void;
   onMastersSaved: () => Promise<void>;
   saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
+  saveManpowerRows: (rows: ManpowerEditorRow[]) => Promise<void>;
   saveMasterFiles: () => Promise<void>;
   setError: (msg: string) => void;
   setMessage: (msg: string) => void;
@@ -3557,9 +3660,10 @@ function MasterDataPage({
           lastName: String(row["Last Name (Local)"] ?? "").trim(),
           dept: String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim(),
           position: String(row["Title (Position)"] ?? "").trim(),
-          jobSite: curSkillCFMap.get(empId) ?? "",
+          jobSite: resolveCombinedJobSite(ds?.section, curSkillCFMap.get(empId)),
           shift: ds?.shift ?? "",
           shiftStart: ds?.shiftStart ?? "",
+          shiftEnd: ds?.shiftEnd ?? "",
           dayoff: ds?.dayoff ?? "",
           skills: empSkills,
         };
@@ -3879,10 +3983,18 @@ function MasterDataPage({
 
       </>) : null}
 
+      {masterSubTab === "manpower" ? (
+        <ManpowerEditor
+          activeFile={activeMasterMap.manpower_plan}
+          saveManpowerRows={saveManpowerRows}
+        />
+      ) : null}
+
       {masterSubTab === "dayoff_shift" ? (
         <DayoffShiftEditor
           activeFile={activeMasterMap.dayoff_shift}
           employeeMasterFile={activeMasterMap.employee_master}
+          manpowerFile={activeMasterMap.manpower_plan}
           saveDayoffShiftRows={saveDayoffShiftRows}
         />
       ) : null}
@@ -4374,18 +4486,351 @@ function PublicHolidayPage({
   );
 }
 
+function ManpowerEditor({
+  activeFile,
+  saveManpowerRows,
+}: {
+  activeFile?: MasterFile;
+  saveManpowerRows: (rows: ManpowerEditorRow[]) => Promise<void>;
+}) {
+  const [rows, setRows] = useState<ManpowerEditorRow[]>([]);
+  const [originalRows, setOriginalRows] = useState<ManpowerEditorRow[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [newDept, setNewDept] = useState("");
+  const [newJobSite, setNewJobSite] = useState("");
+  const [newShift, setNewShift] = useState("");
+  const [newShiftStart, setNewShiftStart] = useState("");
+  const [newShiftEnd, setNewShiftEnd] = useState("");
+  const [query, setQuery] = useState("");
+  const [deptFilter, setDeptFilter] = useState("all");
+  const [shiftFilter, setShiftFilter] = useState("all");
+
+  useEffect(() => {
+    if (!activeFile?.file_path) {
+      setRows([]);
+      setOriginalRows([]);
+      return;
+    }
+    let isMounted = true;
+    setIsLoading(true);
+    downloadSheetRows(activeFile.file_path)
+      .then((sheetRows) => {
+        if (!isMounted) return;
+        const parsed = sheetRows
+          .map((row, i) => ({
+            id: `mp-${i}`,
+            dept: String(row["หน่วยงาน"] ?? row["dept"] ?? "").trim(),
+            jobSite: String(row["หน่วยงานย่อย"] ?? row["หน้างาน"] ?? row["job_site"] ?? "").trim(),
+            shift: normalizeShiftLabel(row["กะ"] ?? row["shift"] ?? row["อยู่กะไหน"]),
+            shiftStart: normalizeTimeText(row["เวลาเข้า"] ?? row["shift_start"] ?? row["เวลาเข้างาน"]),
+            shiftEnd: normalizeTimeText(row["เวลาออก"] ?? row["เวลาออกงาน"] ?? row["shift_end"]),
+          }))
+          .filter((r) => r.dept || r.shift);
+        setRows(parsed);
+        setOriginalRows(parsed);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setRows([]);
+        setOriginalRows([]);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => { isMounted = false; };
+  }, [activeFile?.file_path]);
+
+  const isDirty = JSON.stringify(rows) !== JSON.stringify(originalRows);
+
+  function updateRow(id: string, field: "shiftStart" | "shiftEnd", value: string) {
+    setRows((current) =>
+      current.map((row) => {
+        if (row.id !== id) return row;
+        const next = { ...row, [field]: value };
+        if (field === "shiftStart" && !row.shiftEnd) next.shiftEnd = addHoursToTime(value, 9);
+        return next;
+      }),
+    );
+  }
+
+  function rowKey(row: ManpowerEditorRow) {
+    return `${row.dept}||${row.jobSite}||${normalizeShiftKey(row.shift)}`;
+  }
+
+  function addRow() {
+    if (!newDept.trim() || !newShift.trim()) return;
+    if (newShift.trim() === "ผู้จัดการ") {
+      alert(
+        `"ผู้จัดการ" เป็นคำสงวนที่ระบบใช้หมายถึง "ไม่มีกะตายตัว" (ไม่ล็อคเวลา)\n` +
+        `ตั้งเป็นชื่อกะจริงไม่ได้ — เวลาที่กรอกไว้จะไม่ถูกใช้งานเลย\nกรุณาใช้ชื่อกะอื่น`,
+      );
+      return;
+    }
+    const shiftStart = newShiftStart;
+    const shiftEnd = newShiftEnd || (shiftStart ? addHoursToTime(shiftStart, 9) : "");
+    const candidate: ManpowerEditorRow = {
+      id: `mp-new-${Date.now()}`,
+      dept: newDept.trim(),
+      jobSite: newJobSite.trim(),
+      shift: newShift.trim(),
+      shiftStart,
+      shiftEnd,
+    };
+    const exists = rows.some((r) => r.dept && r.shift && rowKey(r) === rowKey(candidate));
+    if (exists) {
+      alert(`หน่วยงาน "${candidate.dept}"${candidate.jobSite ? ` (${candidate.jobSite})` : ""} กะ "${candidate.shift}" มีอยู่แล้ว\nหากต้องการแก้ไข กรุณาแก้ที่แถวเดิมในตาราง`);
+      return;
+    }
+    setRows((current) => [...current, candidate]);
+    setNewDept("");
+    setNewJobSite("");
+    setNewShift("");
+    setNewShiftStart("");
+    setNewShiftEnd("");
+  }
+
+  function deleteRow(id: string) {
+    setRows((current) => current.filter((r) => r.id !== id));
+  }
+
+  const duplicateKeys = (() => {
+    const seen = new Set<string>();
+    const dupes = new Set<string>();
+    for (const row of rows) {
+      if (!row.dept || !row.shift) continue;
+      const key = rowKey(row);
+      if (seen.has(key)) dupes.add(key);
+      seen.add(key);
+    }
+    return dupes;
+  })();
+
+  const modifiedIds = new Set(
+    rows
+      .filter((row) => {
+        const orig = originalRows.find((r) => r.id === row.id);
+        return orig && (orig.shiftStart !== row.shiftStart || orig.shiftEnd !== row.shiftEnd);
+      })
+      .map((r) => r.id),
+  );
+
+  async function handleSave() {
+    if (duplicateKeys.size > 0) {
+      alert("มีหน่วยงาน + กะ ซ้ำกัน กรุณาแก้ไขก่อนบันทึก");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await saveManpowerRows(rows);
+      setOriginalRows(rows);
+    } catch {
+      // error already set by saveManpowerRows
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  const deptFilterOptions = Array.from(new Set(rows.map((r) => r.dept).filter(Boolean))).sort();
+  const shiftFilterOptions = Array.from(new Set(rows.map((r) => r.shift).filter(Boolean))).sort();
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRows = rows.filter((row) => {
+    if (deptFilter !== "all" && row.dept !== deptFilter) return false;
+    if (shiftFilter !== "all" && row.shift !== shiftFilter) return false;
+    if (!normalizedQuery) return true;
+    return [row.dept, row.jobSite, row.shift].some((v) => v.toLowerCase().includes(normalizedQuery));
+  });
+
+  function handleExport() {
+    const data = filteredRows.map((row) => ({
+      "หน่วยงาน": row.dept,
+      "หน่วยงานย่อย": row.jobSite,
+      "กะ": row.shift,
+      "เวลาเข้า": row.shiftStart,
+      "เวลาออก": row.shiftEnd,
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Manpower Plan");
+    XLSX.writeFile(wb, "manpower-plan-export.xlsx");
+  }
+
+  return (
+    <section className="panel holiday-master-panel">
+      <div className="ot-detail-hdr">
+        <div className="holiday-master-title" style={{ flexShrink: 0 }}>
+          <BarChart3 size={20} />
+          <h2 style={{ whiteSpace: "nowrap" }}>Manpower Plan</h2>
+          <span className="holiday-total-badge">{rows.length.toLocaleString()} หน่วยงาน + กะ</span>
+          {modifiedIds.size > 0 && <span className="modified-badge">{modifiedIds.size} แก้ไข</span>}
+        </div>
+        <div className="ot-detail-filters">
+          <input
+            className="ot-detail-search"
+            aria-label="ค้นหา manpower"
+            placeholder="ค้นหา หน่วยงาน หน่วยงานย่อย กะ"
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <select aria-label="หน่วยงาน" value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+            <option value="all">ทุกหน่วยงาน</option>
+            {deptFilterOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <select aria-label="กะ" value={shiftFilter} onChange={(e) => setShiftFilter(e.target.value)}>
+            <option value="all">ทุกกะ</option>
+            {shiftFilterOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <button
+            className="ghost-button"
+            onClick={() => { setQuery(""); setDeptFilter("all"); setShiftFilter("all"); }}
+            type="button"
+          >
+            Clear
+          </button>
+          <button type="button" className="primary-button small" onClick={handleExport} disabled={filteredRows.length === 0}>
+            <Download size={14} />
+            Export Excel
+          </button>
+        </div>
+        <button className="primary-button" style={{ flexShrink: 0 }} disabled={!rows.length || isSaving} onClick={handleSave} type="button">
+          <UploadCloud size={17} />
+          {isSaving ? "Saving..." : `Save${isDirty ? " (มีการแก้ไข)" : ""}`}
+        </button>
+      </div>
+      <p style={{ margin: "-12px 0 0", fontSize: 13, color: "var(--muted)" }}>
+        กำหนดเวลาเข้า-ออกของแต่ละหน่วยงาน + กะ — หน้า Shift & Dayoff จะดึงเวลานี้ไปใช้อัตโนมัติ
+      </p>
+
+      <div className="holiday-add-form" style={{ marginTop: -12 }}>
+        <div className="holiday-add-form-fields">
+          <input
+            type="text"
+            className="holiday-input"
+            placeholder="หน่วยงาน เช่น งานเครื่องใน"
+            value={newDept}
+            onChange={(e) => setNewDept(e.target.value)}
+            style={{ flex: 2, minWidth: 160 }}
+          />
+          <input
+            type="text"
+            className="holiday-input"
+            placeholder="หน่วยงานย่อย (ว่าง = ทั้งหน่วยงาน)"
+            value={newJobSite}
+            onChange={(e) => setNewJobSite(e.target.value)}
+            style={{ flex: 2, minWidth: 160 }}
+          />
+          <input
+            type="text"
+            className="holiday-input"
+            placeholder="กะ เช่น กะ1"
+            value={newShift}
+            onChange={(e) => setNewShift(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addRow()}
+            style={{ flex: 1, minWidth: 90 }}
+          />
+          <TimeInput24
+            value={newShiftStart}
+            onChange={setNewShiftStart}
+            title="เวลาเข้า"
+            className="time24-btn holiday-input"
+          />
+          <TimeInput24
+            value={newShiftEnd}
+            onChange={setNewShiftEnd}
+            title="เวลาออก"
+            className="time24-btn holiday-input"
+          />
+          <button
+            className="primary-button"
+            onClick={addRow}
+            disabled={!newDept.trim() || !newShift.trim()}
+            type="button"
+          >
+            + เพิ่มหน่วยงาน/กะ
+          </button>
+        </div>
+      </div>
+
+      <div className="dayoff-editor-table" style={{ marginTop: -12 }}>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>หน่วยงาน</th>
+              <th>หน่วยงานย่อย</th>
+              <th>กะ</th>
+              <th>เวลาเข้า</th>
+              <th>เวลาออก</th>
+              <th style={{ width: 40 }} />
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRows.map((row) => (
+              <tr
+                key={row.id}
+                className={(row.dept && row.shift && duplicateKeys.has(rowKey(row))) || modifiedIds.has(row.id) ? "row-modified" : ""}
+              >
+                <td>{row.dept || "—"}</td>
+                <td>{row.jobSite || <span style={{ color: "#94a3b8" }}>ทั้งหน่วยงาน</span>}</td>
+                <td>{row.shift || "—"}</td>
+                <td>
+                  <TimeInput24
+                    value={row.shiftStart}
+                    onChange={(v) => updateRow(row.id, "shiftStart", v)}
+                    className="time24-btn shift-time-input"
+                  />
+                </td>
+                <td className="shift-end-cell">
+                  <TimeInput24
+                    value={row.shiftEnd}
+                    onChange={(v) => updateRow(row.id, "shiftEnd", v)}
+                    className="time24-btn shift-time-input"
+                  />
+                </td>
+                <td>
+                  <button className="icon-button danger" onClick={() => deleteRow(row.id)} title="ลบแถว" type="button">
+                    <Trash2 size={15} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {activeFile && isLoading ? (
+              <tr><td colSpan={6}>Loading Manpower Plan...</td></tr>
+            ) : null}
+            {!isLoading && rows.length === 0 ? (
+              <tr><td colSpan={6}>ยังไม่มีข้อมูล — กรอกฟอร์มด้านบนแล้วกด &quot;+ เพิ่มหน่วยงาน/กะ&quot; เพื่อเริ่มตั้งค่า</td></tr>
+            ) : null}
+            {!isLoading && rows.length > 0 && filteredRows.length === 0 ? (
+              <tr><td colSpan={6}>ไม่พบข้อมูลที่ค้นหา</td></tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+      {duplicateKeys.size > 0 && (
+        <p style={{ fontSize: 12, color: "#ef4444", marginTop: 6 }}>
+          พบหน่วยงาน + กะ ซ้ำกัน — ระบบจะใช้แถวแรกที่เจอเท่านั้น กรุณาลบแถวที่ซ้ำก่อนบันทึก
+        </p>
+      )}
+    </section>
+  );
+}
+
 function DayoffShiftEditor({
   activeFile,
   employeeMasterFile,
+  manpowerFile,
   saveDayoffShiftRows,
 }: {
   activeFile?: MasterFile;
   employeeMasterFile?: MasterFile;
+  manpowerFile?: MasterFile;
   saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
 }) {
   const [rows, setRows] = useState<DayoffShiftEditorRow[]>([]);
   const [originalRows, setOriginalRows] = useState<DayoffShiftEditorRow[]>([]);
   const [jobSiteOptions, setJobSiteOptions] = useState<string[]>([]);
+  const [manpowerRows, setManpowerRows] = useState<Array<{ dept: string; jobSite: string; shift: string; shiftStart: string; shiftEnd: string }>>([]);
   const [query, setQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("all");
   const [selectedJobSite, setSelectedJobSite] = useState("all");
@@ -4394,10 +4839,153 @@ function DayoffShiftEditor({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDayoff, setBulkDayoff] = useState("");
   const [bulkShift, setBulkShift] = useState("");
-  const [bulkShiftStart, setBulkShiftStart] = useState("");
-  const [bulkShiftEnd, setBulkShiftEnd] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const path = manpowerFile?.file_path;
+    if (!path) { setManpowerRows([]); return; }
+    let cancelled = false;
+    downloadSheetRows(path)
+      .then((sheetRows) => {
+        if (cancelled) return;
+        // ใช้ parser เดียวกับ buildReportData เพื่อไม่ให้แถว default ของหน่วยงาน (ไม่ระบุกะ) หายไปจากหน้านี้
+        // ทั้งที่ Dashboard/OT จริงยังเห็นและใช้แถวนั้นอยู่
+        setManpowerRows(parseManpowerRows(sheetRows));
+      })
+      .catch(() => { if (!cancelled) setManpowerRows([]); });
+    return () => { cancelled = true; };
+  }, [manpowerFile?.file_path]);
+
+  // ใช้ตัว lookup เดียวกับที่ buildReportData ใช้คำนวณ Dashboard/OT จริง เพื่อไม่ให้เวลาที่ "ล็อค" ในหน้านี้
+  // กับเวลาที่ Dashboard คำนวณจริงเพี้ยนกันสำหรับพนักงานที่ยังไม่เคย save ผ่านหน้านี้
+  const manpowerLookup = useMemo(() => buildManpowerLookup(manpowerRows), [manpowerRows]);
+
+  function lookupManpower(dept: string, jobSite: string, shift: string) {
+    return lookupManpowerTime(manpowerLookup, dept, jobSite, shift);
+  }
+
+  const manpowerShiftsByKey = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const r of manpowerRows) {
+      if (!r.shift) continue; // แถว default ของหน่วยงาน (ไม่ระบุกะ) ไม่ใช่ตัวเลือกกะที่เลือกได้จริง
+      const key = `${r.dept}||${r.jobSite}`;
+      const list = map.get(key) ?? [];
+      if (!list.includes(r.shift)) list.push(r.shift);
+      map.set(key, list);
+    }
+    return map;
+  }, [manpowerRows]);
+
+  // กะทั้งหมดที่หน่วยงานนี้มีจริงใน Manpower (รวมทุกหน่วยงานย่อย) — ใช้เป็น fallback ก่อนจะหลุดไปใช้ลิสต์รวมทั้งบริษัท
+  const manpowerShiftsByDept = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const r of manpowerRows) {
+      if (!r.shift) continue; // แถว default ของหน่วยงาน (ไม่ระบุกะ) ไม่ใช่ตัวเลือกกะที่เลือกได้จริง
+      const list = map.get(r.dept) ?? [];
+      if (!list.includes(r.shift)) list.push(r.shift);
+      map.set(r.dept, list);
+    }
+    return map;
+  }, [manpowerRows]);
+
+  // ดึงหน่วยงานย่อยที่ตั้งไว้ในหน้า Manpower ของหน่วยงานนั้น มารวมกับตัวเลือกเดิม (จากไฟล์รวมพนักงาน)
+  const manpowerJobSitesByDept = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const r of manpowerRows) {
+      if (!r.jobSite) continue;
+      const list = map.get(r.dept) ?? [];
+      if (!list.includes(r.jobSite)) list.push(r.jobSite);
+      map.set(r.dept, list);
+    }
+    return map;
+  }, [manpowerRows]);
+
+  // หน่วยงานย่อยที่พนักงานคนอื่นในหน่วยงานเดียวกันใช้อยู่แล้ว (นอกจาก Manpower)
+  const employeeJobSitesByDept = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const r of rows) {
+      if (!r.jobSite) continue;
+      const set = map.get(r.dept) ?? new Set<string>();
+      set.add(r.jobSite);
+      map.set(r.dept, set);
+    }
+    return map;
+  }, [rows]);
+
+  // ค่าฐานของตัวเลือกหน่วยงานย่อยต่อหน่วยงาน คำนวณครั้งเดียวต่อหน่วยงานที่พบจริง (เดิม spread+sort ทุกแถว)
+  // จำกัดขอบเขตแค่หน่วยงานย่อยที่เกี่ยวข้องกับหน่วยงานนั้นจริง (จาก Manpower + คนอื่นในหน่วยงานเดียวกัน)
+  // แทนที่จะรวมลิสต์ทั้งบริษัท (~40 รายการ) ในทุกแถว — ลดจำนวน DOM option ต่อแถวลงมาก
+  // ถ้าหน่วยงานนั้นไม่มีข้อมูลเลยทั้งสองแหล่ง ค่อย fallback เป็นลิสต์รวมทั้งบริษัท
+  const jobSiteChoiceBaseByDept = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const dept of new Set(rows.map((r) => r.dept))) {
+      const fromMp = manpowerJobSitesByDept.get(dept) ?? [];
+      const fromEmp = Array.from(employeeJobSitesByDept.get(dept) ?? []);
+      const combined = Array.from(new Set([...fromMp, ...fromEmp])).sort();
+      map.set(dept, combined.length > 0 ? combined : jobSiteOptions);
+    }
+    return map;
+  }, [rows, manpowerJobSitesByDept, employeeJobSitesByDept, jobSiteOptions]);
+
+  function jobSiteChoicesForDept(dept: string, current: string) {
+    const merged = jobSiteChoiceBaseByDept.get(dept) ?? jobSiteOptions;
+    return current && !merged.includes(current) ? [...merged, current] : merged;
+  }
+
+  // หน่วยงาน+กะ ที่ Manpower Plan กำหนดหน่วยงานย่อยไว้ "ค่าเดียวไม่ก้ำกึ่ง" เท่านั้น — ใช้แนะนำอัตโนมัติได้อย่างปลอดภัย
+  const uniqueJobSiteByDeptShift = useMemo(() => {
+    const seen = new Map<string, Set<string>>();
+    for (const r of manpowerRows) {
+      if (!r.jobSite) continue;
+      const key = makeDeptShiftKey(r.dept, r.shift);
+      const set = seen.get(key) ?? new Set<string>();
+      set.add(r.jobSite);
+      seen.set(key, set);
+    }
+    const map = new Map<string, string>();
+    for (const [key, set] of seen) {
+      if (set.size === 1) map.set(key, Array.from(set)[0]);
+    }
+    return map;
+  }, [manpowerRows]);
+
+  function computeJobSiteSuggestions() {
+    return rows
+      .map((row) => {
+        if (!row.dept || !row.shift) return null;
+        const suggested = uniqueJobSiteByDeptShift.get(makeDeptShiftKey(row.dept, row.shift));
+        if (!suggested || suggested === row.jobSite) return null;
+        return { row, suggested };
+      })
+      .filter((x): x is { row: DayoffShiftEditorRow; suggested: string } => x !== null);
+  }
+
+  function syncJobSitesFromManpower() {
+    const suggestions = computeJobSiteSuggestions();
+    if (suggestions.length === 0) {
+      alert("ไม่พบรายการที่ต้องปรับ — หน่วยงานย่อยตรงกับ Manpower Plan อยู่แล้ว หรือ Manpower Plan ยังไม่ได้ระบุหน่วยงานย่อยแบบไม่ก้ำกึ่งสำหรับหน่วยงาน+กะนั้นๆ");
+      return;
+    }
+    const preview = suggestions
+      .slice(0, 15)
+      .map((s) => `${s.row.empId} ${s.row.name}: "${s.row.jobSite || "-"}" → "${s.suggested}"`)
+      .join("\n");
+    const more = suggestions.length > 15 ? `\n...และอีก ${suggestions.length - 15} คน` : "";
+    const ok = window.confirm(
+      `พบ ${suggestions.length} คนที่หน่วยงานย่อยไม่ตรงกับ Manpower Plan (มีค่าที่ควรจะเป็นชัดเจนไม่ก้ำกึ่ง)\nต้องการปรับหน่วยงานย่อยให้ตรงกันหรือไม่?\n\n${preview}${more}\n\n(ยังไม่บันทึก — ต้องกด Save อีกครั้งหลังตรวจสอบ)`,
+    );
+    if (!ok) return;
+    const suggestionMap = new Map(suggestions.map((s) => [s.row.id, s.suggested]));
+    setRows((current) =>
+      current.map((row) => {
+        const suggested = suggestionMap.get(row.id);
+        if (!suggested) return row;
+        const raw = setRowCol(row.raw, suggested, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
+        return { ...row, jobSite: suggested, raw };
+      }),
+    );
+  }
 
   const dayoffSingle = [
     { value: "จ",  label: "จ — จันทร์" },
@@ -4412,7 +5000,41 @@ function DayoffShiftEditor({
   const dayoffDouble = [
     { value: "ส,อา", label: "ส+อา — เสาร์&อาทิตย์" },
   ];
-  const shiftOptions = Array.from(new Set(rows.map((r) => r.shift).filter(Boolean))).sort();
+  // ต้อง useMemo (ไม่ใช่ IIFE เฉยๆ) เพราะ shiftChoiceBaseByRowKey ด้านล่างเอาไปเป็น dependency —
+  // ถ้าเป็น array อ้างอิงใหม่ทุก render จะทำให้ memo นั้นคำนวณใหม่ทุกครั้งโดยไม่จำเป็น (พิมพ์ในกล่องค้นหาก็รีคำนวณ)
+  const shiftOptions = useMemo(() => {
+    // dedupe by normalized shift key (กะ1 vs กะ 1) — prefer employees' own stored label so filtering matches exactly
+    const byKey = new Map<string, string>();
+    for (const r of manpowerRows) { if (r.shift) byKey.set(normalizeShiftKey(r.shift), r.shift); }
+    for (const r of rows) { if (r.shift) byKey.set(normalizeShiftKey(r.shift), r.shift); }
+    return Array.from(byKey.values()).sort();
+  }, [manpowerRows, rows]);
+
+  // ค่าฐานของตัวเลือกกะต่อ (หน่วยงาน, หน่วยงานย่อย) หนึ่งคู่ คำนวณครั้งเดียวต่อคู่ที่พบจริง
+  // ไม่ใช่คำนวณใหม่ทุกแถวพนักงาน (439 คน) — จุดที่ทำให้ตารางช้าตอน render/clear filter
+  const shiftChoiceBaseByRowKey = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const row of rows) {
+      const key = `${row.dept}||${row.jobSite}`;
+      if (map.has(key)) continue;
+      const specific = manpowerShiftsByKey.get(key) ?? [];
+      const deptWide = manpowerShiftsByKey.get(`${row.dept}||`) ?? [];
+      const deptAny = manpowerShiftsByDept.get(row.dept) ?? [];
+      const fromMp = specific.length > 0 ? specific : deptWide.length > 0 ? deptWide : deptAny;
+      map.set(key, fromMp.length > 0 ? fromMp : shiftOptions);
+    }
+    return map;
+  }, [rows, manpowerShiftsByKey, manpowerShiftsByDept, shiftOptions]);
+
+  function shiftChoicesForRow(dept: string, jobSite: string, current: string) {
+    const base = shiftChoiceBaseByRowKey.get(`${dept}||${jobSite}`) ?? shiftOptions;
+    // dedupe by normalized shift key (กะ1 vs กะ 1) — prefer the row's own stored label for its key
+    const byKey = new Map<string, string>();
+    for (const label of base) byKey.set(normalizeShiftKey(label), label);
+    if (current) byKey.set(normalizeShiftKey(current), current);
+    return Array.from(byKey.values());
+  }
+
   const deptOptions = Array.from(new Set(rows.map((r) => r.dept).filter(Boolean))).sort();
 
   // cascading: หน้างาน dropdown แสดงแค่ค่าที่มีในหน่วยงานที่เลือก
@@ -4564,26 +5186,26 @@ function DayoffShiftEditor({
     return () => { isMounted = false; };
   }, [activeFile?.file_path, employeeMasterFile?.file_path]);
 
-  function updateRow(id: string, field: "dayoff" | "shift" | "shiftStart" | "shiftEnd" | "jobSite", value: string) {
+  function updateRow(id: string, field: "dayoff" | "shift" | "jobSite", value: string) {
     const targets =
       field === "dayoff"
         ? ["วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"]
         : field === "shift"
         ? ["อยู่กะไหน", "shift", "กะ", "Shift"]
-        : field === "jobSite"
-        ? ["หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"]
-        : field === "shiftEnd"
-        ? ["เวลาออก", "เวลาออกงาน", "shift_end"]
-        : ["เวลาเข้างาน", "เวลาเข้า", "shift_start"];
+        : ["หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"];
     setRows((current) =>
       current.map((row) => {
         if (row.id !== id) return row;
         let raw = setRowCol(row.raw, value, ...targets);
         const next: typeof row = { ...row, [field]: value, raw };
-        if (field === "shiftStart") {
-          const autoEnd = value ? addHoursToTime(value, 9) : "";
-          next.shiftEnd = autoEnd;
-          next.raw = setRowCol(raw, autoEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
+        if (field === "shift") {
+          const locked = lookupManpower(row.dept, row.jobSite, value);
+          // ถ้าไม่พบเวลาใน Manpower สำหรับกะใหม่ ต้องล้างเวลาเก่าทิ้ง ไม่ใช่ปล่อยให้ค้างเวลาของกะเดิมไว้คู่กับกะใหม่
+          next.shiftStart = locked?.shiftStart ?? "";
+          next.shiftEnd = locked?.shiftEnd ?? "";
+          raw = setRowCol(raw, next.shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+          raw = setRowCol(raw, next.shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
+          next.raw = raw;
         }
         return next;
       }),
@@ -4615,22 +5237,29 @@ function DayoffShiftEditor({
   }
 
   function applyBulk() {
-    if (!bulkDayoff && !bulkShift && !bulkShiftStart && !bulkShiftEnd) return;
+    if (!bulkDayoff && !bulkShift) return;
     setRows((current) =>
       current.map((row) => {
         if (!selectedIds.has(row.id)) return row;
         let raw = row.raw;
+        let shiftStart = row.shiftStart;
+        let shiftEnd = row.shiftEnd;
         if (bulkDayoff) raw = setRowCol(raw, bulkDayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
-        if (bulkShift) raw = setRowCol(raw, bulkShift, "อยู่กะไหน", "shift", "กะ", "Shift");
-        if (bulkShiftStart) raw = setRowCol(raw, bulkShiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
-        const effectiveShiftEnd = bulkShiftEnd || (bulkShiftStart ? addHoursToTime(bulkShiftStart, 9) : "");
-        if (effectiveShiftEnd) raw = setRowCol(raw, effectiveShiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
+        if (bulkShift) {
+          raw = setRowCol(raw, bulkShift, "อยู่กะไหน", "shift", "กะ", "Shift");
+          const locked = lookupManpower(row.dept, row.jobSite, bulkShift);
+          // ถ้าไม่พบเวลาใน Manpower สำหรับกะใหม่ ต้องล้างเวลาเก่าทิ้ง ไม่ใช่ปล่อยให้ค้างเวลาของกะเดิมไว้คู่กับกะใหม่
+          shiftStart = locked?.shiftStart ?? "";
+          shiftEnd = locked?.shiftEnd ?? "";
+          raw = setRowCol(raw, shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+          raw = setRowCol(raw, shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
+        }
         return {
           ...row,
           dayoff: bulkDayoff || row.dayoff,
           shift: bulkShift || row.shift,
-          shiftStart: bulkShiftStart || row.shiftStart,
-          shiftEnd: effectiveShiftEnd || row.shiftEnd,
+          shiftStart,
+          shiftEnd,
           raw,
         };
       }),
@@ -4638,15 +5267,40 @@ function DayoffShiftEditor({
     setSelectedIds(new Set());
     setBulkDayoff("");
     setBulkShift("");
-    setBulkShiftStart("");
-    setBulkShiftEnd("");
   }
 
   async function handleSave() {
+    // นับคนที่มีกะแล้วแต่ยังไม่มีข้อมูลใน Manpower Plan (ไม่นับคนที่ยังไม่ได้ตั้งกะ หรือผู้จัดการซึ่งไม่มีกะตายตัวอยู่แล้ว)
+    const unresolved = rows.filter(
+      (row) => row.shift && row.shift !== "ผู้จัดการ" && !lookupManpower(row.dept, row.jobSite, row.shift),
+    );
+    if (unresolved.length > 0) {
+      const ok = window.confirm(
+        `พบ ${unresolved.length} คนที่หน่วยงาน + หน่วยงานย่อย + กะ ยังไม่มีข้อมูลใน Manpower Plan\n` +
+        `เวลาเข้า-ออกของคนเหล่านี้จะถูกบันทึกเป็นค่าว่าง (แสดง — ในตาราง)\n\n` +
+        `แนะนำ: ไปตั้งค่าที่หน้า Manpower Plan ก่อน แล้วค่อยกลับมาบันทึกหน้านี้\n\n` +
+        `ต้องการบันทึกต่อเลยหรือไม่?`,
+      );
+      if (!ok) return;
+    }
     setIsSaving(true);
     try {
-      await saveDayoffShiftRows(rows);
-      setOriginalRows(rows);
+      const resolved = rows.map((row) => {
+        // ผู้จัดการไม่มีกะตายตัว ไม่ต้อง resolve เวลา ปล่อยตามเดิม (มักจะว่างอยู่แล้ว)
+        if (row.shift === "ผู้จัดการ") return row;
+        const locked = lookupManpower(row.dept, row.jobSite, row.shift);
+        // ถ้าไม่พบใน Manpower ต้องล้างเวลาทิ้ง ไม่ใช่ปล่อยเวลาเก่าที่อาจไม่ตรงกับกะปัจจุบันค้างไว้
+        // (สอดคล้องกับข้อความแจ้งเตือนก่อนบันทึกด้านบน และกับ updateRow/applyBulk/ปุ่มสลับกะ)
+        const shiftStart = locked?.shiftStart ?? "";
+        const shiftEnd = locked?.shiftEnd ?? "";
+        if (shiftStart === row.shiftStart && shiftEnd === row.shiftEnd) return row;
+        let raw = setRowCol(row.raw, shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+        raw = setRowCol(raw, shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
+        return { ...row, shiftStart, shiftEnd, raw };
+      });
+      await saveDayoffShiftRows(resolved);
+      setRows(resolved);
+      setOriginalRows(resolved);
     } catch {
       // error already set by saveDayoffShiftRows
     } finally {
@@ -4661,15 +5315,27 @@ function DayoffShiftEditor({
           <h3>แก้ไข Dayoff & Shift</h3>
           <p>ปรับวันหยุดประจำสัปดาห์และกะทำงานรายคน แล้วบันทึกเป็น master active ชุดใหม่</p>
         </div>
-        <button
-          className="primary-button"
-          disabled={!rows.length || isSaving}
-          onClick={handleSave}
-          type="button"
-        >
-          <UploadCloud size={17} />
-          {isSaving ? "Saving..." : `Save${modifiedIds.size > 0 ? ` (${modifiedIds.size} แก้ไข)` : ""}`}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className="secondary-button"
+            disabled={!rows.length}
+            onClick={syncJobSitesFromManpower}
+            type="button"
+            title="เทียบหน่วยงานย่อยของแต่ละคนกับ Manpower Plan แล้วแนะนำค่าที่ควรจะเป็น"
+          >
+            <BarChart3 size={15} />
+            แนะนำหน่วยงานย่อยจาก Manpower
+          </button>
+          <button
+            className="primary-button"
+            disabled={!rows.length || isSaving}
+            onClick={handleSave}
+            type="button"
+          >
+            <UploadCloud size={17} />
+            {isSaving ? "Saving..." : `Save${modifiedIds.size > 0 ? ` (${modifiedIds.size} แก้ไข)` : ""}`}
+          </button>
+        </div>
       </div>
 
       <div className="dayoff-editor-filters">
@@ -4726,6 +5392,19 @@ function DayoffShiftEditor({
           <option value="__empty__">— ยังไม่ได้ตั้ง</option>
           {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
+        <button
+          className="ghost-button"
+          onClick={() => {
+            setQuery("");
+            setSelectedDept("all");
+            setSelectedJobSite("all");
+            setSelectedDayoff("all");
+            setSelectedShift("all");
+          }}
+          type="button"
+        >
+          Clear
+        </button>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
         <span className="dayoff-count">
@@ -4744,17 +5423,19 @@ function DayoffShiftEditor({
                 alert("ต้องมีพนักงานทั้งกะ1 และ กะ2 ในมุมมองนี้จึงจะสลับได้");
                 return;
               }
-              const กะ1Start = กะ1Row.shiftStart;
-              const กะ2Start = กะ2Row.shiftStart;
               const idsToSwap = new Set(filteredRows.filter((r) => r.shift === "กะ1" || r.shift === "กะ2").map((r) => r.id));
               setRows((current) =>
                 current.map((row) => {
                   if (!idsToSwap.has(row.id)) return row;
                   const newShift = row.shift === "กะ1" ? "กะ2" : "กะ1";
-                  const newStart = row.shift === "กะ1" ? กะ2Start : กะ1Start;
+                  const locked = lookupManpower(row.dept, row.jobSite, newShift);
                   let raw = setRowCol(row.raw, newShift, "อยู่กะไหน", "shift", "กะ", "Shift");
-                  raw = setRowCol(raw, newStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
-                  return { ...row, shift: newShift, shiftStart: newStart, raw };
+                  // ถ้าไม่พบเวลาใน Manpower สำหรับกะใหม่ ต้องล้างเวลาเก่าทิ้ง ไม่ใช่ปล่อยให้ค้างเวลาของกะเดิมไว้คู่กับกะใหม่
+                  const shiftStart = locked?.shiftStart ?? "";
+                  const shiftEnd = locked?.shiftEnd ?? "";
+                  raw = setRowCol(raw, shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+                  raw = setRowCol(raw, shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
+                  return { ...row, shift: newShift, shiftStart, shiftEnd, raw };
                 })
               );
             }}
@@ -4780,21 +5461,9 @@ function DayoffShiftEditor({
             <option value="">เปลี่ยน Shift...</option>
             {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
-          <TimeInput24
-            value={bulkShiftStart}
-            onChange={(v) => setBulkShiftStart(v)}
-            title="เปลี่ยนเวลาเข้างาน"
-            style={{ height: 32, fontSize: 12 }}
-          />
-          <TimeInput24
-            value={bulkShiftEnd}
-            onChange={(v) => setBulkShiftEnd(v)}
-            title="เปลี่ยนเวลาออกงาน"
-            style={{ height: 32, fontSize: 12 }}
-          />
           <button
             className="primary-button"
-            disabled={!bulkDayoff && !bulkShift && !bulkShiftStart && !bulkShiftEnd}
+            disabled={!bulkDayoff && !bulkShift}
             onClick={applyBulk}
             style={{ height: 32, fontSize: 12, padding: "0 14px" }}
             type="button"
@@ -4856,7 +5525,7 @@ function DayoffShiftEditor({
                 <td>
                   <select value={row.jobSite} onChange={(e) => updateRow(row.id, "jobSite", e.target.value)}>
                     <option value="">-</option>
-                    {jobSiteOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {jobSiteChoicesForDept(row.dept, row.jobSite).map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </td>
                 <td>
@@ -4873,31 +5542,30 @@ function DayoffShiftEditor({
                 <td>
                   <select value={row.shift} onChange={(e) => updateRow(row.id, "shift", e.target.value)}>
                     <option value="">-</option>
-                    {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {shiftChoicesForRow(row.dept, row.jobSite, row.shift).map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </td>
-                <td>
-                  {row.shift === "ผู้จัดการ" ? (
-                    <span style={{ color: "#94a3b8", fontSize: 13 }}>—</span>
-                  ) : (
-                    <TimeInput24
-                      value={row.shiftStart}
-                      onChange={(v) => updateRow(row.id, "shiftStart", v)}
-                      className="time24-btn shift-time-input"
-                    />
-                  )}
-                </td>
-                <td className="shift-end-cell">
-                  {row.shift === "ผู้จัดการ" ? (
-                    <span style={{ color: "#94a3b8", fontSize: 13 }}>—</span>
-                  ) : (
-                    <TimeInput24
-                      value={row.shiftEnd}
-                      onChange={(v) => updateRow(row.id, "shiftEnd", v)}
-                      className="time24-btn shift-time-input"
-                    />
-                  )}
-                </td>
+                {(() => {
+                  if (row.shift === "ผู้จัดการ") {
+                    return (
+                      <>
+                        <td><span style={{ color: "#94a3b8", fontSize: 13 }}>—</span></td>
+                        <td className="shift-end-cell"><span style={{ color: "#94a3b8", fontSize: 13 }}>—</span></td>
+                      </>
+                    );
+                  }
+                  const locked = lookupManpower(row.dept, row.jobSite, row.shift);
+                  const start = locked?.shiftStart || row.shiftStart;
+                  const end = locked?.shiftEnd || row.shiftEnd;
+                  const lockedTitle = locked ? "ล็อคจากหน้า Manpower" : "ไม่พบใน Manpower — ไปตั้งค่าที่หน้า Manpower";
+                  const color = locked ? "#0f172a" : "#d97706";
+                  return (
+                    <>
+                      <td><span style={{ color, fontSize: 13 }} title={lockedTitle}>{start || "—"}</span></td>
+                      <td className="shift-end-cell"><span style={{ color, fontSize: 13 }} title={lockedTitle}>{end || "—"}</span></td>
+                    </>
+                  );
+                })()}
               </tr>
             ))}
             {!activeFile ? (
@@ -4913,8 +5581,10 @@ function DayoffShiftEditor({
         </table>
       </div>
       {filteredRows.some((r) => {
-        const end = r.shiftEnd || (r.shiftStart ? addHoursToTime(r.shiftStart, 9) : "");
-        return end && Number(end.split(":")[0]) < Number((r.shiftStart || "0").split(":")[0]);
+        const locked = lookupManpower(r.dept, r.jobSite, r.shift);
+        const start = locked?.shiftStart || r.shiftStart;
+        const end = locked?.shiftEnd || r.shiftEnd || (start ? addHoursToTime(start, 9) : "");
+        return end && Number(end.split(":")[0]) < Number((start || "0").split(":")[0]);
       }) && (
         <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>
           <span style={{ color: "#fcd34d", fontWeight: 600 }}>+1D</span> = เวลาออกงานเป็นวันถัดไป (กะกลางคืน)
@@ -6854,10 +7524,6 @@ function OTDashboard({
   scanUploadedAt: string | null;
   holidayDates: Set<string>;
 }) {
-  const [shiftEndMap, setShiftEndMap] = useState<Record<string, string>>(() => {
-    if (typeof window === "undefined") return {};
-    try { return JSON.parse(localStorage.getItem("ot_shift_end") ?? "{}"); } catch { return {}; }
-  });
   const [otTarget, setOtTarget] = useState<number>(() => {
     if (typeof window === "undefined") return 2.0;
     const s = localStorage.getItem("ot_target");
@@ -6869,7 +7535,6 @@ function OTDashboard({
   });
   const [managerOptions, setManagerOptions] = useState<Array<{ empId: string; name: string; dept: string }>>([]);
   const [showConfig, setShowConfig] = useState(false);
-  const [showShiftEnd, setShowShiftEnd] = useState(false);
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
   const chartPanelRef = useRef<HTMLDivElement>(null);
   const [chartTrackH, setChartTrackH] = useState(200);
@@ -6910,21 +7575,16 @@ function OTDashboard({
     return () => { cancelled = true; };
   }, [activeMasterMap.dayoff_shift?.file_path]);
 
-  const uniqueShifts = useMemo(() => {
-    if (!reportData) return [];
-    return Array.from(new Set(reportData.records.map((r) => r.shift).filter(Boolean))).sort();
-  }, [reportData]);
-
   const otRecords = useMemo((): OTRecord[] => {
     if (!reportData) return [];
     return reportData.records.map((rec) => {
-      const shiftEnd = rec.shiftEnd || shiftEndMap[rec.shift] || (rec.shiftStart ? addHoursToTime(rec.shiftStart, 9) : "");
+      const shiftEnd = rec.shiftEnd || (rec.shiftStart ? addHoursToTime(rec.shiftStart, 9) : "");
       const otHours = shiftEnd && (rec.status === "Present" || rec.status === "Late" || rec.status === "NoScanIn")
         ? calcOTHoursForRecord(rec.scanOut, shiftEnd)
         : 0;
       return { ...rec, shiftEnd, otHours };
     });
-  }, [reportData, shiftEndMap]);
+  }, [reportData]);
 
   const isPublicHoliday = reportData?.isoTargetDate
     ? holidayDates.has(reportData.isoTargetDate)
@@ -7036,12 +7696,6 @@ function OTDashboard({
     "#64748b",
   ];
 
-  function saveShiftEnd(shift: string, value: string) {
-    const next = { ...shiftEndMap, [shift]: value };
-    setShiftEndMap(next);
-    localStorage.setItem("ot_shift_end", JSON.stringify(next));
-  }
-
   function saveOTTarget(value: string) {
     const num = parseFloat(value);
     if (!isNaN(num) && num >= 0) {
@@ -7082,7 +7736,7 @@ function OTDashboard({
             onClick={() => setShowConfig((v) => !v)}
             type="button"
           >
-            ⚙ ตั้งค่ากะ / เป้าหมาย
+            ⚙ ตั้งค่าเป้าหมาย
           </button>
         </div>
       </div>
@@ -7104,48 +7758,6 @@ function OTDashboard({
               />
             </div>
           </div>
-          {uniqueShifts.length > 0 && (
-            <div className="ot-config-shifts">
-              <button
-                type="button"
-                className="ot-shiftend-toggle"
-                onClick={() => setShowShiftEnd((v) => !v)}
-              >
-                <ChevronDown size={14} className={showShiftEnd ? "ot-chevron-open" : ""} />
-                เวลาสิ้นสุดกะงาน
-                {!showShiftEnd && (
-                  <span className="ot-shiftend-preview">
-                    {uniqueShifts.map((shift) => {
-                      const sample = reportData?.records.find((r) => r.shift === shift);
-                      const end = shiftEndMap[shift] || (sample ? addHoursToTime(sample.shiftStart, 9) : "17:00");
-                      return `${shift || "ไม่ระบุ"} ${end}`;
-                    }).join(" · ")}
-                  </span>
-                )}
-              </button>
-              {showShiftEnd && (
-                <>
-                  <p className="ot-config-subtitle">กำหนดเองได้ · ค่าเริ่มต้น = เวลาเข้า + 9 ชม.</p>
-                  <div className="ot-shifts-grid">
-                    {uniqueShifts.map((shift) => {
-                      const sample = reportData?.records.find((r) => r.shift === shift);
-                      const defaultEnd = sample ? addHoursToTime(sample.shiftStart, 9) : "17:00";
-                      return (
-                        <div key={shift} className="ot-shift-cfg-row">
-                          <span>{shift || "(ไม่ระบุกะ)"}</span>
-                          <TimeInput24
-                            value={shiftEndMap[shift] || defaultEnd}
-                            onChange={(v) => saveShiftEnd(shift, v)}
-                            className="time24-btn ot-cfg-input"
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
         </div>
       )}
 
