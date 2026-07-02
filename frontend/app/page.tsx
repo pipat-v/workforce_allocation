@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
+  ArrowRight,
   BarChart3,
+  BookOpen,
   BriefcaseBusiness,
   CalendarClock,
   CalendarDays,
@@ -19,6 +21,7 @@ import {
   Home as HomeIcon,
   LayoutGrid,
   LogOut,
+  Search,
   Settings,
   Trash2,
   TrendingUp,
@@ -182,7 +185,11 @@ type TabId =
   | "skill"
   | "report"
   | "ot"
-  | "setting";
+  | "setting"
+  | "help";
+
+type MasterSubTab = "files" | "holidays" | "public_holidays" | "manpower" | "dayoff_shift";
+type OtSubTab = "chart" | "summary" | "detail";
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: HomeIcon },
@@ -194,6 +201,7 @@ const navItems = [
   { id: "report", label: "Report & Dashboard", icon: BarChart3 },
   { id: "ot", label: "OT Dashboard", icon: TrendingUp },
   { id: "setting", label: "Setting", icon: Settings },
+  { id: "help", label: "คู่มือการใช้งาน", icon: BookOpen },
 ];
 
 type MasterFileKey = (typeof masterFileTypes)[number]["key"];
@@ -205,8 +213,8 @@ const publicWorkspace = "public";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
-  const [masterSubTab, setMasterSubTab] = useState<"files" | "holidays" | "public_holidays" | "manpower" | "dayoff_shift">("files");
-  const [otSubTab, setOtSubTab] = useState<"chart" | "summary" | "detail">("chart");
+  const [masterSubTab, setMasterSubTab] = useState<MasterSubTab>("files");
+  const [otSubTab, setOtSubTab] = useState<OtSubTab>("chart");
   const [masterUploads, setMasterUploads] = useState<MasterUploadState>({
     employee_master: null,
     manpower_plan: null,
@@ -1544,7 +1552,11 @@ export default function Home() {
           />
         ) : null}
 
-        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report", "skill", "ot"].includes(activeTab) ? (
+        {activeTab === "help" ? (
+          <HelpGuidePage setActiveTab={setActiveTab} setMasterSubTab={setMasterSubTab} setOtSubTab={setOtSubTab} />
+        ) : null}
+
+        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report", "skill", "ot", "help"].includes(activeTab) ? (
           <section className="panel empty-page">
             <h3>{activeNav?.label}</h3>
             <p>แท็บนี้จะเชื่อมข้อมูลจริงในขั้นถัดไป</p>
@@ -8189,6 +8201,426 @@ function OTDashboard({
             </div>
           </div>}
         </>
+      )}
+    </section>
+  );
+}
+
+type HelpSection = {
+  id: string;
+  title: string;
+  group: string;
+  icon: typeof HomeIcon;
+  summary: string;
+  points: string[];
+  openTab?: TabId;
+  openMasterSubTab?: MasterSubTab;
+  openOtSubTab?: OtSubTab;
+};
+
+const helpGroupOrder = ["ภาพรวม", "หน้าหลัก", "Master Data", "OT Dashboard"];
+
+const helpSections: HelpSection[] = [
+  {
+    id: "getting-started",
+    title: "เริ่มต้นใช้งาน — ลำดับที่ควรทำ",
+    group: "ภาพรวม",
+    icon: ClipboardCheck,
+    summary: "ระบบต้องมีข้อมูลตั้งต้นให้ครบก่อน ถึงจะใช้งานหน้าอื่นๆ ได้เต็มที่ ทำตามลำดับนี้ในการใช้งานครั้งแรก",
+    points: [
+      "1) ไปที่ Master Data → Master Files แล้วอัปโหลดไฟล์รายชื่อพนักงาน (ต้องมีให้ครบ 4 ชนิด: รายชื่อพนักงาน, Manpower Plan, Skill Matrix, Dayoff & Shift) ระบบจะยังสร้าง Daily Run ไม่ได้จนกว่าจะมีไฟล์ทั้ง 4 ชนิดนี้ active อยู่",
+      "2) ไปที่ Master Data → Manpower ตั้งเวลาเข้า-ออกของแต่ละหน่วยงาน+หน่วยงานย่อย+กะ ให้ครบ เพราะหน้า Shift & Dayoff จะดึงเวลานี้ไปใช้อัตโนมัติ",
+      "3) ไปที่ Master Data → Shift & Dayoff กำหนดวันหยุดประจำสัปดาห์และกะทำงานของพนักงานแต่ละคน",
+      "4) ไปที่ Upload Timestamp อัปโหลดไฟล์สแกนเข้า-ออกประจำวัน (.csv/.xlsx/.xls) แล้วกด Create Daily Run",
+      "5) หลังจากนั้น Dashboard, ผลลัพธ์การจัดสรร, Timestamp With Dept, Report & Dashboard และ OT Dashboard จะมีข้อมูลให้ดูตามวันที่เลือกจากปุ่มปฏิทิน มุมขวาบนของทุกหน้า",
+      "เคล็ดลับ: ปุ่มปฏิทิน (ข้อมูลวันที่) ที่มุมขวาบนของทุกหน้า ใช้เลือกดูข้อมูลของวันอื่นที่เคยอัปโหลดไว้แล้ว — จะเลือกได้เฉพาะวันที่มีการอัปโหลด timestamp ไว้แล้วเท่านั้น",
+    ],
+  },
+  {
+    id: "dashboard",
+    title: "Dashboard",
+    group: "หน้าหลัก",
+    icon: HomeIcon,
+    openTab: "dashboard",
+    summary: "หน้าสรุปภาพรวมการเข้างานของวันที่เลือก ใช้ดูสถานะรายวันและยืนยันตรวจสอบการเข้างาน",
+    points: [
+      "การ์ดตัวเลข 5 ใบด้านบน (มาทำงาน / ตรงเวลา / มาสาย / ขาด-ลา / วันหยุด) กดได้ — จะเลื่อนลงไปที่ตารางรายละเอียดและกรองให้อัตโนมัติ",
+      "กล่อง \"ยืนยันตรวจสอบการเข้างาน\": หัวหน้างานพิมพ์ชื่อแล้วกด \"ยืนยันรับทราบ\" เพื่อบันทึกว่าตรวจสอบข้อมูลวันนั้นแล้ว — ถ้าไม่กรอกชื่อ ระบบจะเตือนไม่ให้บันทึก กดปุ่ม \"แก้ไข\" เพื่อยกเลิกและยืนยันใหม่ได้",
+      "ตารางคนมาสาย มีปุ่ม \"เตือน\" ต่อคน สำหรับบันทึกว่าได้เตือนพนักงานคนนั้นแล้ว และมี badge สีแดง/เหลืองแสดงความเสี่ยง (มาสายตั้งแต่ 3 ครั้งขึ้นไปในเดือนนี้ถือว่าเสี่ยง)",
+      "แถวคนขาดงาน มีดรอปดาวน์เลือกประเภทการลา (ลาป่วย/ลากิจ/ลาพักร้อน ฯลฯ) ให้เลือกบันทึกได้ทันที",
+      "ปุ่ม \"Export สาย/ขาด\" ที่มุมตาราง ใช้ export เฉพาะรายชื่อคนมาสาย/ขาดงานเป็นไฟล์ Excel",
+      "กล่อง \"สถานะการตักเตือน\" (พับเก็บได้) แสดง % ความคืบหน้าการเตือนคนมาสายแยกตามหน่วยงาน สำหรับหัวหน้างานใช้ติดตามงาน",
+    ],
+  },
+  {
+    id: "timestamp",
+    title: "Upload Timestamp",
+    group: "หน้าหลัก",
+    icon: UploadCloud,
+    openTab: "timestamp",
+    summary: "หน้าอัปโหลดไฟล์สแกนเข้า-ออกประจำวัน เพื่อสร้าง Daily Run ที่หน้าอื่นๆ ใช้อ้างอิงข้อมูล",
+    points: [
+      "ลากไฟล์วาง หรือคลิกเลือกไฟล์ (.csv, .xlsx, .xls) แล้วกด \"Create Daily Run\"",
+      "ต้องมี Master Data ครบทั้ง 4 ไฟล์ (active อยู่) ก่อน ปุ่ม Create Daily Run ถึงจะกดได้ ไม่งั้นระบบจะเตือนว่า \"กรุณา upload master files ให้ครบก่อนสร้าง daily run\"",
+      "ประวัติการอัปโหลดด้านล่างมีปุ่มดาวน์โหลด/ลบไฟล์แต่ละรายการ (การลบยืนยันซ้ำก่อนลบจริง เพราะย้อนกลับไม่ได้)",
+      "มีแถบแสดงพื้นที่จัดเก็บที่ใช้ไป — ถ้าใกล้เต็ม (ราว 1001MB จาก 1024MB) ระบบจะเตือนให้ลบไฟล์เก่าก่อนอัปโหลดไฟล์ใหม่ พร้อมปุ่มลบไฟล์เก่าสุดให้ทันที",
+    ],
+  },
+  {
+    id: "results",
+    title: "ผลลัพธ์การจัดสรร",
+    group: "หน้าหลัก",
+    icon: BriefcaseBusiness,
+    openTab: "results",
+    summary: "ตารางรายชื่อพนักงานที่มาทำงาน (ตรงเวลา/มาสาย) ของวันที่เลือก แบบแบ่งหน้า",
+    points: [
+      "ค้นหา, กรองตามหน่วยงาน, กรองตามสถานะ (เฉพาะตรงเวลา/มาสาย ไม่รวมขาดงาน) และปุ่ม Clear ล้างตัวกรอง",
+      "แสดงคอลัมน์ รหัสพนักงาน, ชื่อ, หน่วยงาน, ตำแหน่ง, หน่วยงานย่อย, กะ, เวลาสแกนเข้า, สถานะ",
+      "หมายเหตุ: หน้านี้ยังไม่มีปุ่ม Export ที่ใช้งานได้จริง ถ้าต้องการ export ข้อมูล แนะนำใช้หน้า Timestamp With Dept แทน ซึ่งมีข้อมูลครบกว่า (รวมคนขาดงาน/วันหยุดด้วย) และปุ่ม Export ใช้งานได้จริง",
+    ],
+  },
+  {
+    id: "timestamp-dept",
+    title: "Timestamp With Dept",
+    group: "หน้าหลัก",
+    icon: Database,
+    openTab: "timestamp_dept",
+    summary: "ตารางข้อมูลการสแกนเข้า-ออกแบบเต็ม รวมทุกสถานะ (มาทำงาน/มาสาย/ขาดงาน/วันหยุด/ขาดสแกนเข้า/รอเข้างาน) ผูกกับหน่วยงานและกะ",
+    points: [
+      "ค้นหา, กรองตามหน่วยงาน, กรองตามสถานะแบบละเอียด, เรียงลำดับได้ทุกคอลัมน์ (กดหัวตาราง), แบ่งหน้า 10 แถว/หน้า",
+      "ปุ่ม \"Export Excel\" ใช้งานได้จริง — export ตามตัวกรอง/การเรียงลำดับที่ตั้งไว้ รวมเวลาสแกนเข้า-ออก และจำนวนนาทีที่มาสาย",
+      "ถ้ายังไม่เคยเลือกวันที่/โหลดข้อมูล จะขึ้นข้อความว่ายังไม่มีข้อมูล — ต้องเลือกวันที่จากปุ่มปฏิทินก่อน",
+    ],
+  },
+  {
+    id: "master-files",
+    title: "Master Data → Master Files",
+    group: "Master Data",
+    icon: FileSpreadsheet,
+    openTab: "master",
+    openMasterSubTab: "files",
+    summary: "จัดการไฟล์รายชื่อพนักงานรวม (Employee Master + Dayoff/Shift + Skill) และไฟล์ Manpower Plan",
+    points: [
+      "การ์ดซ้าย (ไฟล์รวมพนักงาน): \"เทมเพลตเปล่า\" ดาวน์โหลดไฟล์ตัวอย่างเปล่า, \"Export ข้อมูลปัจจุบัน\" ดึงข้อมูลปัจจุบันทั้งหมดออกมาเป็นไฟล์เดียว",
+      "อัปโหลดไฟล์ใหม่ (.xlsx/.xls ไม่เกิน 50MB) แล้วกด \"ตรวจสอบก่อนอัพโหลด\" — ระบบจะเปิดหน้าต่างเทียบความแตกต่าง (เพิ่ม/ลบ/แก้ไข/ไม่เปลี่ยน) ให้ตรวจสอบก่อนกดยืนยันจริง",
+      "ถ้ามีพนักงานที่จะถูกลบออกจากระบบ ต้องติ๊กยืนยันก่อนถึงจะบันทึกได้ (กันการลบพลาด)",
+      "ถ้ามีรหัสพนักงานซ้ำในไฟล์ที่อัปโหลด ระบบจะไม่ให้บันทึกและแจ้งรหัสที่ซ้ำให้ทราบ",
+      "การ์ดขวา (Manpower Plan): อัปโหลดไฟล์ (.xlsx/.xls/.csv) แล้วกด \"Save Manpower Plan\" — การอัปโหลดนี้ไม่กระทบรายชื่อพนักงาน แก้เฉพาะเวลากะ",
+      "ทั้งสองการ์ดมีประวัติไฟล์ ดาวน์โหลด/ลบย้อนหลังได้ และมีแถบแสดงพื้นที่จัดเก็บที่ใช้ไป",
+    ],
+  },
+  {
+    id: "manpower",
+    title: "Master Data → Manpower",
+    group: "Master Data",
+    icon: BarChart3,
+    openTab: "master",
+    openMasterSubTab: "manpower",
+    summary: "ตารางกำหนดเวลาเข้า-ออกงานของแต่ละหน่วยงาน + หน่วยงานย่อย + กะ ซึ่งเป็นต้นทางเวลาที่หน้า Shift & Dayoff ใช้อัตโนมัติ",
+    points: [
+      "กรองตามหน่วยงาน/หน่วยงานย่อย/กะ และเรียงลำดับได้ทุกคอลัมน์ (กด 1 ครั้งเรียงมากไปน้อย กดอีกครั้งเรียงน้อยไปมาก)",
+      "เพิ่มแถวใหม่: กรอกหน่วยงาน (จำเป็น), หน่วยงานย่อย (เว้นว่างได้ = ใช้กับทั้งหน่วยงาน), ชื่อกะ, เวลาเข้า-ออก แล้วกด \"+ เพิ่มหน่วยงาน/กะ\" — ถ้าไม่กรอกเวลาออก ระบบจะตั้งให้อัตโนมัติเป็นเวลาเข้า+9 ชั่วโมง",
+      "แก้เวลาเข้า-ออกของแถวที่มีอยู่ได้โดยตรงในตาราง, ลบแถวด้วยไอคอนถังขยะ",
+      "ชื่อกะ \"ผู้จัดการ\" เป็นคำสงวน หมายถึง \"ไม่มีกะตายตัว\" ห้ามตั้งเป็นชื่อกะจริง ระบบจะเตือนถ้าพยายามเพิ่ม",
+      "ถ้ามีหน่วยงาน+หน่วยงานย่อย+กะซ้ำกัน ระบบจะเตือนสีแดงและไม่ให้บันทึกจนกว่าจะลบแถวที่ซ้ำออก",
+      "อย่าลืมกด \"Save\" หลังแก้ไข ไม่งั้นการเปลี่ยนแปลงจะไม่ถูกบันทึก — ปุ่ม Save จะโชว์ \"(มีการแก้ไข)\" เตือนถ้ายังไม่ได้บันทึก",
+    ],
+  },
+  {
+    id: "holy-days",
+    title: "Master Data → วันพระ",
+    group: "Master Data",
+    icon: CalendarDays,
+    openTab: "master",
+    openMasterSubTab: "holidays",
+    summary: "จัดการวันหยุดตามปฏิทินพุทธศาสนา (วันพระ) ที่ใช้ประกอบการคำนวณวันหยุด/กะของพนักงาน",
+    points: [
+      "เพิ่มวันหยุด: เลือกวันที่ + ชื่อ + ประเภท (วันพระ/วันหยุดราชการ/วันหยุดบริษัท) แล้วกด \"+ เพิ่มวันหยุด\"",
+      "มีแท็บปีให้เลือกดูย้อนหลัง/ล่วงหน้า และลบรายการด้วยปุ่ม × ที่แต่ละแถว",
+      "ถ้าเพิ่มวันที่ซ้ำกับที่มีอยู่แล้ว ระบบจะเตือนให้ลบตัวเดิมก่อน",
+    ],
+  },
+  {
+    id: "public-holidays",
+    title: "Master Data → วันหยุดประจำปี",
+    group: "Master Data",
+    icon: CalendarOff,
+    openTab: "master",
+    openMasterSubTab: "public_holidays",
+    summary: "จัดการวันหยุดราชการ/วันหยุดบริษัทประจำปี ซึ่งมีผลต่อการคำนวณ OT วันหยุดในหน้า OT Dashboard",
+    points: [
+      "ระบบจะเติมวันหยุดราชการที่รู้จักให้อัตโนมัติในการเปิดหน้าครั้งแรก (เติมเฉพาะวันที่ยังไม่มีในระบบ ไม่ทับข้อมูลเดิม)",
+      "เพิ่ม/ลบวันหยุดได้เหมือนหน้าวันพระ และมีคอลัมน์หมายเหตุแจ้งถ้าวันนั้นตรงกับวันพระด้วย",
+      "สำคัญ: วันหยุดที่ตั้งไว้ในหน้านี้และหน้าวันพระ มีผลกับหน้า OT Dashboard โดยตรง — ถ้าวันที่เลือกอยู่ในรายการนี้ ชั่วโมง OT ของวันนั้นจะถูกนับเป็น \"OT วันหยุด\" แทน \"OT วันปกติ\"",
+    ],
+  },
+  {
+    id: "dayoff-shift",
+    title: "Master Data → Shift & Dayoff",
+    group: "Master Data",
+    icon: CalendarClock,
+    openTab: "master",
+    openMasterSubTab: "dayoff_shift",
+    summary: "หน้าหลักสำหรับกำหนดวันหยุดประจำสัปดาห์และกะทำงานของพนักงานแต่ละคน ซึ่งเป็นข้อมูลจริงที่ระบบใช้คำนวณการมาสาย/ขาดงาน",
+    points: [
+      "ค้นหา/กรองตามหน่วยงาน, หน่วยงานย่อย, วันหยุด, กะ",
+      "แก้ไขทีละคนได้โดยตรงในตาราง (เลือกหน่วยงานย่อย, วันหยุด, กะ จากดรอปดาวน์)",
+      "แก้ทีละหลายคน: ติ๊กเลือกพนักงานที่ต้องการ แล้วใช้กล่องสีฟ้าด้านบนเปลี่ยน Dayoff / หน่วยงานย่อย / Shift พร้อมกันได้ กด Apply เพื่อใช้กับทุกคนที่เลือก",
+      "ปุ่ม \"⇄ สลับกะ 1 ↔ 2\" (โชว์เมื่อกรองหน่วยงาน+หน่วยงานย่อยเจาะจงแล้ว) ใช้สลับพนักงานระหว่างกะ1กับกะ2 ทั้งกลุ่มในคลิกเดียว",
+      "ปุ่ม \"แนะนำหน่วยงานย่อยจาก Manpower\" ช่วยเทียบและแก้หน่วยงานย่อยของพนักงานให้ตรงกับ Manpower Plan อัตโนมัติ (เฉพาะกรณีที่หน่วยงาน+กะนั้นมีหน่วยงานย่อยที่ชัดเจนไม่ก้ำกึ่งเท่านั้น)",
+      "สำคัญ: เวลาเข้า-ออกงานไม่ได้แก้ตรงนี้ — ระบบดึงมาจากหน้า Manpower อัตโนมัติตามหน่วยงาน+หน่วยงานย่อย+กะ ถ้าไม่พบเวลาที่ตรงกัน ช่องเวลาจะโชว์ \"—\" สีเหลือง แปลว่าไปตั้งค่าที่หน้า Manpower ก่อน",
+      "ก่อนกด Save ถ้ามีพนักงานที่ไม่พบเวลาใน Manpower ระบบจะเตือนให้ทราบก่อนว่าเวลาของคนกลุ่มนั้นจะถูกบันทึกเป็นค่าว่าง",
+    ],
+  },
+  {
+    id: "skill-matrix",
+    title: "Skill Matrix",
+    group: "หน้าหลัก",
+    icon: LayoutGrid,
+    openTab: "skill",
+    summary: "หน้าจัดการระดับความชำนาญ (Skill) ของพนักงานแต่ละคนในแต่ละทักษะ",
+    points: [
+      "ค้นหา/กรองตามหน่วยงาน, ทักษะ, กะ",
+      "แก้ทีละคนได้จากดรอปดาวน์ Level ในตาราง (0=ยังไม่ระบุ, 1=น้อย, 2=ปานกลาง, 3=ถนัด)",
+      "แก้ทีละหลายคน: ติ๊กเลือกพนักงาน แล้วใช้กล่อง \"เปลี่ยน Level...\" ด้านบน กด Apply",
+      "ปุ่ม \"+ เพิ่ม Skill ให้พนักงาน\" เปิดฟอร์มเพิ่มคู่พนักงาน+ทักษะใหม่ พิมพ์รหัสพนักงาน/ชื่อทักษะจะมีตัวช่วยเดาให้ (autocomplete)",
+      "ตอนกด Save ระบบจะบันทึกเฉพาะรายการที่มี Level มากกว่า 0 เท่านั้น รายการที่ยังไม่ระบุ (Level 0) จะไม่ถูกบันทึก",
+    ],
+  },
+  {
+    id: "report-dashboard",
+    title: "Report & Dashboard",
+    group: "หน้าหลัก",
+    icon: BarChart3,
+    openTab: "report",
+    summary: "หน้าวิเคราะห์เชิงลึกของการเข้างานในวันที่เลือก แยกดูตามหน่วยงานได้ พร้อมสถานะการตรวจสอบของหัวหน้างาน",
+    points: [
+      "เลือกหน่วยงานจากดรอปดาวน์ แล้วกด \"โหลดข้อมูล\" เพื่อดึงข้อมูลล่าสุด",
+      "กราฟแท่ง \"การเข้างานรายแผนก\" กดที่แท่งไหนได้ จะเจาะลึกไปดูเฉพาะหน่วยงานนั้นทั้งหน้า (มีปุ่ม \"ดูทั้งหมด\" ไว้ยกเลิกการเจาะจง)",
+      "กล่องพับเก็บได้ 2 อัน: \"สถานะการตักเตือน\" (ความคืบหน้าการเตือนคนมาสายต่อหน่วยงาน) และ \"สถานะการขาด/ลา\" (ความคืบหน้าการระบุประเภทลา)",
+      "ตาราง \"รายละเอียด Late & Absent\" ค้นหา/กรอง/เรียงลำดับได้ และดูประวัติการเตือนย้อนหลังต่อคนได้",
+      "ตาราง \"สถานะการตรวจสอบการเข้างานรายหน่วยงาน\" สรุปว่าหน่วยงานไหนหัวหน้างานยืนยันตรวจสอบแล้วบ้าง (ผูกกับปุ่มยืนยันในหน้า Dashboard)",
+      "ถ้ายังไม่มีไฟล์รายชื่อพนักงานหรือยังไม่มี timestamp ล่าสุด ระบบจะแจ้งเตือนให้อัปโหลดให้ครบก่อน",
+    ],
+  },
+  {
+    id: "ot-chart",
+    title: "OT Dashboard → แผนภูมิ",
+    group: "OT Dashboard",
+    icon: TrendingUp,
+    openTab: "ot",
+    openOtSubTab: "chart",
+    summary: "กราฟแท่งเปรียบเทียบชั่วโมง OT เฉลี่ยต่อคนต่อวัน แยกตามหน่วยงาน เทียบกับเป้าหมายที่ตั้งไว้",
+    points: [
+      "มีเส้นเป้าหมาย (target) ในกราฟ ปรับได้จากปุ่ม \"⚙ ตั้งค่าเป้าหมาย\" ที่มุมบน",
+      "ต้องเลือกวันที่และโหลดข้อมูลการเข้างานก่อน ถึงจะเห็นกราฟ",
+    ],
+  },
+  {
+    id: "ot-summary",
+    title: "OT Dashboard → สรุปรายหน่วยงาน",
+    group: "OT Dashboard",
+    icon: LayoutGrid,
+    openTab: "ot",
+    openOtSubTab: "summary",
+    summary: "ตารางสรุป OT แยกตามหน่วยงาน (จำนวนคน, ขาด/ลา, % OT, ชั่วโมง OT ปกติ/วันหยุด, ผู้จัดการที่รับผิดชอบ)",
+    points: [
+      "กดที่แถวหน่วยงานไหน จะพาไปหน้า \"สรุปรายพนักงาน\" พร้อมกรองเฉพาะหน่วยงานนั้นให้อัตโนมัติ",
+      "ดรอปดาวน์ \"ผจก.\" ในแต่ละแถว เลือกผู้จัดการที่ดูแลหน่วยงานนั้นได้ (ดึงรายชื่อจากคนที่มีคำว่า \"ผู้จัดการ\" ในหน่วยงานย่อย)",
+      "ค่าเป้าหมาย OT และผู้จัดการที่เลือกไว้ บันทึกเก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น (localStorage) ไม่ได้บันทึกลงฐานข้อมูลกลาง จึงไม่แชร์ข้ามเครื่อง/ผู้ใช้คนอื่น",
+    ],
+  },
+  {
+    id: "ot-detail",
+    title: "OT Dashboard → สรุปรายพนักงาน",
+    group: "OT Dashboard",
+    icon: UsersRound,
+    openTab: "ot",
+    openOtSubTab: "detail",
+    summary: "ตารางชั่วโมง OT รายบุคคล เรียงจากมากไปน้อย พร้อมตัวกรองและ Export",
+    points: [
+      "ค้นหา/กรองตามหน่วยงาน, หน่วยงานย่อย, กะ",
+      "ปุ่ม \"Export Excel\" ใช้งานได้จริง export ตามตัวกรองที่ตั้งไว้",
+      "ปุ่ม \"✕ ล้างตัวกรอง\" จะปรากฏเมื่อมาจากการกดเจาะจงหน่วยงานจากหน้าอื่น ใช้ล้างเพื่อดูข้อมูลทุกหน่วยงานอีกครั้ง",
+      "ชั่วโมง OT คำนวณจาก (เวลาสแกนออก − เวลาเลิกกะ) เฉพาะคนที่มาทำงาน/มาสาย/ขาดสแกนเข้าเท่านั้น",
+    ],
+  },
+  {
+    id: "setting",
+    title: "Setting",
+    group: "หน้าหลัก",
+    icon: Settings,
+    openTab: "setting",
+    summary: "หน้าตั้งค่าระบบ — ขณะนี้ยังไม่เปิดใช้งาน",
+    points: [
+      "หน้านี้ยังอยู่ระหว่างพัฒนา ยังไม่มีตัวเลือกให้ตั้งค่าจริง",
+    ],
+  },
+];
+
+function highlightMatches(text: string, query: string): ReactNode {
+  if (!query) return text;
+  const lower = text.toLowerCase();
+  const q = query.toLowerCase();
+  const parts: ReactNode[] = [];
+  let start = 0;
+  let idx = lower.indexOf(q, start);
+  while (idx !== -1) {
+    if (idx > start) parts.push(text.slice(start, idx));
+    parts.push(<mark key={idx}>{text.slice(idx, idx + query.length)}</mark>);
+    start = idx + query.length;
+    idx = lower.indexOf(q, start);
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
+
+const helpNotePrefixRe = /^(สำคัญ|หมายเหตุ|เคล็ดลับ):\s*/;
+
+function splitPointsAndNotes(points: string[]): { steps: string[]; notes: string[] } {
+  const steps: string[] = [];
+  const notes: string[] = [];
+  for (const p of points) {
+    (helpNotePrefixRe.test(p) ? notes : steps).push(p);
+  }
+  return { steps, notes };
+}
+
+function HelpGuidePage({
+  setActiveTab,
+  setMasterSubTab,
+  setOtSubTab,
+}: {
+  setActiveTab: (tab: TabId) => void;
+  setMasterSubTab: (tab: MasterSubTab) => void;
+  setOtSubTab: (tab: OtSubTab) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [activeId, setActiveId] = useState(helpSections[0]?.id ?? "");
+  const q = query.trim().toLowerCase();
+
+  function openSection(s: HelpSection) {
+    if (!s.openTab) return;
+    setActiveTab(s.openTab);
+    if (s.openMasterSubTab) setMasterSubTab(s.openMasterSubTab);
+    if (s.openOtSubTab) setOtSubTab(s.openOtSubTab);
+  }
+
+  const filtered = q
+    ? helpSections.filter(
+        (s) =>
+          s.title.toLowerCase().includes(q) ||
+          s.summary.toLowerCase().includes(q) ||
+          s.points.some((p) => p.toLowerCase().includes(q)),
+      )
+    : helpSections;
+
+  const groups = helpGroupOrder
+    .map((group) => ({ group, sections: filtered.filter((s) => s.group === group) }))
+    .filter((g) => g.sections.length > 0);
+
+  return (
+    <section className="panel help-guide-panel">
+      <div className="help-guide-header">
+        <div className="help-guide-title">
+          <span className="help-guide-icon"><BookOpen size={22} /></span>
+          <div>
+            <h2>คู่มือการใช้งานระบบ</h2>
+            <p>คำอธิบายแต่ละหน้าในระบบ สำหรับผู้ที่เพิ่งเริ่มใช้งาน</p>
+          </div>
+        </div>
+        <div className="help-search-wrap">
+          <Search size={16} />
+          <input
+            type="search"
+            aria-label="ค้นหาคู่มือการใช้งาน"
+            placeholder="ค้นหาคำสำคัญ เช่น อัปโหลด, กะ, Manpower, Export..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query ? (
+            <button type="button" className="help-search-clear" onClick={() => setQuery("")} aria-label="ล้างคำค้นหา">
+              <X size={14} />
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {q ? (
+        <p className="help-search-count">
+          พบ {filtered.length} หัวข้อที่ตรงกับ &quot;{query}&quot;
+        </p>
+      ) : null}
+
+      {filtered.length === 0 ? (
+        <p className="empty-copy">ไม่พบหัวข้อที่ตรงกับคำค้นหา ลองใช้คำอื่นดูครับ</p>
+      ) : (
+        <div className="help-guide-body">
+          <nav className="help-guide-sidebar" aria-label="สารบัญคู่มือ">
+            {groups.map(({ group, sections }) => (
+              <div key={group} className="help-sidebar-group">
+                <span className="help-sidebar-group-label">{group}</span>
+                {sections.map((s) => {
+                  const SectionIcon = s.icon;
+                  return (
+                    <a
+                      key={s.id}
+                      href={`#help-${s.id}`}
+                      className={`help-sidebar-link${activeId === s.id ? " active" : ""}`}
+                      onClick={() => setActiveId(s.id)}
+                    >
+                      <SectionIcon size={15} />
+                      <span>{highlightMatches(s.title, q)}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            ))}
+          </nav>
+
+          <div className="help-guide-content">
+            {groups.map(({ group, sections }) => (
+              <div key={group} className="help-content-group">
+                <h3 className="help-content-group-title">{group}</h3>
+                <div className="help-guide-sections">
+                  {sections.map((s) => {
+                    const SectionIcon = s.icon;
+                    const { steps, notes } = splitPointsAndNotes(s.points);
+                    return (
+                      <article key={s.id} id={`help-${s.id}`} className="help-section-card">
+                        <div className="help-section-hdr">
+                          <span className="help-section-icon"><SectionIcon size={18} /></span>
+                          <h3>{highlightMatches(s.title, q)}</h3>
+                          {s.openTab ? (
+                            <button type="button" className="help-open-btn" onClick={() => openSection(s)}>
+                              เปิดหน้า <ArrowRight size={13} />
+                            </button>
+                          ) : null}
+                        </div>
+                        <p className="help-section-summary">{highlightMatches(s.summary, q)}</p>
+                        <ul className="help-section-points">
+                          {steps.map((p, i) => (
+                            <li key={i}>{highlightMatches(p, q)}</li>
+                          ))}
+                        </ul>
+                        {notes.length > 0 ? (
+                          <div className="help-section-notes">
+                            <span className="help-notes-label">เพิ่มเติม</span>
+                            <ul>
+                              {notes.map((p, i) => (
+                                <li key={i}>{highlightMatches(p.replace(helpNotePrefixRe, ""), q)}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </section>
   );
