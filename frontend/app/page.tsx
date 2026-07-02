@@ -2305,10 +2305,12 @@ function getAttendanceSortValue(
   key: string,
   monthlyLateCounts: Record<string, number> = {},
   warnCountMap: Record<string, number> = {},
+  warnedIds?: Set<string>,
 ) {
   if (key === "minutesLate") return row.minutesLate;
   if (key === "monthlyLate") return monthlyLateCounts[row.empId] ?? 0;
   if (key === "warnCount") return warnCountMap[row.empId] ?? 0;
+  if (key === "warned") return warnedIds?.has(row.empId) ? 1 : 0;
   return (row as Record<string, unknown>)[key] as string ?? "";
 }
 
@@ -2317,12 +2319,13 @@ function sortAttendanceRows(
   sort: SortState,
   monthlyLateCounts: Record<string, number> = {},
   warnCountMap: Record<string, number> = {},
+  warnedIds?: Set<string>,
 ) {
   if (!sort) return rows;
 
   return [...rows].sort((a, b) => {
-    const aValue = getAttendanceSortValue(a, sort.key, monthlyLateCounts, warnCountMap);
-    const bValue = getAttendanceSortValue(b, sort.key, monthlyLateCounts, warnCountMap);
+    const aValue = getAttendanceSortValue(a, sort.key, monthlyLateCounts, warnCountMap, warnedIds);
+    const bValue = getAttendanceSortValue(b, sort.key, monthlyLateCounts, warnCountMap, warnedIds);
 
     if (typeof aValue === "number" && typeof bValue === "number") {
       return sort.direction === "asc" ? aValue - bValue : bValue - aValue;
@@ -2341,11 +2344,13 @@ function SortButton({
   columnKey,
   setSort,
   sort,
+  defaultDirection = "asc",
 }: {
   children: ReactNode;
   columnKey: string;
   setSort?: (sort: SortState) => void;
   sort?: SortState;
+  defaultDirection?: SortDirection;
 }) {
   const active = sort?.key === columnKey;
   return (
@@ -2355,7 +2360,7 @@ function SortButton({
       onClick={() => {
         if (!setSort) return;
         if (!sort || sort.key !== columnKey) {
-          setSort({ key: columnKey, direction: "asc" });
+          setSort({ key: columnKey, direction: defaultDirection });
         } else {
           setSort({ key: columnKey, direction: sort.direction === "asc" ? "desc" : "asc" });
         }
@@ -2736,6 +2741,8 @@ function DashboardPanels({
 }) {
   const [detailSort, setDetailSort_] = useState<SortState>(null);
   const setDetailSort = setDetailSort_ as (sort: SortState) => void;
+  const [lateSort, setLateSort_] = useState<SortState>(null);
+  const setLateSort = setLateSort_ as (sort: SortState) => void;
   const [leaveMap, setLeaveMap] = useState<Map<string, string>>(new Map());
   const [leaveError, setLeaveError] = useState("");
   const [warnPanelCollapsed, setWarnPanelCollapsed] = useState(true);
@@ -2837,14 +2844,22 @@ function DashboardPanels({
   const latePct = total ? (late / total) * 100 : 0;
   const absentPct = total ? (absent / total) * 100 : 0;
   const topDeptRows = reportData?.deptRows ?? [];
-  const dashboardLateRows = [...(reportData?.lateRows ?? [])].sort((a, b) => {
-    const aDate = a.scanInDate || isoTargetDate;
-    const bDate = b.scanInDate || isoTargetDate;
-    if (aDate !== bDate) return bDate.localeCompare(aDate);
-    return b.scanIn.localeCompare(a.scanIn);
-  });
   const maxDeptTotal = Math.max(...topDeptRows.map((row) => row.total), 1);
   const monthlyLateCounts = reportData?.monthlyLateCounts ?? {};
+  const dashboardLateRows = lateSort
+    ? lateSort.key === "scanIn"
+      ? [...(reportData?.lateRows ?? [])].sort((a, b) => {
+          const aKey = `${a.scanInDate || isoTargetDate}T${a.scanIn}`;
+          const bKey = `${b.scanInDate || isoTargetDate}T${b.scanIn}`;
+          return lateSort.direction === "asc" ? aKey.localeCompare(bKey) : bKey.localeCompare(aKey);
+        })
+      : sortAttendanceRows(reportData?.lateRows ?? [], lateSort, monthlyLateCounts, warnCountMap, warnedIds)
+    : [...(reportData?.lateRows ?? [])].sort((a, b) => {
+        const aDate = a.scanInDate || isoTargetDate;
+        const bDate = b.scanInDate || isoTargetDate;
+        if (aDate !== bDate) return bDate.localeCompare(aDate);
+        return b.scanIn.localeCompare(a.scanIn);
+      });
   const donutStyle = total
     ? {
         background: `conic-gradient(
@@ -2941,13 +2956,13 @@ function DashboardPanels({
             <table className="table compact-table">
               <thead>
                 <tr>
-                  <th>ชื่อ</th>
-                  <th>หน่วยงาน</th>
-                  <th>เริ่มกะ</th>
-                  <th>เข้างาน</th>
-                  <th>สาย</th>
-                  <th>เตือนสะสม</th>
-                  <th>เตือน</th>
+                  <th><SortButton columnKey="name" setSort={setLateSort} sort={lateSort} defaultDirection="desc">ชื่อ</SortButton></th>
+                  <th><SortButton columnKey="dept" setSort={setLateSort} sort={lateSort} defaultDirection="desc">หน่วยงาน</SortButton></th>
+                  <th><SortButton columnKey="shiftStart" setSort={setLateSort} sort={lateSort} defaultDirection="desc">เริ่มกะ</SortButton></th>
+                  <th><SortButton columnKey="scanIn" setSort={setLateSort} sort={lateSort} defaultDirection="desc">เข้างาน</SortButton></th>
+                  <th><SortButton columnKey="minutesLate" setSort={setLateSort} sort={lateSort} defaultDirection="desc">สาย</SortButton></th>
+                  <th><SortButton columnKey="warnCount" setSort={setLateSort} sort={lateSort} defaultDirection="desc">เตือนสะสม</SortButton></th>
+                  <th><SortButton columnKey="warned" setSort={setLateSort} sort={lateSort} defaultDirection="desc">เตือน</SortButton></th>
                 </tr>
               </thead>
               <tbody>
