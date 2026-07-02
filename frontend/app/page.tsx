@@ -970,7 +970,7 @@ export default function Home() {
           : Promise.resolve([] as Record<string, unknown>[]),
       ]);
 
-      const latestReport = buildReportData(employeeRows, scanRows, manpowerRows, dayoffShiftRows, holidayDates, prevScanRows, nextScanRows);
+      const latestReport = buildReportData(employeeRows, scanRows, manpowerRows, dayoffShiftRows, holidayDates, prevScanRows, nextScanRows, currentDateKey);
       try {
         await saveTimestampWithDeptRows(latestRun.id, latestReport);
       } catch (saveError) {
@@ -1034,7 +1034,7 @@ export default function Home() {
         const runEmpRows      = (run.master_file_path       ? masterRowsCache.get(run.master_file_path)       : null) ?? employeeRows;
         const runManpowerRows = (run.manpower_file_path     ? masterRowsCache.get(run.manpower_file_path)     : null) ?? manpowerRows;
         const runDayoffRows   = (run.dayoff_shift_file_path ? masterRowsCache.get(run.dayoff_shift_file_path) : null) ?? dayoffShiftRows;
-        const dayReport = buildReportData(runEmpRows, rows, runManpowerRows, runDayoffRows, holidayDates, prevRows, nextRows);
+        const dayReport = buildReportData(runEmpRows, rows, runManpowerRows, runDayoffRows, holidayDates, prevRows, nextRows, run.target_date ?? run.created_at.slice(0, 10));
 
         if (dayReport.targetMonthKey === latestReport.targetMonthKey) {
           for (const lateRow of dayReport.lateRows) {
@@ -1621,6 +1621,7 @@ function buildReportData(
   holidaySet?: Set<string>,
   prevDayScanRows: Record<string, unknown>[] = [],
   nextDayScanRows: Record<string, unknown>[] = [],
+  explicitTargetDate?: string,
 ): ReportData {
   const employees = employeeRows.map((row) => {
     const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
@@ -1662,19 +1663,23 @@ function buildReportData(
     .flatMap((entry) => entry.times)
     .sort((a, b) => b.getTime() - a.getTime())[0];
 
-  // Use mode of scan dates rather than max to avoid night-shift scan-outs on D+1
-  // skewing the target date when a scan file spans midnight.
+  // ใช้วันที่ของ run เป็นหลักถ้ามีระบุมาให้ (ตรงกับวันที่ผู้ใช้เลือก/อัปโหลด) — ไฟล์สแกนจริงมักมีข้อมูล
+  // ของ "เมื่อวาน+วันนี้" ปนกัน (export ตอนเช้า) ทำให้ยอดสแกนของเมื่อวานมักเยอะกว่าวันนี้ (ที่เพิ่งผ่านไปไม่กี่ชม.)
+  // ถ้าใช้ "โหมดของวันที่สแกน" (mode) จะได้เมื่อวานผิดวันเสมอ จึงต้องยึดวันที่ของ run เป็นหลักแทน
+  // ยังคง fallback เป็น mode-of-scan-dates ไว้กรณีไม่มีวันที่ระบุมา (เช่น legacy call site)
   const allScanTimes = Array.from(scanByEmp.values()).flatMap((e) => e.times);
   const isoCounts = new Map<string, number>();
   for (const t of allScanTimes) {
     const iso = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
     isoCounts.set(iso, (isoCounts.get(iso) ?? 0) + 1);
   }
-  const isoTargetDate = isoCounts.size > 0
-    ? [...isoCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
-    : latestTimestamp
-      ? `${latestTimestamp.getFullYear()}-${String(latestTimestamp.getMonth() + 1).padStart(2, "0")}-${String(latestTimestamp.getDate()).padStart(2, "0")}`
-      : "";
+  const isoTargetDate = explicitTargetDate
+    ? explicitTargetDate
+    : isoCounts.size > 0
+      ? [...isoCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+      : latestTimestamp
+        ? `${latestTimestamp.getFullYear()}-${String(latestTimestamp.getMonth() + 1).padStart(2, "0")}-${String(latestTimestamp.getDate()).padStart(2, "0")}`
+        : "";
   const targetTimestamp = isoTargetDate ? new Date(`${isoTargetDate}T12:00:00`) : latestTimestamp;
   const targetDate = targetTimestamp?.toLocaleDateString("th-TH") ?? "-";
   const targetMonthKey = isoTargetDate ? isoTargetDate.slice(0, 7) : "";
