@@ -4058,6 +4058,7 @@ function MasterDataPage({
           employeeMasterFile={activeMasterMap.employee_master}
           manpowerFile={activeMasterMap.manpower_plan}
           saveDayoffShiftRows={saveDayoffShiftRows}
+          saveManpowerRows={saveManpowerRows}
         />
       ) : null}
     </section>
@@ -4900,11 +4901,13 @@ function DayoffShiftEditor({
   employeeMasterFile,
   manpowerFile,
   saveDayoffShiftRows,
+  saveManpowerRows,
 }: {
   activeFile?: MasterFile;
   employeeMasterFile?: MasterFile;
   manpowerFile?: MasterFile;
   saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
+  saveManpowerRows: (rows: ManpowerEditorRow[]) => Promise<void>;
 }) {
   const [rows, setRows] = useState<DayoffShiftEditorRow[]>([]);
   const [originalRows, setOriginalRows] = useState<DayoffShiftEditorRow[]>([]);
@@ -4919,12 +4922,16 @@ function DayoffShiftEditor({
   const [bulkDayoff, setBulkDayoff] = useState("");
   const [bulkShift, setBulkShift] = useState("");
   const [bulkJobSite, setBulkJobSite] = useState("");
+  const [bulkShiftStart, setBulkShiftStart] = useState("");
+  const [bulkShiftEnd, setBulkShiftEnd] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // เวลาที่แก้ไขในหน้านี้ยังไม่ถูกบันทึกลง Manpower Plan จริง — ต้องกด Save เพื่อบันทึกทั้งคู่
+  const [manpowerDirty, setManpowerDirty] = useState(false);
 
   useEffect(() => {
     const path = manpowerFile?.file_path;
-    if (!path) { setManpowerRows([]); return; }
+    if (!path) { setManpowerRows([]); setManpowerDirty(false); return; }
     let cancelled = false;
     downloadSheetRows(path)
       .then((sheetRows) => {
@@ -4932,6 +4939,7 @@ function DayoffShiftEditor({
         // ใช้ parser เดียวกับ buildReportData เพื่อไม่ให้แถว default ของหน่วยงาน (ไม่ระบุกะ) หายไปจากหน้านี้
         // ทั้งที่ Dashboard/OT จริงยังเห็นและใช้แถวนั้นอยู่
         setManpowerRows(parseManpowerRows(sheetRows));
+        setManpowerDirty(false);
       })
       .catch(() => { if (!cancelled) setManpowerRows([]); });
     return () => { cancelled = true; };
@@ -4943,6 +4951,53 @@ function DayoffShiftEditor({
 
   function lookupManpower(dept: string, jobSite: string, shift: string) {
     return lookupManpowerTime(manpowerLookup, dept, jobSite, shift);
+  }
+
+  // เจอแถวใน Manpower ที่ dept+หน่วยงานย่อย+กะ+เวลา ตรงกันเป๊ะแล้วหรือยัง
+  function findManpowerExact(dept: string, jobSite: string, shift: string, shiftStart: string, shiftEnd: string) {
+    const shiftKey = normalizeShiftKey(shift);
+    return manpowerRows.find(
+      (r) => r.dept === dept && r.jobSite === jobSite && normalizeShiftKey(r.shift) === shiftKey
+        && r.shiftStart === shiftStart && r.shiftEnd === shiftEnd,
+    );
+  }
+
+  // dept+หน่วยงานย่อย+กะ นี้มีเวลาอื่น (คนละเวลากับที่กำลังจะตั้ง) บันทึกอยู่แล้วหรือไม่ — ถ้ามีต้องตั้งชื่อ
+  // หน่วยงานย่อยใหม่กันชนกับของเดิม (เหมือนที่แก้ปัญหา QC มีหลายเวลาไปแล้วก่อนหน้านี้)
+  function hasManpowerCollision(dept: string, jobSite: string, shift: string) {
+    const shiftKey = normalizeShiftKey(shift);
+    return manpowerRows.some((r) => r.dept === dept && r.jobSite === jobSite && normalizeShiftKey(r.shift) === shiftKey);
+  }
+
+  // ตัดส่วนต่อท้าย " (HH:MM-HH:MM)" ที่ระบบเติมเองตอนสร้างกะใหม่ออกก่อนเช็คซ้ำ — กันไม่ให้ต่อท้ายซ้อนกันหลายชั้น
+  // เวลาผู้ใช้แก้เวลาเข้ากับเวลาออกทีละครั้ง (2 อีเวนต์แยกกัน) จากหน่วยงานย่อยที่เพิ่งถูกตั้งชื่อใหม่ไปแล้ว
+  function stripTimeSuffix(jobSite: string): string {
+    return jobSite.replace(/\s\(\d{2}:\d{2}-\d{2}:\d{2}\)$/, "");
+  }
+
+  // ตัดสินใจว่าเวลาใหม่ที่ตั้งควรใช้ชื่อหน่วยงานย่อยเดิม หรือต้องตั้งชื่อใหม่ต่อท้ายด้วยเวลา
+  function resolveTimeChange(dept: string, jobSite: string, shift: string, shiftStart: string, shiftEnd: string) {
+    const baseJobSite = stripTimeSuffix(jobSite);
+    if (findManpowerExact(dept, baseJobSite, shift, shiftStart, shiftEnd)) {
+      return { jobSite: baseJobSite, isNew: false };
+    }
+    const collision = hasManpowerCollision(dept, baseJobSite, shift);
+    const finalJobSite = collision ? `${baseJobSite || "ทั้งหน่วยงาน"} (${shiftStart}-${shiftEnd})` : baseJobSite;
+    return { jobSite: finalJobSite, isNew: true };
+  }
+
+  // เพิ่มแถว Manpower ใหม่ (ถ้ายังไม่มีแถวนี้เป๊ะๆ อยู่แล้ว) และตั้งสถานะว่ามีการแก้ไข Manpower รอบันทึก
+  function addManpowerRowIfNeeded(dept: string, jobSite: string, shift: string, shiftStart: string, shiftEnd: string) {
+    setManpowerRows((prev) => {
+      const shiftKey = normalizeShiftKey(shift);
+      const exists = prev.some(
+        (r) => r.dept === dept && r.jobSite === jobSite && normalizeShiftKey(r.shift) === shiftKey
+          && r.shiftStart === shiftStart && r.shiftEnd === shiftEnd,
+      );
+      if (exists) return prev;
+      return [...prev, { dept, jobSite, shift, shiftStart, shiftEnd }];
+    });
+    setManpowerDirty(true);
   }
 
   const manpowerShiftsByKey = useMemo(() => {
@@ -5294,6 +5349,31 @@ function DayoffShiftEditor({
     );
   }
 
+  // แก้เวลาเข้า/ออกของพนักงาน 1 คนตรงในตาราง — เช็คกับ Manpower ก่อน ถ้ายังไม่มีเวลานี้บันทึกไว้
+  // จะสร้างแถวใหม่ให้อัตโนมัติ (ตั้งชื่อหน่วยงานย่อยใหม่กันชนถ้าจำเป็น) แล้วผูกพนักงานคนนี้เข้ากับแถวนั้น
+  function updateRowTime(row: DayoffShiftEditorRow, field: "shiftStart" | "shiftEnd", value: string) {
+    if (!row.dept || !row.shift || row.shift === "ผู้จัดการ") return;
+    const newStart = field === "shiftStart" ? value : row.shiftStart;
+    const newEnd = field === "shiftEnd" ? value : row.shiftEnd;
+
+    let finalJobSite = row.jobSite;
+    if (newStart && newEnd) {
+      const resolved = resolveTimeChange(row.dept, row.jobSite, row.shift, newStart, newEnd);
+      finalJobSite = resolved.jobSite;
+      if (resolved.isNew) addManpowerRowIfNeeded(row.dept, finalJobSite, row.shift, newStart, newEnd);
+    }
+
+    setRows((current) =>
+      current.map((r) => {
+        if (r.id !== row.id) return r;
+        let raw = setRowCol(r.raw, finalJobSite, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
+        raw = setRowCol(raw, newStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+        raw = setRowCol(raw, newEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
+        return { ...r, jobSite: finalJobSite, shiftStart: newStart, shiftEnd: newEnd, raw };
+      }),
+    );
+  }
+
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -5319,41 +5399,62 @@ function DayoffShiftEditor({
   }
 
   function applyBulk() {
-    if (!bulkDayoff && !bulkShift && !bulkJobSite) return;
+    const hasBulkTime = !!(bulkShiftStart && bulkShiftEnd);
+    if (!bulkDayoff && !bulkShift && !bulkJobSite && !hasBulkTime) return;
+
+    // ก่อน map ต้องเช็ค/สร้างแถว Manpower ให้ครบทุก dept+หน่วยงานย่อย+กะ ที่ไม่ซ้ำกันในกลุ่มที่เลือก (ทำครั้งเดียวต่อ 1 คู่ที่ไม่ซ้ำ)
+    const resolvedJobSiteByKey = new Map<string, string>();
+    if (hasBulkTime) {
+      for (const row of rows) {
+        if (!selectedIds.has(row.id)) continue;
+        const jobSite = bulkJobSite || row.jobSite;
+        const shift = bulkShift || row.shift;
+        if (!row.dept || !shift || shift === "ผู้จัดการ") continue;
+        const key = `${row.dept}||${jobSite}||${normalizeShiftKey(shift)}`;
+        if (resolvedJobSiteByKey.has(key)) continue;
+        const resolved = resolveTimeChange(row.dept, jobSite, shift, bulkShiftStart, bulkShiftEnd);
+        resolvedJobSiteByKey.set(key, resolved.jobSite);
+        if (resolved.isNew) addManpowerRowIfNeeded(row.dept, resolved.jobSite, shift, bulkShiftStart, bulkShiftEnd);
+      }
+    }
+
     setRows((current) =>
       current.map((row) => {
         if (!selectedIds.has(row.id)) return row;
         let raw = row.raw;
         let shiftStart = row.shiftStart;
         let shiftEnd = row.shiftEnd;
+        let jobSite = bulkJobSite || row.jobSite;
+        const shift = bulkShift || row.shift;
+
         if (bulkDayoff) raw = setRowCol(raw, bulkDayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
-        if (bulkJobSite) raw = setRowCol(raw, bulkJobSite, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
         if (bulkShift) raw = setRowCol(raw, bulkShift, "อยู่กะไหน", "shift", "กะ", "Shift");
-        if (bulkShift || bulkJobSite) {
-          const newJobSite = bulkJobSite || row.jobSite;
-          const newShift = bulkShift || row.shift;
-          const locked = lookupManpower(row.dept, newJobSite, newShift);
+
+        if (hasBulkTime && row.dept && shift && shift !== "ผู้จัดการ") {
+          const key = `${row.dept}||${jobSite}||${normalizeShiftKey(shift)}`;
+          jobSite = resolvedJobSiteByKey.get(key) ?? jobSite;
+          shiftStart = bulkShiftStart;
+          shiftEnd = bulkShiftEnd;
+        } else if (bulkShift || bulkJobSite) {
+          const locked = lookupManpower(row.dept, jobSite, shift);
           // ถ้าไม่พบเวลาใน Manpower สำหรับหน่วยงานย่อย/กะใหม่ ต้องล้างเวลาเก่าทิ้ง ไม่ใช่ปล่อยให้ค้างเวลาของกะเดิมไว้คู่กับกะใหม่
           shiftStart = locked?.shiftStart ?? "";
           shiftEnd = locked?.shiftEnd ?? "";
-          raw = setRowCol(raw, shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
-          raw = setRowCol(raw, shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
         }
-        return {
-          ...row,
-          dayoff: bulkDayoff || row.dayoff,
-          shift: bulkShift || row.shift,
-          jobSite: bulkJobSite || row.jobSite,
-          shiftStart,
-          shiftEnd,
-          raw,
-        };
+
+        if (jobSite !== row.jobSite) raw = setRowCol(raw, jobSite, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
+        if (shiftStart !== row.shiftStart) raw = setRowCol(raw, shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+        if (shiftEnd !== row.shiftEnd) raw = setRowCol(raw, shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
+
+        return { ...row, dayoff: bulkDayoff || row.dayoff, shift, jobSite, shiftStart, shiftEnd, raw };
       }),
     );
     setSelectedIds(new Set());
     setBulkDayoff("");
     setBulkShift("");
     setBulkJobSite("");
+    setBulkShiftStart("");
+    setBulkShiftEnd("");
   }
 
   async function handleSave() {
@@ -5372,6 +5473,13 @@ function DayoffShiftEditor({
     }
     setIsSaving(true);
     try {
+      // บันทึก Manpower ก่อน ถ้ามีกะใหม่ที่สร้างจากการปรับเวลาในหน้านี้ค้างอยู่ — ต้องให้ Manpower มีแถวนั้นจริง
+      // ก่อนที่ resolve เวลาด้านล่างจะไปค้นหามันเจอ
+      if (manpowerDirty) {
+        const mpRowsToSave: ManpowerEditorRow[] = manpowerRows.map((r, i) => ({ id: `mp-${i}`, ...r }));
+        await saveManpowerRows(mpRowsToSave);
+        setManpowerDirty(false);
+      }
       const resolved = rows.map((row) => {
         // ผู้จัดการไม่มีกะตายตัว ไม่ต้อง resolve เวลา ปล่อยตามเดิม (มักจะว่างอยู่แล้ว)
         if (row.shift === "ผู้จัดการ") return row;
@@ -5389,7 +5497,7 @@ function DayoffShiftEditor({
       setRows(resolved);
       setOriginalRows(resolved);
     } catch {
-      // error already set by saveDayoffShiftRows
+      // error already set by saveDayoffShiftRows/saveManpowerRows
     } finally {
       setIsSaving(false);
     }
@@ -5557,9 +5665,21 @@ function DayoffShiftEditor({
             <option value="">เปลี่ยน Shift...</option>
             {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
+          <TimeInput24
+            value={bulkShiftStart}
+            onChange={setBulkShiftStart}
+            title="เปลี่ยนเวลาเข้า"
+            className="time24-btn shift-time-input"
+          />
+          <TimeInput24
+            value={bulkShiftEnd}
+            onChange={setBulkShiftEnd}
+            title="เปลี่ยนเวลาออก"
+            className="time24-btn shift-time-input"
+          />
           <button
             className="primary-button"
-            disabled={!bulkDayoff && !bulkShift && !bulkJobSite}
+            disabled={!bulkDayoff && !bulkShift && !bulkJobSite && !(bulkShiftStart && bulkShiftEnd)}
             onClick={applyBulk}
             style={{ height: 32, fontSize: 12, padding: "0 14px" }}
             type="button"
@@ -5652,14 +5772,27 @@ function DayoffShiftEditor({
                     );
                   }
                   const locked = lookupManpower(row.dept, row.jobSite, row.shift);
-                  const start = locked?.shiftStart || row.shiftStart;
-                  const end = locked?.shiftEnd || row.shiftEnd;
-                  const lockedTitle = locked ? "ล็อคจากหน้า Manpower" : "ไม่พบใน Manpower — ไปตั้งค่าที่หน้า Manpower";
-                  const color = locked ? "#0f172a" : "#d97706";
+                  const knownTitle = locked
+                    ? "ตรงกับเวลาที่ตั้งไว้ใน Manpower"
+                    : "ยังไม่มีเวลานี้ใน Manpower — กด Save แล้วระบบจะบันทึกเป็นกะใหม่ให้อัตโนมัติ";
                   return (
                     <>
-                      <td><span style={{ color, fontSize: 13 }} title={lockedTitle}>{start || "—"}</span></td>
-                      <td className="shift-end-cell"><span style={{ color, fontSize: 13 }} title={lockedTitle}>{end || "—"}</span></td>
+                      <td>
+                        <TimeInput24
+                          value={row.shiftStart}
+                          onChange={(v) => updateRowTime(row, "shiftStart", v)}
+                          className={`time24-btn shift-time-input${locked ? "" : " time24-unresolved"}`}
+                          title={knownTitle}
+                        />
+                      </td>
+                      <td className="shift-end-cell">
+                        <TimeInput24
+                          value={row.shiftEnd}
+                          onChange={(v) => updateRowTime(row, "shiftEnd", v)}
+                          className={`time24-btn shift-time-input${locked ? "" : " time24-unresolved"}`}
+                          title={knownTitle}
+                        />
+                      </td>
                     </>
                   );
                 })()}

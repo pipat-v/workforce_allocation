@@ -2189,6 +2189,12 @@ button {
   box-shadow: 0 0 0 2px #dbeafe;
 }
 
+.time24-unresolved {
+  border-color: #d97706 !important;
+  color: #d97706 !important;
+  background: #fffbeb !important;
+}
+
 .shift-end-cell {
   color: var(--muted);
   font-size: 13px;
