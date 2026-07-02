@@ -7588,7 +7588,14 @@ function formatDateTH(isoDate: string) {
 // OT Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
 
-function calcOTHoursForRecord(scanOut: string, shiftEnd: string): number {
+// หน่วยงานที่มีเวลาพัก 1 ชั่วโมงหลังเลิกงาน (หน่วยงานอื่นพัก 30 นาที) — ช่วงพักนี้ไม่นับเป็น OT
+const OT_LONG_BREAK_DEPTS = new Set(["งานตัดแต่งพิเศษ", "งานแยกชิ้นส่วนและตัดแต่ง"]);
+
+function getOTBreakMinutes(dept: string): number {
+  return OT_LONG_BREAK_DEPTS.has(dept) ? 60 : 30;
+}
+
+function calcOTHoursForRecord(scanOut: string, shiftEnd: string, breakMinutes = 0): number {
   if (!scanOut || scanOut === "-" || !shiftEnd) return 0;
   if (!scanOut.includes(":") || !shiftEnd.includes(":")) return 0;
   const [soH, soM] = scanOut.split(":").map(Number);
@@ -7599,6 +7606,8 @@ function calcOTHoursForRecord(scanOut: string, shiftEnd: string): number {
   let diff = soTotal - seTotal;
   // Handle night-shift crossing midnight (e.g. shiftEnd=23:00, scanOut=01:30 → diff negative large)
   if (diff < -720) diff += 1440;
+  // เวลาพักหลังเลิกงาน (30 นาที หรือ 1 ชม. แล้วแต่หน่วยงาน) ไม่นับเป็น OT
+  diff -= breakMinutes;
   return Math.max(0, diff / 60);
 }
 
@@ -7677,7 +7686,7 @@ function OTDashboard({
     return reportData.records.map((rec) => {
       const shiftEnd = rec.shiftEnd || (rec.shiftStart ? addHoursToTime(rec.shiftStart, 9) : "");
       const otHours = shiftEnd && (rec.status === "Present" || rec.status === "Late" || rec.status === "NoScanIn")
-        ? calcOTHoursForRecord(rec.scanOut, shiftEnd)
+        ? calcOTHoursForRecord(rec.scanOut, shiftEnd, getOTBreakMinutes(rec.dept))
         : 0;
       return { ...rec, shiftEnd, otHours };
     });
@@ -8184,8 +8193,8 @@ function OTDashboard({
                         <td>{rec.shift}</td>
                         <td>{rec.shiftStart}</td>
                         <td>{rec.shiftEnd}</td>
-                        <td>{rec.scanIn}</td>
-                        <td>{rec.scanOut}</td>
+                        <td className="scan-cell">{scanDateBadge(rec.scanInDate)}{rec.scanIn}</td>
+                        <td className="scan-cell">{scanDateBadge(rec.scanOutDate)}{rec.scanOut}</td>
                         <td>
                           <span className={`ot-status-badge ot-status-${rec.status.toLowerCase()}`}>
                             {STATUS_TH[rec.status] ?? rec.status}
