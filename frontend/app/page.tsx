@@ -2785,6 +2785,7 @@ function DashboardPanels({
 }) {
   const [detailSort, setDetailSort_] = useState<SortState>(null);
   const setDetailSort = setDetailSort_ as (sort: SortState) => void;
+  const [detailQuery, setDetailQuery] = useState("");
   const [lateSort, setLateSort_] = useState<SortState>(null);
   const setLateSort = setLateSort_ as (sort: SortState) => void;
   const [leaveMap, setLeaveMap] = useState<Map<string, string>>(new Map());
@@ -2916,7 +2917,16 @@ function DashboardPanels({
 
   const allRecords = reportData?.records ?? [];
   const statusOrder: Record<string, number> = { Absent: 0, Late: 1, Present: 2 };
-  const baseDetailRows = allRecords.filter((r) => detailStatusFilter === "all" || r.status === detailStatusFilter);
+  const detailQueryNorm = detailQuery.trim().toLowerCase();
+  const baseDetailRows = allRecords.filter((r) => {
+    if (detailStatusFilter !== "all" && r.status !== detailStatusFilter) return false;
+    if (!detailQueryNorm) return true;
+    return (
+      r.name.toLowerCase().includes(detailQueryNorm) ||
+      r.empId.toLowerCase().includes(detailQueryNorm) ||
+      r.dept.toLowerCase().includes(detailQueryNorm)
+    );
+  });
   const detailRows = detailSort
     ? sortAttendanceRows(baseDetailRows, detailSort, monthlyLateCounts)
     : [...baseDetailRows].sort((a, b) => {
@@ -3197,15 +3207,32 @@ function DashboardPanels({
 
       {/* Employee detail table */}
       <section id="employee-detail-section" className="panel detail-attendance-panel">
-        <div className="panel-title-row">
+        <div className="detail-attendance-hdr">
           <h3>
             สถานะพนักงานรายคน
             {dashboardDeptFilter !== "all" ? ` · ${dashboardDeptFilter}` : ""}
           </h3>
-        </div>
-        <div className="panel-title-row" style={{ marginTop: "12px" }}>
-          <div />
-          <div className="table-actions">
+          <div className="detail-attendance-controls">
+            <div className="detail-search-wrap">
+              <Search size={14} />
+              <input
+                aria-label="ค้นหาพนักงาน"
+                placeholder="ค้นหา ชื่อ / รหัสพนักงาน / หน่วยงาน"
+                type="search"
+                value={detailQuery}
+                onChange={(e) => setDetailQuery(e.target.value)}
+              />
+              {detailQuery ? (
+                <button
+                  className="detail-search-clear"
+                  aria-label="ล้างคำค้นหา"
+                  onClick={() => setDetailQuery("")}
+                  type="button"
+                >
+                  <X size={12} />
+                </button>
+              ) : null}
+            </div>
             <select
               aria-label="กรองสถานะ"
               value={detailStatusFilter}
