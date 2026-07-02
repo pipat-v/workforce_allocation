@@ -4903,6 +4903,7 @@ function DayoffShiftEditor({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDayoff, setBulkDayoff] = useState("");
   const [bulkShift, setBulkShift] = useState("");
+  const [bulkJobSite, setBulkJobSite] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -5301,7 +5302,7 @@ function DayoffShiftEditor({
   }
 
   function applyBulk() {
-    if (!bulkDayoff && !bulkShift) return;
+    if (!bulkDayoff && !bulkShift && !bulkJobSite) return;
     setRows((current) =>
       current.map((row) => {
         if (!selectedIds.has(row.id)) return row;
@@ -5309,10 +5310,13 @@ function DayoffShiftEditor({
         let shiftStart = row.shiftStart;
         let shiftEnd = row.shiftEnd;
         if (bulkDayoff) raw = setRowCol(raw, bulkDayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
-        if (bulkShift) {
-          raw = setRowCol(raw, bulkShift, "อยู่กะไหน", "shift", "กะ", "Shift");
-          const locked = lookupManpower(row.dept, row.jobSite, bulkShift);
-          // ถ้าไม่พบเวลาใน Manpower สำหรับกะใหม่ ต้องล้างเวลาเก่าทิ้ง ไม่ใช่ปล่อยให้ค้างเวลาของกะเดิมไว้คู่กับกะใหม่
+        if (bulkJobSite) raw = setRowCol(raw, bulkJobSite, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
+        if (bulkShift) raw = setRowCol(raw, bulkShift, "อยู่กะไหน", "shift", "กะ", "Shift");
+        if (bulkShift || bulkJobSite) {
+          const newJobSite = bulkJobSite || row.jobSite;
+          const newShift = bulkShift || row.shift;
+          const locked = lookupManpower(row.dept, newJobSite, newShift);
+          // ถ้าไม่พบเวลาใน Manpower สำหรับหน่วยงานย่อย/กะใหม่ ต้องล้างเวลาเก่าทิ้ง ไม่ใช่ปล่อยให้ค้างเวลาของกะเดิมไว้คู่กับกะใหม่
           shiftStart = locked?.shiftStart ?? "";
           shiftEnd = locked?.shiftEnd ?? "";
           raw = setRowCol(raw, shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
@@ -5322,6 +5326,7 @@ function DayoffShiftEditor({
           ...row,
           dayoff: bulkDayoff || row.dayoff,
           shift: bulkShift || row.shift,
+          jobSite: bulkJobSite || row.jobSite,
           shiftStart,
           shiftEnd,
           raw,
@@ -5331,6 +5336,7 @@ function DayoffShiftEditor({
     setSelectedIds(new Set());
     setBulkDayoff("");
     setBulkShift("");
+    setBulkJobSite("");
   }
 
   async function handleSave() {
@@ -5509,7 +5515,12 @@ function DayoffShiftEditor({
         )}
       </div>
 
-      {selectedIds.size > 0 && (
+      {selectedIds.size > 0 && (() => {
+        const selectedDepts = Array.from(new Set(rows.filter((r) => selectedIds.has(r.id)).map((r) => r.dept)));
+        const bulkJobSiteOptions = Array.from(
+          new Set(selectedDepts.flatMap((d) => jobSiteChoicesForDept(d, ""))),
+        ).sort();
+        return (
         <div className="dayoff-bulk-bar">
           <span className="bulk-count">{selectedIds.size} คนที่เลือก</span>
           <select value={bulkDayoff} onChange={(e) => setBulkDayoff(e.target.value)}>
@@ -5521,13 +5532,17 @@ function DayoffShiftEditor({
               {dayoffDouble.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </optgroup>
           </select>
+          <select value={bulkJobSite} onChange={(e) => setBulkJobSite(e.target.value)}>
+            <option value="">เปลี่ยนหน่วยงานย่อย...</option>
+            {bulkJobSiteOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
           <select value={bulkShift} onChange={(e) => setBulkShift(e.target.value)}>
             <option value="">เปลี่ยน Shift...</option>
             {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
           <button
             className="primary-button"
-            disabled={!bulkDayoff && !bulkShift}
+            disabled={!bulkDayoff && !bulkShift && !bulkJobSite}
             onClick={applyBulk}
             style={{ height: 32, fontSize: 12, padding: "0 14px" }}
             type="button"
@@ -5543,7 +5558,8 @@ function DayoffShiftEditor({
             ยกเลิก
           </button>
         </div>
-      )}
+        );
+      })()}
 
       <div className="dayoff-editor-table">
         <table className="table">
