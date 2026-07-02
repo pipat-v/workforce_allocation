@@ -7844,7 +7844,8 @@ function OTDashboard({
         const mgrs: Array<{ empId: string; name: string; dept: string }> = [];
         for (const row of rows) {
           const jobSite = String(row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim();
-          if (!jobSite.includes("ผู้จัดการ")) continue;
+          const shift = findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift");
+          if (!jobSite.includes("ผู้จัดการ") && shift !== "ผู้จัดการ") continue;
           const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
           const firstName = String(row["First Name (Local)"] ?? "").trim();
           const lastName = String(row["Last Name (Local)"] ?? "").trim();
