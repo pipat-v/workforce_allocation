@@ -296,6 +296,13 @@ export default function Home() {
           activeMasterMap.employee_master.file_path,
           activeMasterMap.manpower_plan?.file_path,
           activeMasterMap.dayoff_shift?.file_path,
+          // Also watch the run's own pinned snapshot paths: syncActiveRunSnapshots
+          // updates these on the run row (not activeMasterMap) shortly after a
+          // master save, in a separate request that can land after this key is
+          // first recomputed. Without watching them too, that later update never
+          // re-triggers the load effect and the dashboard keeps the stale file.
+          latestRun.dayoff_shift_file_path,
+          latestRun.manpower_file_path,
           latestRun.scan_file_path,
         ].filter(Boolean).join("|")
       : "";
@@ -508,6 +515,26 @@ export default function Home() {
     setActiveMasters(Array.from(latestByType.values()));
   }
 
+  // Daily runs pin dayoff_shift/manpower file paths at creation time so past
+  // dashboards keep reading the master data that was active back then (see
+  // loadReportDashboard). When an edit lands after a run already exists, that
+  // pin still points at the old file, so the dashboard silently shows stale
+  // shift times until something repoints it. Re-point only today's/future
+  // (not-yet-historical) runs at the freshly saved file so live dashboards
+  // pick up the edit without rewriting genuinely past days.
+  async function syncActiveRunSnapshots(field: "dayoff_shift_file_path" | "manpower_file_path", path: string) {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const { data: candidates } = await supabase
+      .from("allocation_runs")
+      .select("id,target_date,created_at");
+    const idsToUpdate = (candidates ?? [])
+      .filter((r) => (r.target_date ?? r.created_at.slice(0, 10)) >= todayIso)
+      .map((r) => r.id);
+    if (idsToUpdate.length === 0) return;
+    await supabase.from("allocation_runs").update({ [field]: path }).in("id", idsToUpdate);
+    await loadRuns();
+  }
+
   async function loadRuns() {
     const { data, error: loadError } = await supabase
       .from("allocation_runs")
@@ -672,6 +699,7 @@ export default function Home() {
 
     setMessage("บันทึก Dayoff & Shift master แล้ว");
     await loadActiveMasters();
+    await syncActiveRunSnapshots("dayoff_shift_file_path", path);
   }
 
   async function saveManpowerRows(rows: ManpowerEditorRow[]) {
@@ -747,6 +775,7 @@ export default function Home() {
 
     setMessage("บันทึก Manpower Plan แล้ว");
     await loadActiveMasters();
+    await syncActiveRunSnapshots("manpower_file_path", path);
   }
 
   async function saveSkillMatrixRows(rows: SkillMatrixSaveRow[]) {
