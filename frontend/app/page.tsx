@@ -2837,7 +2837,12 @@ function DashboardPanels({
   const latePct = total ? (late / total) * 100 : 0;
   const absentPct = total ? (absent / total) * 100 : 0;
   const topDeptRows = reportData?.deptRows ?? [];
-  const dashboardLateRows = reportData?.lateRows ?? [];
+  const dashboardLateRows = [...(reportData?.lateRows ?? [])].sort((a, b) => {
+    const aDate = a.scanInDate || isoTargetDate;
+    const bDate = b.scanInDate || isoTargetDate;
+    if (aDate !== bDate) return bDate.localeCompare(aDate);
+    return b.scanIn.localeCompare(a.scanIn);
+  });
   const maxDeptTotal = Math.max(...topDeptRows.map((row) => row.total), 1);
   const monthlyLateCounts = reportData?.monthlyLateCounts ?? {};
   const donutStyle = total
