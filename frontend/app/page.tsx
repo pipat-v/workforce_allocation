@@ -2355,13 +2355,13 @@ function getAttendanceSortValue(
   return (row as Record<string, unknown>)[key] as string ?? "";
 }
 
-function sortAttendanceRows(
-  rows: AttendanceRecord[],
+function sortAttendanceRows<T extends AttendanceRecord>(
+  rows: T[],
   sort: SortState,
   monthlyLateCounts: Record<string, number> = {},
   warnCountMap: Record<string, number> = {},
   warnedIds?: Set<string>,
-) {
+): T[] {
   if (!sort) return rows;
 
   return [...rows].sort((a, b) => {
@@ -7900,6 +7900,8 @@ function OTDashboard({
   const [otDetailDeptFilter, setOtDetailDeptFilter] = useState("all");
   const [otDetailSectionFilter, setOtDetailSectionFilter] = useState("all");
   const [otDetailShiftFilter, setOtDetailShiftFilter] = useState("all");
+  const [otDetailSort, setOtDetailSort_] = useState<SortState>(null);
+  const setOtDetailSort = setOtDetailSort_ as (sort: SortState) => void;
 
   const otDetailDeptOptions = useMemo(
     () => [...new Set(otRecords.map((r) => r.dept))].filter(Boolean).sort(),
@@ -7930,6 +7932,13 @@ function OTDashboard({
       return true;
     });
   }, [otRecords, selectedDept, otDetailDeptFilter, otDetailSearch, otDetailSectionFilter, otDetailShiftFilter]);
+
+  const sortedDetailRecords = useMemo(
+    () => otDetailSort
+      ? sortAttendanceRows(filteredDetailRecords, otDetailSort)
+      : [...filteredDetailRecords].sort((a, b) => b.otHours - a.otHours),
+    [filteredDetailRecords, otDetailSort],
+  );
 
   const totalAvgOT = totals.activeWorkers > 0 ? totals.totalOTHours / totals.activeWorkers : 0;
   const chartRows = [
@@ -8291,7 +8300,7 @@ function OTDashboard({
                   className="primary-button small"
                   disabled={filteredDetailRecords.length === 0}
                   onClick={() => {
-                    const rows = filteredDetailRecords.slice().sort((a, b) => b.otHours - a.otHours).map((r) => ({
+                    const rows = sortedDetailRecords.map((r) => ({
                       "รหัส": r.empId,
                       "ชื่อ-นามสกุล": r.name,
                       "หน่วยงาน": r.dept,
@@ -8319,22 +8328,20 @@ function OTDashboard({
               <table className="table">
                 <thead>
                   <tr>
-                    <th>รหัส</th>
-                    <th>ชื่อ-นามสกุล</th>
-                    <th>หน่วยงาน</th>
-                    <th>กะ</th>
-                    <th>เริ่มกะ</th>
-                    <th>สิ้นสุดกะ</th>
-                    <th>สแกนเข้า</th>
-                    <th>สแกนออก</th>
-                    <th>สถานะ</th>
-                    <th>OT (ชม.)</th>
+                    <th><SortButton columnKey="empId" setSort={setOtDetailSort} sort={otDetailSort} defaultDirection="desc">รหัส</SortButton></th>
+                    <th><SortButton columnKey="name" setSort={setOtDetailSort} sort={otDetailSort} defaultDirection="desc">ชื่อ-นามสกุล</SortButton></th>
+                    <th><SortButton columnKey="dept" setSort={setOtDetailSort} sort={otDetailSort} defaultDirection="desc">หน่วยงาน</SortButton></th>
+                    <th><SortButton columnKey="shift" setSort={setOtDetailSort} sort={otDetailSort} defaultDirection="desc">กะ</SortButton></th>
+                    <th><SortButton columnKey="shiftStart" setSort={setOtDetailSort} sort={otDetailSort} defaultDirection="desc">เริ่มกะ</SortButton></th>
+                    <th><SortButton columnKey="shiftEnd" setSort={setOtDetailSort} sort={otDetailSort} defaultDirection="desc">สิ้นสุดกะ</SortButton></th>
+                    <th><SortButton columnKey="scanIn" setSort={setOtDetailSort} sort={otDetailSort} defaultDirection="desc">สแกนเข้า</SortButton></th>
+                    <th><SortButton columnKey="scanOut" setSort={setOtDetailSort} sort={otDetailSort} defaultDirection="desc">สแกนออก</SortButton></th>
+                    <th><SortButton columnKey="status" setSort={setOtDetailSort} sort={otDetailSort} defaultDirection="desc">สถานะ</SortButton></th>
+                    <th><SortButton columnKey="otHours" setSort={setOtDetailSort} sort={otDetailSort} defaultDirection="desc">OT (ชม.)</SortButton></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredDetailRecords
-                    .slice()
-                    .sort((a, b) => b.otHours - a.otHours)
+                  {sortedDetailRecords
                     .map((rec, i) => (
                       <tr key={rec.empId + "-" + i} className={rec.otHours > 0 ? "ot-detail-has-ot" : ""}>
                         <td>{rec.empId}</td>
