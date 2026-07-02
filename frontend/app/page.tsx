@@ -4919,7 +4919,6 @@ function DayoffShiftEditor({
   const [selectedDayoff, setSelectedDayoff] = useState("all");
   const [selectedShift, setSelectedShift] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkDayoff, setBulkDayoff] = useState("");
   const [bulkShift, setBulkShift] = useState("");
   const [bulkJobSite, setBulkJobSite] = useState("");
   const [bulkShiftStart, setBulkShiftStart] = useState("");
@@ -5400,7 +5399,7 @@ function DayoffShiftEditor({
 
   function applyBulk() {
     const hasBulkTime = !!(bulkShiftStart && bulkShiftEnd);
-    if (!bulkDayoff && !bulkShift && !bulkJobSite && !hasBulkTime) return;
+    if (!bulkShift && !bulkJobSite && !hasBulkTime) return;
 
     // ก่อน map ต้องเช็ค/สร้างแถว Manpower ให้ครบทุก dept+หน่วยงานย่อย+กะ ที่ไม่ซ้ำกันในกลุ่มที่เลือก (ทำครั้งเดียวต่อ 1 คู่ที่ไม่ซ้ำ)
     const resolvedJobSiteByKey = new Map<string, string>();
@@ -5427,7 +5426,6 @@ function DayoffShiftEditor({
         let jobSite = bulkJobSite || row.jobSite;
         const shift = bulkShift || row.shift;
 
-        if (bulkDayoff) raw = setRowCol(raw, bulkDayoff, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off");
         if (bulkShift) raw = setRowCol(raw, bulkShift, "อยู่กะไหน", "shift", "กะ", "Shift");
 
         if (hasBulkTime && row.dept && shift && shift !== "ผู้จัดการ") {
@@ -5446,11 +5444,10 @@ function DayoffShiftEditor({
         if (shiftStart !== row.shiftStart) raw = setRowCol(raw, shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
         if (shiftEnd !== row.shiftEnd) raw = setRowCol(raw, shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
 
-        return { ...row, dayoff: bulkDayoff || row.dayoff, shift, jobSite, shiftStart, shiftEnd, raw };
+        return { ...row, shift, jobSite, shiftStart, shiftEnd, raw };
       }),
     );
     setSelectedIds(new Set());
-    setBulkDayoff("");
     setBulkShift("");
     setBulkJobSite("");
     setBulkShiftStart("");
@@ -5648,15 +5645,6 @@ function DayoffShiftEditor({
         return (
         <div className="dayoff-bulk-bar">
           <span className="bulk-count">{selectedIds.size} คนที่เลือก</span>
-          <select value={bulkDayoff} onChange={(e) => setBulkDayoff(e.target.value)}>
-            <option value="">เปลี่ยน Dayoff...</option>
-            <optgroup label="หยุด 1 วัน">
-              {dayoffSingle.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </optgroup>
-            <optgroup label="หยุด 2 วัน">
-              {dayoffDouble.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </optgroup>
-          </select>
           <select value={bulkJobSite} onChange={(e) => setBulkJobSite(e.target.value)}>
             <option value="">เปลี่ยนหน่วยงานย่อย...</option>
             {bulkJobSiteOptions.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -5679,7 +5667,7 @@ function DayoffShiftEditor({
           />
           <button
             className="primary-button"
-            disabled={!bulkDayoff && !bulkShift && !bulkJobSite && !(bulkShiftStart && bulkShiftEnd)}
+            disabled={!bulkShift && !bulkJobSite && !(bulkShiftStart && bulkShiftEnd)}
             onClick={applyBulk}
             style={{ height: 32, fontSize: 12, padding: "0 14px" }}
             type="button"

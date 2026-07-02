@@ -2093,7 +2093,16 @@ button {
   background: #eff6ff;
   border: 1.5px solid #bfdbfe;
   border-radius: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.dayoff-bulk-bar > * {
+  flex-shrink: 0;
+}
+
+.dayoff-bulk-bar .shift-time-input {
+  width: 110px;
 }
 
 .bulk-count {
