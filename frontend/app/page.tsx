@@ -1576,7 +1576,11 @@ async function downloadSheetRows(path: string): Promise<Record<string, unknown>[
   }
 
   const buffer = await data.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+  // raw:true stops SheetJS from auto-guessing ambiguous CSV date strings (e.g. "02-07-2026" as
+  // US-style MM-DD when day <= 12, silently producing the wrong month). Real .xlsx date cells are
+  // unaffected (their type is explicit in the file); text stays text for parseTimestamp to parse
+  // as DD-MM-YYYY, and real date cells still come through via cellDates.
+  const workbook = XLSX.read(buffer, { type: "array", cellDates: true, raw: true });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, {
     defval: "",
@@ -2364,6 +2368,11 @@ function SortButton({
   );
 }
 
+// Some exports use the Thai Buddhist Era (e.g. 2569) instead of Gregorian (2026).
+function normalizeYear(year: number): number {
+  return year > 2400 ? year - 543 : year;
+}
+
 function parseTimestamp(value: unknown) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value;
@@ -2374,17 +2383,30 @@ function parseTimestamp(value: unknown) {
   }
 
   const text = String(value ?? "").trim();
-  const thaiStyle = text.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if (thaiStyle) {
-    const [, day, month, year, hour, minute, second = "0"] = thaiStyle;
-    return new Date(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hour),
-      Number(minute),
-      Number(second),
-    );
+  if (!text) return null;
+
+  // ISO-style YYYY-MM-DD[ T]HH:MM[:SS] — unambiguous, always year-month-day.
+  const isoStyle = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+  if (isoStyle) {
+    const [, year, month, day, hour = "0", minute = "0", second = "0"] = isoStyle;
+    const m = Number(month);
+    const d = Number(day);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      return new Date(normalizeYear(Number(year)), m - 1, d, Number(hour), Number(minute), Number(second));
+    }
+  }
+
+  // DD-MM-YYYY / DD/MM/YYYY / DD.MM.YYYY [HH:MM[:SS]] — the format the time-attendance device
+  // exports. Always day-month-year (never month-day): treating it as month-day is what silently
+  // shifted every day 1-12 of every month to the wrong month (see the June/July timestamp bug).
+  const dmyStyle = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+  if (dmyStyle) {
+    const [, day, month, year, hour = "0", minute = "0", second = "0"] = dmyStyle;
+    const m = Number(month);
+    const d = Number(day);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      return new Date(normalizeYear(Number(year)), m - 1, d, Number(hour), Number(minute), Number(second));
+    }
   }
 
   const parsed = new Date(text);
