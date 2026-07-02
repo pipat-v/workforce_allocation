@@ -7831,6 +7831,27 @@ function OTDashboard({
     return () => { cancelled = true; };
   }, [activeMasterMap.dayoff_shift?.file_path]);
 
+  // Leave type per employee for the loaded day, same source ("leave_records") and
+  // shape as the Dashboard's "สถานะพนักงานรายคน" box, so absent employees show
+  // their actual leave type here too instead of a generic "ขาดงาน" badge.
+  const [leaveMap, setLeaveMap] = useState<Map<string, string>>(new Map());
+  const isoDate = reportData?.isoTargetDate ?? "";
+  useEffect(() => {
+    if (!isoDate) { setLeaveMap(new Map()); return; }
+    let cancelled = false;
+    supabase.from("leave_records").select("emp_id, leave_type").eq("leave_date", isoDate)
+      .then(({ data: rows }) => {
+        if (cancelled || !rows) return;
+        const map = new Map(rows.map((r: { emp_id: string; leave_type: string }) => [r.emp_id, r.leave_type]));
+        const absentIds = (reportData?.records ?? [])
+          .filter((r: { status: string }) => r.status === "Absent")
+          .map((r: { empId: string }) => r.empId);
+        absentIds.filter((id: string) => !map.has(id)).forEach((id: string) => map.set(id, "ขาดงาน"));
+        setLeaveMap(map);
+      });
+    return () => { cancelled = true; };
+  }, [isoDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const otRecords = useMemo((): OTRecord[] => {
     if (!reportData) return [];
     return reportData.records.map((rec) => {
@@ -7851,15 +7872,31 @@ function OTDashboard({
       dept: string; total: number; absent: number; late: number; dayoff: number;
       otWorkers: number; normalOTHours: number; publicHolidayOTHours: number;
       totalOTHours: number; activeWorkers: number;
+      sickLeave: number; personalLeave: number; ordainMaternityLeave: number;
+      vacationLeave: number; unpaidLeave: number; unspecifiedAbsent: number;
     }>();
     for (const rec of otRecords) {
       const cur = map.get(rec.dept) ?? {
         dept: rec.dept, total: 0, absent: 0, late: 0, dayoff: 0,
         otWorkers: 0, normalOTHours: 0, publicHolidayOTHours: 0,
         totalOTHours: 0, activeWorkers: 0,
+        sickLeave: 0, personalLeave: 0, ordainMaternityLeave: 0,
+        vacationLeave: 0, unpaidLeave: 0, unspecifiedAbsent: 0,
       };
       cur.total += 1;
-      if (rec.status === "Absent") cur.absent += 1;
+      if (rec.status === "Absent") {
+        cur.absent += 1;
+        // Leave types without their own column (ลาตรวจครรภ์, ลาอุบัติเหตุจากการปฏิบัติงาน,
+        // ลาทหาร) fall into "ขาดงาน" along with unspecified absences, same as records
+        // with no leave_records row at all.
+        const leaveType = leaveMap.get(rec.empId) ?? "ขาดงาน";
+        if (leaveType === "ลาป่วย") cur.sickLeave += 1;
+        else if (leaveType === "ลากิจ") cur.personalLeave += 1;
+        else if (leaveType === "ลาบวช/ลาพิธีสำคัญทางศาสนา" || leaveType === "ลาคลอด") cur.ordainMaternityLeave += 1;
+        else if (leaveType === "ลาพักร้อน") cur.vacationLeave += 1;
+        else if (leaveType === "ลาพิเศษไม่จ่าย") cur.unpaidLeave += 1;
+        else cur.unspecifiedAbsent += 1;
+      }
       if (rec.status === "Late") cur.late += 1;
       if (rec.status === "DayOff") cur.dayoff += 1;
       if (rec.status === "Present" || rec.status === "Late" || rec.status === "NoScanIn") {
@@ -7877,7 +7914,7 @@ function OTDashboard({
       map.set(rec.dept, cur);
     }
     return Array.from(map.values()).sort((a, b) => a.dept.localeCompare(b.dept, "th"));
-  }, [otRecords, isPublicHoliday]);
+  }, [otRecords, isPublicHoliday, leaveMap]);
 
   const totals = useMemo(() => ({
     total: deptOTRows.reduce((s, r) => s + r.total, 0),
@@ -7889,6 +7926,12 @@ function OTDashboard({
     publicHolidayOTHours: deptOTRows.reduce((s, r) => s + r.publicHolidayOTHours, 0),
     totalOTHours: deptOTRows.reduce((s, r) => s + r.totalOTHours, 0),
     activeWorkers: deptOTRows.reduce((s, r) => s + r.activeWorkers, 0),
+    sickLeave: deptOTRows.reduce((s, r) => s + r.sickLeave, 0),
+    personalLeave: deptOTRows.reduce((s, r) => s + r.personalLeave, 0),
+    ordainMaternityLeave: deptOTRows.reduce((s, r) => s + r.ordainMaternityLeave, 0),
+    vacationLeave: deptOTRows.reduce((s, r) => s + r.vacationLeave, 0),
+    unpaidLeave: deptOTRows.reduce((s, r) => s + r.unpaidLeave, 0),
+    unspecifiedAbsent: deptOTRows.reduce((s, r) => s + r.unspecifiedAbsent, 0),
   }), [deptOTRows]);
 
   const selectedDeptRecords = useMemo((): OTRecord[] => {
@@ -8182,12 +8225,12 @@ function OTDashboard({
                     >
                       <td className="ot-td-dept">{row.dept}</td>
                       <td className="ot-td-num">{row.total}</td>
-                      <td className="ot-td-num ot-td-muted">-</td>
-                      <td className="ot-td-num ot-td-muted">-</td>
-                      <td className="ot-td-num ot-td-muted">-</td>
-                      <td className="ot-td-num ot-td-muted">-</td>
-                      <td className="ot-td-num ot-td-absent-cell">{row.absent > 0 ? row.absent : ""}</td>
-                      <td className="ot-td-num ot-td-muted">-</td>
+                      <td className="ot-td-num">{row.sickLeave > 0 ? row.sickLeave : ""}</td>
+                      <td className="ot-td-num">{row.personalLeave > 0 ? row.personalLeave : ""}</td>
+                      <td className="ot-td-num">{row.ordainMaternityLeave > 0 ? row.ordainMaternityLeave : ""}</td>
+                      <td className="ot-td-num">{row.vacationLeave > 0 ? row.vacationLeave : ""}</td>
+                      <td className="ot-td-num ot-td-absent-cell">{row.unspecifiedAbsent > 0 ? row.unspecifiedAbsent : ""}</td>
+                      <td className="ot-td-num">{row.unpaidLeave > 0 ? row.unpaidLeave : ""}</td>
                       <td className="ot-td-num">{row.dayoff > 0 ? row.dayoff : ""}</td>
                       <td className="ot-td-num">{pctStop}%</td>
                       <td className="ot-td-num">{row.activeWorkers}</td>
@@ -8224,12 +8267,12 @@ function OTDashboard({
                 <tr className="ot-total-row">
                   <td>รวมทั้งหมด</td>
                   <td className="ot-td-num">{totals.total}</td>
-                  <td className="ot-td-num ot-td-muted">-</td>
-                  <td className="ot-td-num ot-td-muted">-</td>
-                  <td className="ot-td-num ot-td-muted">-</td>
-                  <td className="ot-td-num ot-td-muted">-</td>
-                  <td className="ot-td-num ot-td-absent-cell">{totals.absent > 0 ? totals.absent : ""}</td>
-                  <td className="ot-td-num ot-td-muted">-</td>
+                  <td className="ot-td-num">{totals.sickLeave > 0 ? totals.sickLeave : ""}</td>
+                  <td className="ot-td-num">{totals.personalLeave > 0 ? totals.personalLeave : ""}</td>
+                  <td className="ot-td-num">{totals.ordainMaternityLeave > 0 ? totals.ordainMaternityLeave : ""}</td>
+                  <td className="ot-td-num">{totals.vacationLeave > 0 ? totals.vacationLeave : ""}</td>
+                  <td className="ot-td-num ot-td-absent-cell">{totals.unspecifiedAbsent > 0 ? totals.unspecifiedAbsent : ""}</td>
+                  <td className="ot-td-num">{totals.unpaidLeave > 0 ? totals.unpaidLeave : ""}</td>
                   <td className="ot-td-num">{totals.dayoff > 0 ? totals.dayoff : ""}</td>
                   <td className="ot-td-num">
                     {Math.max(0, totals.total - totals.dayoff) > 0
@@ -8310,7 +8353,7 @@ function OTDashboard({
                       "สิ้นสุดกะ": r.shiftEnd,
                       "สแกนเข้า": r.scanIn,
                       "สแกนออก": r.scanOut,
-                      "สถานะ": STATUS_TH[r.status] ?? r.status,
+                      "สถานะ": r.status === "Absent" ? (leaveMap.get(r.empId) ?? "ขาดงาน") : (STATUS_TH[r.status] ?? r.status),
                       "OT (ชม.)": r.otHours > 0 ? r.otHours.toFixed(2) : "",
                     }));
                     const ws = XLSX.utils.json_to_sheet(rows);
@@ -8353,9 +8396,15 @@ function OTDashboard({
                         <td className="scan-cell">{scanDateBadge(rec.scanInDate)}{rec.scanIn}</td>
                         <td className="scan-cell">{scanDateBadge(rec.scanOutDate)}{rec.scanOut}</td>
                         <td>
-                          <span className={`ot-status-badge ot-status-${rec.status.toLowerCase()}`}>
-                            {STATUS_TH[rec.status] ?? rec.status}
-                          </span>
+                          {rec.status === "Absent" ? (() => {
+                            const lt = leaveMap.get(rec.empId) ?? "ขาดงาน";
+                            const lc = ({ "ลาป่วย": "leave-sick", "ลากิจ": "leave-personal", "ลาพักร้อน": "leave-vacation", "ลาตรวจครรภ์": "leave-prenatal", "ลาคลอด": "leave-maternity", "ลาอุบัติเหตุจากการปฏิบัติงาน": "leave-accident", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "leave-ordain", "ลาทหาร": "leave-military", "ลาพิเศษไม่จ่าย": "leave-unpaid" } as Record<string, string>)[lt] ?? "leave-absent";
+                            return <span className={`leave-select ${lc}`} style={{ cursor: "default" }}>{lt}</span>;
+                          })() : (
+                            <span className={`ot-status-badge ot-status-${rec.status.toLowerCase()}`}>
+                              {STATUS_TH[rec.status] ?? rec.status}
+                            </span>
+                          )}
                         </td>
                         <td className={rec.otHours > 0 ? "ot-td-positive" : "ot-td-zero"}>
                           {rec.otHours > 0 ? rec.otHours.toFixed(2) : "-"}
