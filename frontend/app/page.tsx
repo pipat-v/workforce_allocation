@@ -4549,9 +4549,11 @@ function ManpowerEditor({
   const [newShift, setNewShift] = useState("");
   const [newShiftStart, setNewShiftStart] = useState("");
   const [newShiftEnd, setNewShiftEnd] = useState("");
-  const [query, setQuery] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
+  const [jobSiteFilter, setJobSiteFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState("all");
+  const [sort, setSort_] = useState<SortState>(null);
+  const setSort = setSort_ as (sort: SortState) => void;
 
   useEffect(() => {
     if (!activeFile?.file_path) {
@@ -4679,18 +4681,29 @@ function ManpowerEditor({
   }
 
   const deptFilterOptions = Array.from(new Set(rows.map((r) => r.dept).filter(Boolean))).sort();
+  const jobSiteFilterOptions = Array.from(
+    new Set(rows.filter((r) => deptFilter === "all" || r.dept === deptFilter).map((r) => r.jobSite).filter(Boolean)),
+  ).sort();
   const shiftFilterOptions = Array.from(new Set(rows.map((r) => r.shift).filter(Boolean))).sort();
 
-  const normalizedQuery = query.trim().toLowerCase();
   const filteredRows = rows.filter((row) => {
     if (deptFilter !== "all" && row.dept !== deptFilter) return false;
+    if (jobSiteFilter !== "all" && row.jobSite !== jobSiteFilter) return false;
     if (shiftFilter !== "all" && row.shift !== shiftFilter) return false;
-    if (!normalizedQuery) return true;
-    return [row.dept, row.jobSite, row.shift].some((v) => v.toLowerCase().includes(normalizedQuery));
+    return true;
   });
 
+  const sortedRows = sort
+    ? [...filteredRows].sort((a, b) => {
+        const aValue = (a as unknown as Record<string, string>)[sort.key] ?? "";
+        const bValue = (b as unknown as Record<string, string>)[sort.key] ?? "";
+        const comparison = aValue.localeCompare(bValue, "th", { numeric: true, sensitivity: "base" });
+        return sort.direction === "asc" ? comparison : -comparison;
+      })
+    : filteredRows;
+
   function handleExport() {
-    const data = filteredRows.map((row) => ({
+    const data = sortedRows.map((row) => ({
       "หน่วยงาน": row.dept,
       "หน่วยงานย่อย": row.jobSite,
       "กะ": row.shift,
@@ -4706,24 +4719,28 @@ function ManpowerEditor({
   return (
     <section className="panel holiday-master-panel">
       <div className="ot-detail-hdr">
-        <div className="holiday-master-title" style={{ flexShrink: 0 }}>
-          <BarChart3 size={20} />
-          <h2 style={{ whiteSpace: "nowrap" }}>Manpower Plan</h2>
-          <span className="holiday-total-badge">{rows.length.toLocaleString()} หน่วยงาน + กะ</span>
-          {modifiedIds.size > 0 && <span className="modified-badge">{modifiedIds.size} แก้ไข</span>}
-        </div>
-        <div className="ot-detail-filters">
-          <input
-            className="ot-detail-search"
-            aria-label="ค้นหา manpower"
-            placeholder="ค้นหา หน่วยงาน หน่วยงานย่อย กะ"
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <select aria-label="หน่วยงาน" value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+        <div className="ot-detail-filters no-wrap">
+          <div className="holiday-master-title" style={{ flexShrink: 0 }}>
+            <BarChart3 size={20} />
+            <h2 style={{ whiteSpace: "nowrap" }}>Manpower Plan</h2>
+            {modifiedIds.size > 0 && <span className="modified-badge">{modifiedIds.size} แก้ไข</span>}
+          </div>
+          <select
+            aria-label="หน่วยงาน"
+            value={deptFilter}
+            onChange={(e) => { setDeptFilter(e.target.value); setJobSiteFilter("all"); }}
+          >
             <option value="all">ทุกหน่วยงาน</option>
             {deptFilterOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <select
+            aria-label="หน่วยงานย่อย"
+            value={jobSiteFilter}
+            onChange={(e) => setJobSiteFilter(e.target.value)}
+            style={{ maxWidth: 260 }}
+          >
+            <option value="all">ทุกหน่วยงานย่อย</option>
+            {jobSiteFilterOptions.map((j) => <option key={j} value={j}>{j}</option>)}
           </select>
           <select aria-label="กะ" value={shiftFilter} onChange={(e) => setShiftFilter(e.target.value)}>
             <option value="all">ทุกกะ</option>
@@ -4731,7 +4748,7 @@ function ManpowerEditor({
           </select>
           <button
             className="ghost-button"
-            onClick={() => { setQuery(""); setDeptFilter("all"); setShiftFilter("all"); }}
+            onClick={() => { setDeptFilter("all"); setJobSiteFilter("all"); setShiftFilter("all"); }}
             type="button"
           >
             Clear
@@ -4740,11 +4757,11 @@ function ManpowerEditor({
             <Download size={14} />
             Export Excel
           </button>
+          <button className="primary-button" style={{ flexShrink: 0 }} disabled={!rows.length || isSaving} onClick={handleSave} type="button">
+            <UploadCloud size={17} />
+            {isSaving ? "Saving..." : `Save${isDirty ? " (มีการแก้ไข)" : ""}`}
+          </button>
         </div>
-        <button className="primary-button" style={{ flexShrink: 0 }} disabled={!rows.length || isSaving} onClick={handleSave} type="button">
-          <UploadCloud size={17} />
-          {isSaving ? "Saving..." : `Save${isDirty ? " (มีการแก้ไข)" : ""}`}
-        </button>
       </div>
       <p style={{ margin: "-12px 0 0", fontSize: 13, color: "var(--muted)" }}>
         กำหนดเวลาเข้า-ออกของแต่ละหน่วยงาน + กะ — หน้า Shift & Dayoff จะดึงเวลานี้ไปใช้อัตโนมัติ
@@ -4804,16 +4821,16 @@ function ManpowerEditor({
         <table className="table">
           <thead>
             <tr>
-              <th>หน่วยงาน</th>
-              <th>หน่วยงานย่อย</th>
-              <th>กะ</th>
-              <th>เวลาเข้า</th>
-              <th>เวลาออก</th>
+              <th><SortButton columnKey="dept" setSort={setSort} sort={sort} defaultDirection="desc">หน่วยงาน</SortButton></th>
+              <th><SortButton columnKey="jobSite" setSort={setSort} sort={sort} defaultDirection="desc">หน่วยงานย่อย</SortButton></th>
+              <th><SortButton columnKey="shift" setSort={setSort} sort={sort} defaultDirection="desc">กะ</SortButton></th>
+              <th><SortButton columnKey="shiftStart" setSort={setSort} sort={sort} defaultDirection="desc">เวลาเข้า</SortButton></th>
+              <th><SortButton columnKey="shiftEnd" setSort={setSort} sort={sort} defaultDirection="desc">เวลาออก</SortButton></th>
               <th style={{ width: 40 }} />
             </tr>
           </thead>
           <tbody>
-            {filteredRows.map((row) => (
+            {sortedRows.map((row) => (
               <tr
                 key={row.id}
                 className={(row.dept && row.shift && duplicateKeys.has(rowKey(row))) || modifiedIds.has(row.id) ? "row-modified" : ""}
