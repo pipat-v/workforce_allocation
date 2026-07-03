@@ -2077,7 +2077,10 @@ function normalizeShiftLabel(value: unknown) {
   const text = String(value ?? "").trim();
   if (!text) return "";
 
-  const match = text.match(/กะ\s*(\d+)/);
+  // เฉพาะ "กะ" + ตัวเลขล้วนๆ (เช่น "กะ1", "กะ  2") เท่านั้นที่ normalize ช่องว่าง —
+  // ถ้ามีอย่างอื่นต่อท้าย (เช่น "กะ 08:00-13:00") ต้องเก็บไว้ทั้งหมด ห้ามตัดทิ้ง
+  // ไม่งั้นกะที่ตั้งชื่อด้วยเวลาเต็มจะชนกันเองตอน normalize (ดูปัญหา QC ที่เคยเกิดมาก่อน)
+  const match = text.match(/^กะ\s*(\d+)$/);
   return match ? `กะ ${match[1]}` : text;
 }
 
@@ -4698,9 +4701,13 @@ function ManpowerEditor({
       shiftStart,
       shiftEnd,
     };
-    const exists = rows.some((r) => r.dept && r.shift && rowKey(r) === rowKey(candidate));
+    // อนุญาตให้ชื่อกะซ้ำกันได้ถ้าเวลาไม่เท่ากัน (เช่น "กะ 08:00" สองแถวคนละเวลาออก) — กันแค่แถวที่ซ้ำเป๊ะทั้งเวลาด้วย
+    const exists = rows.some(
+      (r) => r.dept && r.shift && rowKey(r) === rowKey(candidate)
+        && r.shiftStart === candidate.shiftStart && r.shiftEnd === candidate.shiftEnd,
+    );
     if (exists) {
-      alert(`หน่วยงาน "${candidate.dept}"${candidate.jobSite ? ` (${candidate.jobSite})` : ""} กะ "${candidate.shift}" มีอยู่แล้ว\nหากต้องการแก้ไข กรุณาแก้ที่แถวเดิมในตาราง`);
+      alert(`หน่วยงาน "${candidate.dept}"${candidate.jobSite ? ` (${candidate.jobSite})` : ""} กะ "${candidate.shift}" เวลานี้มีอยู่แล้ว\nหากต้องการแก้ไข กรุณาแก้ที่แถวเดิมในตาราง`);
       return;
     }
     setRows((current) => [...current, candidate]);
@@ -4715,14 +4722,16 @@ function ManpowerEditor({
     setRows((current) => current.filter((r) => r.id !== id));
   }
 
+  // ซ้ำจริงเฉพาะตอนที่ dept+หน่วยงานย่อย+กะ+เวลา ตรงกันเป๊ะทุกอย่าง — ชื่อกะซ้ำกันได้ถ้าเวลาไม่เท่ากัน
+  // (เช่น "กะ 08:00" สองแถวคนละเวลาออก ไม่ถือว่าซ้ำ)
   const duplicateKeys = (() => {
     const seen = new Set<string>();
     const dupes = new Set<string>();
     for (const row of rows) {
       if (!row.dept || !row.shift) continue;
-      const key = rowKey(row);
-      if (seen.has(key)) dupes.add(key);
-      seen.add(key);
+      const exactKey = `${rowKey(row)}||${row.shiftStart}||${row.shiftEnd}`;
+      if (seen.has(exactKey)) dupes.add(exactKey);
+      seen.add(exactKey);
     }
     return dupes;
   })();
@@ -4905,7 +4914,7 @@ function ManpowerEditor({
             {sortedRows.map((row) => (
               <tr
                 key={row.id}
-                className={(row.dept && row.shift && duplicateKeys.has(rowKey(row))) || modifiedIds.has(row.id) ? "row-modified" : ""}
+                className={(row.dept && row.shift && duplicateKeys.has(`${rowKey(row)}||${row.shiftStart}||${row.shiftEnd}`)) || modifiedIds.has(row.id) ? "row-modified" : ""}
               >
                 <td>{row.dept || "—"}</td>
                 <td>{row.jobSite || <span style={{ color: "#94a3b8" }}>ทั้งหน่วยงาน</span>}</td>
@@ -4945,7 +4954,7 @@ function ManpowerEditor({
       </div>
       {duplicateKeys.size > 0 && (
         <p style={{ fontSize: 12, color: "#ef4444", marginTop: 6 }}>
-          พบหน่วยงาน + กะ ซ้ำกัน — ระบบจะใช้แถวแรกที่เจอเท่านั้น กรุณาลบแถวที่ซ้ำก่อนบันทึก
+          พบแถวที่ซ้ำเป๊ะทั้งหน่วยงาน + กะ + เวลา — ระบบจะใช้แถวแรกที่เจอเท่านั้น กรุณาลบแถวที่ซ้ำก่อนบันทึก
         </p>
       )}
     </section>
@@ -4969,6 +4978,18 @@ function DayoffShiftEditor({
   const [originalRows, setOriginalRows] = useState<DayoffShiftEditorRow[]>([]);
   const [jobSiteOptions, setJobSiteOptions] = useState<string[]>([]);
   const [manpowerRows, setManpowerRows] = useState<Array<{ dept: string; jobSite: string; shift: string; shiftStart: string; shiftEnd: string }>>([]);
+  // กะที่ auto-สร้างเองต่อ "แถวพนักงาน" ในรอบแก้ไขนี้ (ยังไม่ save) — เก็บแยกตาม rowId เพื่อให้ปรับเวลาทับ
+  // slot ที่ตัวเองเพิ่งสร้างได้ (กันปัญหา widget เลือกเวลายิง onChange 2 รอบ คลิกชั่วโมงก่อนแล้วค่อยคลิกนาที
+  // ทำให้รอบแรกสร้างกะ "ค้าง" ที่รอบสองเห็นเป็นชนกันเอง) แต่ไม่ทับ slot ที่พนักงานคนอื่นเพิ่งสร้างชนกันจริง
+  const autoShiftKeysByRowRef = useRef<Map<string, Set<string>>>(new Map());
+  function isOwnAutoSlot(rowId: string, sessionKey: string) {
+    return autoShiftKeysByRowRef.current.get(rowId)?.has(sessionKey) ?? false;
+  }
+  function markAutoSlot(rowId: string, sessionKey: string) {
+    const set = autoShiftKeysByRowRef.current.get(rowId) ?? new Set<string>();
+    set.add(sessionKey);
+    autoShiftKeysByRowRef.current.set(rowId, set);
+  }
   const [query, setQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("all");
   const [selectedJobSite, setSelectedJobSite] = useState("all");
@@ -5017,41 +5038,52 @@ function DayoffShiftEditor({
     );
   }
 
-  // dept+หน่วยงานย่อย+กะ นี้มีเวลาอื่น (คนละเวลากับที่กำลังจะตั้ง) บันทึกอยู่แล้วหรือไม่ — ถ้ามีต้องตั้งชื่อ
-  // หน่วยงานย่อยใหม่กันชนกับของเดิม (เหมือนที่แก้ปัญหา QC มีหลายเวลาไปแล้วก่อนหน้านี้)
-  function hasManpowerCollision(dept: string, jobSite: string, shift: string) {
-    const shiftKey = normalizeShiftKey(shift);
-    return manpowerRows.some((r) => r.dept === dept && r.jobSite === jobSite && normalizeShiftKey(r.shift) === shiftKey);
+  // dept+หน่วยงานย่อยเดียวกัน มีเวลานี้บันทึกไว้แล้วภายใต้ชื่อกะอื่นหรือไม่ — ถ้ามีให้เอาชื่อกะนั้นมาใช้ซ้ำ
+  // แทนที่จะสร้างกะใหม่ซ้ำเวลาเดิม
+  function findManpowerByTime(dept: string, jobSite: string, shiftStart: string, shiftEnd: string) {
+    return manpowerRows.find(
+      (r) => r.dept === dept && r.jobSite === jobSite && r.shiftStart === shiftStart && r.shiftEnd === shiftEnd,
+    );
   }
 
-  // ตัดส่วนต่อท้าย " (HH:MM-HH:MM)" ที่ระบบเติมเองตอนสร้างกะใหม่ออกก่อนเช็คซ้ำ — กันไม่ให้ต่อท้ายซ้อนกันหลายชั้น
-  // เวลาผู้ใช้แก้เวลาเข้ากับเวลาออกทีละครั้ง (2 อีเวนต์แยกกัน) จากหน่วยงานย่อยที่เพิ่งถูกตั้งชื่อใหม่ไปแล้ว
-  function stripTimeSuffix(jobSite: string): string {
-    return jobSite.replace(/\s\(\d{2}:\d{2}-\d{2}:\d{2}\)$/, "");
+  // ตั้งชื่อกะใหม่ตามเวลาเริ่มงานเสมอ (เช่น "กะ 13:00") — ยอมให้ชื่อซ้ำกับกะอื่นที่ dept+หน่วยงานย่อย
+  // เดียวกันได้ถ้าขึ้นต้นเวลาเดียวกันแต่เวลาออกต่างกัน (แต่ละคนยังเก็บเวลาของตัวเองไว้ในแถวตัวเอง
+  // ไม่ถูกทับตอน Save เพราะ handleSave เชื่อเวลาที่ตั้งไว้แล้วของแต่ละแถวเป็นหลัก ไม่ทับด้วยเวลา "กะ" กลาง)
+  function buildTimeBasedShiftName(shiftStart: string) {
+    return `กะ ${shiftStart}`;
   }
 
-  // ตัดสินใจว่าเวลาใหม่ที่ตั้งควรใช้ชื่อหน่วยงานย่อยเดิม หรือต้องตั้งชื่อใหม่ต่อท้ายด้วยเวลา
+  // ตัดสินใจว่าเวลาใหม่ที่ตั้งควรใช้ชื่อกะเดิม เอาชื่อกะที่มีเวลานี้อยู่แล้วมาใช้ซ้ำ หรือต้องตั้งชื่อกะใหม่ตามเวลาเริ่มงาน
+  // (เดิมระบบจะต่อท้ายชื่อ "หน่วยงานย่อย" ด้วยเวลาแทน ทำให้หน่วยงานย่อยงอกใหม่ทุกครั้งที่มีคนเวลาไม่ตรงกัน — ดูปัญหา QC ก่อนหน้านี้)
   function resolveTimeChange(dept: string, jobSite: string, shift: string, shiftStart: string, shiftEnd: string) {
-    const baseJobSite = stripTimeSuffix(jobSite);
-    if (findManpowerExact(dept, baseJobSite, shift, shiftStart, shiftEnd)) {
-      return { jobSite: baseJobSite, isNew: false };
+    if (findManpowerExact(dept, jobSite, shift, shiftStart, shiftEnd)) {
+      return { jobSite, shift, isNew: false };
     }
-    const collision = hasManpowerCollision(dept, baseJobSite, shift);
-    const finalJobSite = collision ? `${baseJobSite || "ทั้งหน่วยงาน"} (${shiftStart}-${shiftEnd})` : baseJobSite;
-    return { jobSite: finalJobSite, isNew: true };
+    const sameTime = findManpowerByTime(dept, jobSite, shiftStart, shiftEnd);
+    if (sameTime) {
+      return { jobSite, shift: sameTime.shift, isNew: false };
+    }
+    const newShift = buildTimeBasedShiftName(shiftStart);
+    return { jobSite, shift: newShift, isNew: true };
   }
 
   // เพิ่มแถว Manpower ใหม่ (ถ้ายังไม่มีแถวนี้เป๊ะๆ อยู่แล้ว) และตั้งสถานะว่ามีการแก้ไข Manpower รอบันทึก
-  function addManpowerRowIfNeeded(dept: string, jobSite: string, shift: string, shiftStart: string, shiftEnd: string) {
+  // ถ้าเป็น slot ที่แถวนี้เพิ่ง auto-สร้างเองในรอบแก้ไขนี้ (เช่น จาก widget เลือกเวลาที่ยิง onChange 2 รอบ)
+  // ให้ปรับเวลาทับ slot เดิมแทนที่จะเพิ่มแถวซ้ำ — แต่ถ้าเป็นกะที่มีอยู่จริงอยู่แล้ว (คนอื่นอาจใช้อยู่) ห้ามทับ
+  function addManpowerRowIfNeeded(rowId: string, dept: string, jobSite: string, shift: string, shiftStart: string, shiftEnd: string) {
+    const shiftKey = normalizeShiftKey(shift);
+    const sessionKey = `${dept}||${jobSite}||${shiftKey}`;
+    const isOwnSlot = isOwnAutoSlot(rowId, sessionKey);
     setManpowerRows((prev) => {
-      const shiftKey = normalizeShiftKey(shift);
-      const exists = prev.some(
-        (r) => r.dept === dept && r.jobSite === jobSite && normalizeShiftKey(r.shift) === shiftKey
-          && r.shiftStart === shiftStart && r.shiftEnd === shiftEnd,
-      );
-      if (exists) return prev;
-      return [...prev, { dept, jobSite, shift, shiftStart, shiftEnd }];
+      const idx = prev.findIndex((r) => r.dept === dept && r.jobSite === jobSite && normalizeShiftKey(r.shift) === shiftKey);
+      if (idx === -1) return [...prev, { dept, jobSite, shift, shiftStart, shiftEnd }];
+      if (prev[idx].shiftStart === shiftStart && prev[idx].shiftEnd === shiftEnd) return prev;
+      if (!isOwnSlot) return prev; // มีอยู่แล้วจริงและไม่ใช่ slot ที่เราสร้างเอง ห้ามทับเวลาเดิม
+      const next = [...prev];
+      next[idx] = { dept, jobSite, shift, shiftStart, shiftEnd };
+      return next;
     });
+    markAutoSlot(rowId, sessionKey);
     setManpowerDirty(true);
   }
 
@@ -5199,6 +5231,21 @@ function DayoffShiftEditor({
     for (const r of rows) { if (r.shift) byKey.set(normalizeShiftKey(r.shift), r.shift); }
     return Array.from(byKey.values()).sort();
   }, [manpowerRows, rows]);
+
+  // เฉพาะกะที่มีคนอยู่จริงอย่างน้อย 1 คน ใช้กับ dropdown filter ด้านบนเท่านั้น — filter ด้วยกะที่ไม่มีใครเลย
+  // จะได้ตารางว่างเปล่าเสมอ ไม่มีประโยชน์ (ต่างจาก shiftOptions ที่ยังต้องมีกะจาก Manpower เผื่อไว้ตั้งค่าคนใหม่)
+  // cascading: กรองตามหน่วยงาน/หน่วยงานย่อยที่เลือกอยู่ด้วย เหมือน availableJobSiteOptions/availableDeptOptions
+  const shiftFilterOptions = useMemo(() => {
+    const base = rows.filter((r) => {
+      if (selectedDept !== "all" && r.dept !== selectedDept) return false;
+      if (selectedJobSite === "__empty__") return r.jobSite === "";
+      if (selectedJobSite !== "all" && r.jobSite !== selectedJobSite) return false;
+      return true;
+    });
+    const byKey = new Map<string, string>();
+    for (const r of base) { if (r.shift) byKey.set(normalizeShiftKey(r.shift), r.shift); }
+    return Array.from(byKey.values()).sort();
+  }, [rows, selectedDept, selectedJobSite]);
 
   // ค่าฐานของตัวเลือกกะต่อ (หน่วยงาน, หน่วยงานย่อย) หนึ่งคู่ คำนวณครั้งเดียวต่อคู่ที่พบจริง
   // ไม่ใช่คำนวณใหม่ทุกแถวพนักงาน (439 คน) — จุดที่ทำให้ตารางช้าตอน render/clear filter
@@ -5412,19 +5459,22 @@ function DayoffShiftEditor({
     const newEnd = field === "shiftEnd" ? value : row.shiftEnd;
 
     let finalJobSite = row.jobSite;
+    let finalShift = row.shift;
     if (newStart && newEnd) {
       const resolved = resolveTimeChange(row.dept, row.jobSite, row.shift, newStart, newEnd);
       finalJobSite = resolved.jobSite;
-      if (resolved.isNew) addManpowerRowIfNeeded(row.dept, finalJobSite, row.shift, newStart, newEnd);
+      finalShift = resolved.shift;
+      if (resolved.isNew) addManpowerRowIfNeeded(row.id, row.dept, finalJobSite, finalShift, newStart, newEnd);
     }
 
     setRows((current) =>
       current.map((r) => {
         if (r.id !== row.id) return r;
         let raw = setRowCol(r.raw, finalJobSite, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
+        raw = setRowCol(raw, finalShift, "อยู่กะไหน", "shift", "กะ", "Shift");
         raw = setRowCol(raw, newStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
         raw = setRowCol(raw, newEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
-        return { ...r, jobSite: finalJobSite, shiftStart: newStart, shiftEnd: newEnd, raw };
+        return { ...r, jobSite: finalJobSite, shift: finalShift, shiftStart: newStart, shiftEnd: newEnd, raw };
       }),
     );
   }
@@ -5458,7 +5508,7 @@ function DayoffShiftEditor({
     if (!bulkShift && !bulkJobSite && !hasBulkTime) return;
 
     // ก่อน map ต้องเช็ค/สร้างแถว Manpower ให้ครบทุก dept+หน่วยงานย่อย+กะ ที่ไม่ซ้ำกันในกลุ่มที่เลือก (ทำครั้งเดียวต่อ 1 คู่ที่ไม่ซ้ำ)
-    const resolvedJobSiteByKey = new Map<string, string>();
+    const resolvedByKey = new Map<string, { jobSite: string; shift: string }>();
     if (hasBulkTime) {
       for (const row of rows) {
         if (!selectedIds.has(row.id)) continue;
@@ -5466,10 +5516,10 @@ function DayoffShiftEditor({
         const shift = bulkShift || row.shift;
         if (!row.dept || !shift || shift === "ผู้จัดการ") continue;
         const key = `${row.dept}||${jobSite}||${normalizeShiftKey(shift)}`;
-        if (resolvedJobSiteByKey.has(key)) continue;
+        if (resolvedByKey.has(key)) continue;
         const resolved = resolveTimeChange(row.dept, jobSite, shift, bulkShiftStart, bulkShiftEnd);
-        resolvedJobSiteByKey.set(key, resolved.jobSite);
-        if (resolved.isNew) addManpowerRowIfNeeded(row.dept, resolved.jobSite, shift, bulkShiftStart, bulkShiftEnd);
+        resolvedByKey.set(key, { jobSite: resolved.jobSite, shift: resolved.shift });
+        if (resolved.isNew) addManpowerRowIfNeeded(row.id, row.dept, resolved.jobSite, resolved.shift, bulkShiftStart, bulkShiftEnd);
       }
     }
 
@@ -5480,13 +5530,12 @@ function DayoffShiftEditor({
         let shiftStart = row.shiftStart;
         let shiftEnd = row.shiftEnd;
         let jobSite = bulkJobSite || row.jobSite;
-        const shift = bulkShift || row.shift;
-
-        if (bulkShift) raw = setRowCol(raw, bulkShift, "อยู่กะไหน", "shift", "กะ", "Shift");
+        let shift = bulkShift || row.shift;
 
         if (hasBulkTime && row.dept && shift && shift !== "ผู้จัดการ") {
           const key = `${row.dept}||${jobSite}||${normalizeShiftKey(shift)}`;
-          jobSite = resolvedJobSiteByKey.get(key) ?? jobSite;
+          const resolved = resolvedByKey.get(key);
+          if (resolved) { jobSite = resolved.jobSite; shift = resolved.shift; }
           shiftStart = bulkShiftStart;
           shiftEnd = bulkShiftEnd;
         } else if (bulkShift || bulkJobSite) {
@@ -5496,6 +5545,7 @@ function DayoffShiftEditor({
           shiftEnd = locked?.shiftEnd ?? "";
         }
 
+        if (shift !== row.shift) raw = setRowCol(raw, shift, "อยู่กะไหน", "shift", "กะ", "Shift");
         if (jobSite !== row.jobSite) raw = setRowCol(raw, jobSite, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
         if (shiftStart !== row.shiftStart) raw = setRowCol(raw, shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
         if (shiftEnd !== row.shiftEnd) raw = setRowCol(raw, shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
@@ -5511,9 +5561,11 @@ function DayoffShiftEditor({
   }
 
   async function handleSave() {
-    // นับคนที่มีกะแล้วแต่ยังไม่มีข้อมูลใน Manpower Plan (ไม่นับคนที่ยังไม่ได้ตั้งกะ หรือผู้จัดการซึ่งไม่มีกะตายตัวอยู่แล้ว)
+    // นับคนที่มีกะแล้วแต่ยังไม่มีเวลาของตัวเองและไม่มีข้อมูลใน Manpower Plan ให้อ้างอิง
+    // (ไม่นับคนที่ยังไม่ได้ตั้งกะ ผู้จัดการซึ่งไม่มีกะตายตัวอยู่แล้ว หรือคนที่มีเวลาของตัวเองครบแล้ว)
     const unresolved = rows.filter(
-      (row) => row.shift && row.shift !== "ผู้จัดการ" && !lookupManpower(row.dept, row.jobSite, row.shift),
+      (row) => row.shift && row.shift !== "ผู้จัดการ" && !(row.shiftStart && row.shiftEnd)
+        && !lookupManpower(row.dept, row.jobSite, row.shift),
     );
     if (unresolved.length > 0) {
       const ok = window.confirm(
@@ -5532,13 +5584,18 @@ function DayoffShiftEditor({
         const mpRowsToSave: ManpowerEditorRow[] = manpowerRows.map((r, i) => ({ id: `mp-${i}`, ...r }));
         await saveManpowerRows(mpRowsToSave);
         setManpowerDirty(false);
+        // กะที่ auto-สร้างรอบนี้กลายเป็นข้อมูลจริงที่บันทึกแล้ว — รอบแก้ไขถัดไปห้ามทับอีก ต้องเริ่ม track ใหม่
+        autoShiftKeysByRowRef.current = new Map();
       }
       const resolved = rows.map((row) => {
         // ผู้จัดการไม่มีกะตายตัว ไม่ต้อง resolve เวลา ปล่อยตามเดิม (มักจะว่างอยู่แล้ว)
         if (row.shift === "ผู้จัดการ") return row;
+        // ถ้าแถวนี้มีเวลาของตัวเองครบอยู่แล้ว ให้เชื่อเวลานั้นเป็นหลัก ไม่ทับด้วยเวลา "ทางการ" ของกะชื่อเดียวกัน —
+        // เพราะยอมให้หลายคนใช้ชื่อกะซ้ำกันได้ (เช่น "กะ 08:00" ทั้งคู่) แต่เวลาออกจริงต่างกัน
+        // แต่ละคนต้องเก็บเวลาของตัวเองไว้ในแถวตัวเอง ไม่ถูกทับให้เท่ากับคนแรกที่ตั้งชื่อนี้
+        if (row.shiftStart && row.shiftEnd) return row;
         const locked = lookupManpower(row.dept, row.jobSite, row.shift);
-        // ถ้าไม่พบใน Manpower ต้องล้างเวลาทิ้ง ไม่ใช่ปล่อยเวลาเก่าที่อาจไม่ตรงกับกะปัจจุบันค้างไว้
-        // (สอดคล้องกับข้อความแจ้งเตือนก่อนบันทึกด้านบน และกับ updateRow/applyBulk/ปุ่มสลับกะ)
+        // ไม่มีเวลาของตัวเองเลย ต้องหาเวลามาเติม — ถ้าไม่พบใน Manpower ด้วยก็ปล่อยว่างไป
         const shiftStart = locked?.shiftStart ?? "";
         const shiftEnd = locked?.shiftEnd ?? "";
         if (shiftStart === row.shiftStart && shiftEnd === row.shiftEnd) return row;
@@ -5598,11 +5655,15 @@ function DayoffShiftEditor({
           const val = e.target.value;
           setSelectedDept(val);
           // reset jobSite ถ้าค่าที่เลือกไม่มีในหน่วยงานใหม่
+          const nextBase = val === "all" ? rows : rows.filter((r) => r.dept === val);
           if (selectedJobSite !== "all" && selectedJobSite !== "__empty__") {
-            const nextJobSites = new Set(
-              (val === "all" ? rows : rows.filter((r) => r.dept === val)).map((r) => r.jobSite)
-            );
+            const nextJobSites = new Set(nextBase.map((r) => r.jobSite));
             if (!nextJobSites.has(selectedJobSite)) setSelectedJobSite("all");
+          }
+          // reset shift ถ้ากะที่เลือกอยู่ไม่มีในหน่วยงานใหม่ (cascade เหมือนหน่วยงานย่อย)
+          if (selectedShift !== "all" && selectedShift !== "__empty__") {
+            const nextShiftKeys = new Set(nextBase.map((r) => normalizeShiftKey(r.shift)));
+            if (!nextShiftKeys.has(normalizeShiftKey(selectedShift))) setSelectedShift("all");
           }
         }}>
           <option value="all">ทุกหน่วยงาน</option>
@@ -5611,14 +5672,19 @@ function DayoffShiftEditor({
         <select value={selectedJobSite} onChange={(e) => {
           const val = e.target.value;
           setSelectedJobSite(val);
+          const nextBase =
+            val === "all" ? rows :
+            val === "__empty__" ? rows.filter((r) => r.jobSite === "") :
+            rows.filter((r) => r.jobSite === val);
           // reset dept ถ้าค่าที่เลือกไม่มีในหน้างานใหม่
           if (selectedDept !== "all") {
-            const nextDepts = new Set(
-              val === "all" ? rows.map((r) => r.dept) :
-              val === "__empty__" ? rows.filter((r) => r.jobSite === "").map((r) => r.dept) :
-              rows.filter((r) => r.jobSite === val).map((r) => r.dept)
-            );
+            const nextDepts = new Set(nextBase.map((r) => r.dept));
             if (!nextDepts.has(selectedDept)) setSelectedDept("all");
+          }
+          // reset shift ถ้ากะที่เลือกอยู่ไม่มีในหน่วยงานย่อยใหม่
+          if (selectedShift !== "all" && selectedShift !== "__empty__") {
+            const nextShiftKeys = new Set(nextBase.map((r) => normalizeShiftKey(r.shift)));
+            if (!nextShiftKeys.has(normalizeShiftKey(selectedShift))) setSelectedShift("all");
           }
         }}>
           <option value="all">ทุกหน่วยงานย่อย</option>
@@ -5638,7 +5704,7 @@ function DayoffShiftEditor({
         <select value={selectedShift} onChange={(e) => setSelectedShift(e.target.value)}>
           <option value="all">ทุก Shift</option>
           <option value="__empty__">— ยังไม่ได้ตั้ง</option>
-          {shiftOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+          {shiftFilterOptions.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
         <button
           className="ghost-button"
