@@ -8522,6 +8522,7 @@ type HelpSection = {
   icon: typeof HomeIcon;
   summary: string;
   points: string[];
+  image?: string;
   openTab?: TabId;
   openMasterSubTab?: MasterSubTab;
   openOtSubTab?: OtSubTab;
@@ -8536,6 +8537,7 @@ const helpSections: HelpSection[] = [
     group: "ภาพรวม",
     icon: ClipboardCheck,
     summary: "ระบบต้องมีข้อมูลตั้งต้นให้ครบก่อน ถึงจะใช้งานหน้าอื่นๆ ได้เต็มที่ ทำตามลำดับนี้ในการใช้งานครั้งแรก",
+    image: "/help/getting-started.svg",
     points: [
       "1) ไปที่ Master Data → Master Files แล้วอัปโหลดไฟล์รายชื่อพนักงาน (ต้องมีให้ครบ 4 ชนิด: รายชื่อพนักงาน, Manpower Plan, Skill Matrix, Dayoff & Shift) ระบบจะยังสร้าง Daily Run ไม่ได้จนกว่าจะมีไฟล์ทั้ง 4 ชนิดนี้ active อยู่",
       "2) ไปที่ Master Data → Manpower ตั้งเวลาเข้า-ออกของแต่ละหน่วยงาน+หน่วยงานย่อย+กะ ให้ครบ เพราะหน้า Shift & Dayoff จะดึงเวลานี้ไปใช้อัตโนมัติ",
@@ -8552,6 +8554,7 @@ const helpSections: HelpSection[] = [
     icon: HomeIcon,
     openTab: "dashboard",
     summary: "หน้าสรุปภาพรวมการเข้างานของวันที่เลือก ใช้ดูสถานะรายวันและยืนยันตรวจสอบการเข้างาน",
+    image: "/help/dashboard.png",
     points: [
       "การ์ดตัวเลข 5 ใบด้านบน (มาทำงาน / ตรงเวลา / มาสาย / ขาด-ลา / วันหยุด) กดได้ — จะเลื่อนลงไปที่ตารางรายละเอียดและกรองให้อัตโนมัติ",
       "กล่อง \"ยืนยันตรวจสอบการเข้างาน\": หัวหน้างานพิมพ์ชื่อแล้วกด \"ยืนยันรับทราบ\" เพื่อบันทึกว่าตรวจสอบข้อมูลวันนั้นแล้ว — ถ้าไม่กรอกชื่อ ระบบจะเตือนไม่ให้บันทึก กดปุ่ม \"แก้ไข\" เพื่อยกเลิกและยืนยันใหม่ได้",
@@ -8568,6 +8571,7 @@ const helpSections: HelpSection[] = [
     icon: UploadCloud,
     openTab: "timestamp",
     summary: "หน้าอัปโหลดไฟล์สแกนเข้า-ออกประจำวัน เพื่อสร้าง Daily Run ที่หน้าอื่นๆ ใช้อ้างอิงข้อมูล",
+    image: "/help/timestamp.png",
     points: [
       "ลากไฟล์วาง หรือคลิกเลือกไฟล์ (.csv, .xlsx, .xls) แล้วกด \"Create Daily Run\"",
       "ต้องมี Master Data ครบทั้ง 4 ไฟล์ (active อยู่) ก่อน ปุ่ม Create Daily Run ถึงจะกดได้ ไม่งั้นระบบจะเตือนว่า \"กรุณา upload master files ให้ครบก่อนสร้าง daily run\"",
@@ -8582,6 +8586,7 @@ const helpSections: HelpSection[] = [
     icon: BriefcaseBusiness,
     openTab: "results",
     summary: "ตารางรายชื่อพนักงานที่มาทำงาน (ตรงเวลา/มาสาย) ของวันที่เลือก แบบแบ่งหน้า",
+    image: "/help/results.png",
     points: [
       "ค้นหา, กรองตามหน่วยงาน, กรองตามสถานะ (เฉพาะตรงเวลา/มาสาย ไม่รวมขาดงาน) และปุ่ม Clear ล้างตัวกรอง",
       "แสดงคอลัมน์ รหัสพนักงาน, ชื่อ, หน่วยงาน, ตำแหน่ง, หน่วยงานย่อย, กะ, เวลาสแกนเข้า, สถานะ",
@@ -8595,6 +8600,7 @@ const helpSections: HelpSection[] = [
     icon: Database,
     openTab: "timestamp_dept",
     summary: "ตารางข้อมูลการสแกนเข้า-ออกแบบเต็ม รวมทุกสถานะ (มาทำงาน/มาสาย/ขาดงาน/วันหยุด/ขาดสแกนเข้า/รอเข้างาน) ผูกกับหน่วยงานและกะ",
+    image: "/help/timestamp-dept.png",
     points: [
       "ค้นหา, กรองตามหน่วยงาน, กรองตามสถานะแบบละเอียด, เรียงลำดับได้ทุกคอลัมน์ (กดหัวตาราง), แบ่งหน้า 10 แถว/หน้า",
       "ปุ่ม \"Export Excel\" ใช้งานได้จริง — export ตามตัวกรอง/การเรียงลำดับที่ตั้งไว้ รวมเวลาสแกนเข้า-ออก และจำนวนนาทีที่มาสาย",
@@ -8609,6 +8615,7 @@ const helpSections: HelpSection[] = [
     openTab: "master",
     openMasterSubTab: "files",
     summary: "จัดการไฟล์รายชื่อพนักงานรวม (Employee Master + Dayoff/Shift + Skill) และไฟล์ Manpower Plan",
+    image: "/help/master-files.png",
     points: [
       "การ์ดซ้าย (ไฟล์รวมพนักงาน): \"เทมเพลตเปล่า\" ดาวน์โหลดไฟล์ตัวอย่างเปล่า, \"Export ข้อมูลปัจจุบัน\" ดึงข้อมูลปัจจุบันทั้งหมดออกมาเป็นไฟล์เดียว",
       "อัปโหลดไฟล์ใหม่ (.xlsx/.xls ไม่เกิน 50MB) แล้วกด \"ตรวจสอบก่อนอัพโหลด\" — ระบบจะเปิดหน้าต่างเทียบความแตกต่าง (เพิ่ม/ลบ/แก้ไข/ไม่เปลี่ยน) ให้ตรวจสอบก่อนกดยืนยันจริง",
@@ -8626,6 +8633,7 @@ const helpSections: HelpSection[] = [
     openTab: "master",
     openMasterSubTab: "manpower",
     summary: "ตารางกำหนดเวลาเข้า-ออกงานของแต่ละหน่วยงาน + หน่วยงานย่อย + กะ ซึ่งเป็นต้นทางเวลาที่หน้า Shift & Dayoff ใช้อัตโนมัติ",
+    image: "/help/manpower.png",
     points: [
       "กรองตามหน่วยงาน/หน่วยงานย่อย/กะ และเรียงลำดับได้ทุกคอลัมน์ (กด 1 ครั้งเรียงมากไปน้อย กดอีกครั้งเรียงน้อยไปมาก)",
       "เพิ่มแถวใหม่: กรอกหน่วยงาน (จำเป็น), หน่วยงานย่อย (เว้นว่างได้ = ใช้กับทั้งหน่วยงาน), ชื่อกะ, เวลาเข้า-ออก แล้วกด \"+ เพิ่มหน่วยงาน/กะ\" — ถ้าไม่กรอกเวลาออก ระบบจะตั้งให้อัตโนมัติเป็นเวลาเข้า+9 ชั่วโมง",
@@ -8643,6 +8651,7 @@ const helpSections: HelpSection[] = [
     openTab: "master",
     openMasterSubTab: "holidays",
     summary: "จัดการวันหยุดตามปฏิทินพุทธศาสนา (วันพระ) ที่ใช้ประกอบการคำนวณวันหยุด/กะของพนักงาน",
+    image: "/help/holy-days.png",
     points: [
       "เพิ่มวันหยุด: เลือกวันที่ + ชื่อ + ประเภท (วันพระ/วันหยุดราชการ/วันหยุดบริษัท) แล้วกด \"+ เพิ่มวันหยุด\"",
       "มีแท็บปีให้เลือกดูย้อนหลัง/ล่วงหน้า และลบรายการด้วยปุ่ม × ที่แต่ละแถว",
@@ -8657,6 +8666,7 @@ const helpSections: HelpSection[] = [
     openTab: "master",
     openMasterSubTab: "public_holidays",
     summary: "จัดการวันหยุดราชการ/วันหยุดบริษัทประจำปี ซึ่งมีผลต่อการคำนวณ OT วันหยุดในหน้า OT Dashboard",
+    image: "/help/public-holidays.png",
     points: [
       "ระบบจะเติมวันหยุดราชการที่รู้จักให้อัตโนมัติในการเปิดหน้าครั้งแรก (เติมเฉพาะวันที่ยังไม่มีในระบบ ไม่ทับข้อมูลเดิม)",
       "เพิ่ม/ลบวันหยุดได้เหมือนหน้าวันพระ และมีคอลัมน์หมายเหตุแจ้งถ้าวันนั้นตรงกับวันพระด้วย",
@@ -8671,6 +8681,7 @@ const helpSections: HelpSection[] = [
     openTab: "master",
     openMasterSubTab: "dayoff_shift",
     summary: "หน้าหลักสำหรับกำหนดวันหยุดประจำสัปดาห์และกะทำงานของพนักงานแต่ละคน ซึ่งเป็นข้อมูลจริงที่ระบบใช้คำนวณการมาสาย/ขาดงาน",
+    image: "/help/dayoff-shift.png",
     points: [
       "ค้นหา/กรองตามหน่วยงาน, หน่วยงานย่อย, วันหยุด, กะ",
       "แก้ไขทีละคนได้โดยตรงในตาราง (เลือกหน่วยงานย่อย, วันหยุด, กะ จากดรอปดาวน์)",
@@ -8688,6 +8699,7 @@ const helpSections: HelpSection[] = [
     icon: LayoutGrid,
     openTab: "skill",
     summary: "หน้าจัดการระดับความชำนาญ (Skill) ของพนักงานแต่ละคนในแต่ละทักษะ",
+    image: "/help/skill-matrix.png",
     points: [
       "ค้นหา/กรองตามหน่วยงาน, ทักษะ, กะ",
       "แก้ทีละคนได้จากดรอปดาวน์ Level ในตาราง (0=ยังไม่ระบุ, 1=น้อย, 2=ปานกลาง, 3=ถนัด)",
@@ -8703,6 +8715,7 @@ const helpSections: HelpSection[] = [
     icon: BarChart3,
     openTab: "report",
     summary: "หน้าวิเคราะห์เชิงลึกของการเข้างานในวันที่เลือก แยกดูตามหน่วยงานได้ พร้อมสถานะการตรวจสอบของหัวหน้างาน",
+    image: "/help/report-dashboard.png",
     points: [
       "เลือกหน่วยงานจากดรอปดาวน์ แล้วกด \"โหลดข้อมูล\" เพื่อดึงข้อมูลล่าสุด",
       "กราฟแท่ง \"การเข้างานรายแผนก\" กดที่แท่งไหนได้ จะเจาะลึกไปดูเฉพาะหน่วยงานนั้นทั้งหน้า (มีปุ่ม \"ดูทั้งหมด\" ไว้ยกเลิกการเจาะจง)",
@@ -8720,6 +8733,7 @@ const helpSections: HelpSection[] = [
     openTab: "ot",
     openOtSubTab: "chart",
     summary: "กราฟแท่งเปรียบเทียบชั่วโมง OT เฉลี่ยต่อคนต่อวัน แยกตามหน่วยงาน เทียบกับเป้าหมายที่ตั้งไว้",
+    image: "/help/ot-chart.png",
     points: [
       "มีเส้นเป้าหมาย (target) ในกราฟ ปรับได้จากปุ่ม \"⚙ ตั้งค่าเป้าหมาย\" ที่มุมบน",
       "ต้องเลือกวันที่และโหลดข้อมูลการเข้างานก่อน ถึงจะเห็นกราฟ",
@@ -8733,6 +8747,7 @@ const helpSections: HelpSection[] = [
     openTab: "ot",
     openOtSubTab: "summary",
     summary: "ตารางสรุป OT แยกตามหน่วยงาน (จำนวนคน, ขาด/ลา, % OT, ชั่วโมง OT ปกติ/วันหยุด, ผู้จัดการที่รับผิดชอบ)",
+    image: "/help/ot-summary.png",
     points: [
       "กดที่แถวหน่วยงานไหน จะพาไปหน้า \"สรุปรายพนักงาน\" พร้อมกรองเฉพาะหน่วยงานนั้นให้อัตโนมัติ",
       "ดรอปดาวน์ \"ผจก.\" ในแต่ละแถว เลือกผู้จัดการที่ดูแลหน่วยงานนั้นได้ (ดึงรายชื่อจากคนที่มีคำว่า \"ผู้จัดการ\" ในหน่วยงานย่อย)",
@@ -8747,6 +8762,7 @@ const helpSections: HelpSection[] = [
     openTab: "ot",
     openOtSubTab: "detail",
     summary: "ตารางชั่วโมง OT รายบุคคล เรียงจากมากไปน้อย พร้อมตัวกรองและ Export",
+    image: "/help/ot-detail.png",
     points: [
       "ค้นหา/กรองตามหน่วยงาน, หน่วยงานย่อย, กะ",
       "ปุ่ม \"Export Excel\" ใช้งานได้จริง export ตามตัวกรองที่ตั้งไว้",
@@ -8761,6 +8777,7 @@ const helpSections: HelpSection[] = [
     icon: Settings,
     openTab: "setting",
     summary: "หน้าตั้งค่าระบบ — ขณะนี้ยังไม่เปิดใช้งาน",
+    image: "/help/setting.png",
     points: [
       "หน้านี้ยังอยู่ระหว่างพัฒนา ยังไม่มีตัวเลือกให้ตั้งค่าจริง",
     ],
@@ -8907,6 +8924,17 @@ function HelpGuidePage({
                           ) : null}
                         </div>
                         <p className="help-section-summary">{highlightMatches(s.summary, q)}</p>
+                        {s.image ? (
+                          <a
+                            className="help-section-image-link"
+                            href={s.image}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="คลิกเพื่อดูภาพขนาดเต็ม"
+                          >
+                            <img className="help-section-image" src={s.image} alt={`ตัวอย่างหน้าจอ: ${s.title}`} loading="lazy" />
+                          </a>
+                        ) : null}
                         <ul className="help-section-points">
                           {steps.map((p, i) => (
                             <li key={i}>{highlightMatches(p, q)}</li>

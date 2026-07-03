@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1520 300" width="1520" height="300" font-family="Tahoma, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#10b981" />
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1520" height="300" fill="#f5f7fb" />
+
+  <!-- connectors -->
+  <line x1="272" y1="150" x2="308" y2="150" stroke="#10b981" stroke-width="2.5" marker-end="url(#arrow)" />
+  <line x1="580" y1="150" x2="616" y2="150" stroke="#10b981" stroke-width="2.5" marker-end="url(#arrow)" />
+  <line x1="888" y1="150" x2="924" y2="150" stroke="#10b981" stroke-width="2.5" marker-end="url(#arrow)" />
+  <line x1="1196" y1="150" x2="1232" y2="150" stroke="#10b981" stroke-width="2.5" marker-end="url(#arrow)" />
+
+  <!-- step 1 -->
+  <g>
+    <rect x="10" y="40" width="262" height="220" rx="14" fill="#ffffff" stroke="#dde4ee" />
+    <circle cx="46" cy="76" r="18" fill="#10b981" />
+    <text x="46" y="82" text-anchor="middle" fill="#ffffff" font-size="18" font-weight="700">1</text>
+    <text x="80" y="82" fill="#142033" font-size="16" font-weight="700">Master Files</text>
+    <text x="34" y="118" fill="#64748b" font-size="13">อัปโหลดไฟล์รายชื่อพนักงาน</text>
+    <text x="34" y="138" fill="#64748b" font-size="13">ให้ครบ 4 ชนิด: รายชื่อพนักงาน,</text>
+    <text x="34" y="158" fill="#64748b" font-size="13">Manpower Plan, Skill Matrix,</text>
+    <text x="34" y="178" fill="#64748b" font-size="13">Dayoff &amp; Shift</text>
+    <text x="34" y="222" fill="#047857" font-size="12.5" font-weight="700">Master Data → Master Files</text>
+  </g>
+
+  <!-- step 2 -->
+  <g>
+    <rect x="318" y="40" width="262" height="220" rx="14" fill="#ffffff" stroke="#dde4ee" />
+    <circle cx="354" cy="76" r="18" fill="#10b981" />
+    <text x="354" y="82" text-anchor="middle" fill="#ffffff" font-size="18" font-weight="700">2</text>
+    <text x="388" y="82" fill="#142033" font-size="16" font-weight="700">Manpower</text>
+    <text x="342" y="118" fill="#64748b" font-size="13">ตั้งเวลาเข้า-ออกงานของ</text>
+    <text x="342" y="138" fill="#64748b" font-size="13">แต่ละหน่วยงาน + หน่วยงานย่อย</text>
+    <text x="342" y="158" fill="#64748b" font-size="13">+ กะ ให้ครบ</text>
+    <text x="342" y="222" fill="#047857" font-size="12.5" font-weight="700">Master Data → Manpower</text>
+  </g>
+
+  <!-- step 3 -->
+  <g>
+    <rect x="626" y="40" width="262" height="220" rx="14" fill="#ffffff" stroke="#dde4ee" />
+    <circle cx="662" cy="76" r="18" fill="#10b981" />
+    <text x="662" y="82" text-anchor="middle" fill="#ffffff" font-size="18" font-weight="700">3</text>
+    <text x="696" y="82" fill="#142033" font-size="16" font-weight="700">Shift &amp; Dayoff</text>
+    <text x="650" y="118" fill="#64748b" font-size="13">กำหนดวันหยุดประจำสัปดาห์</text>
+    <text x="650" y="138" fill="#64748b" font-size="13">และกะทำงานของพนักงาน</text>
+    <text x="650" y="158" fill="#64748b" font-size="13">แต่ละคน</text>
+    <text x="650" y="222" fill="#047857" font-size="12.5" font-weight="700">Master Data → Shift &amp; Dayoff</text>
+  </g>
+
+  <!-- step 4 -->
+  <g>
+    <rect x="934" y="40" width="262" height="220" rx="14" fill="#ffffff" stroke="#dde4ee" />
+    <circle cx="970" cy="76" r="18" fill="#10b981" />
+    <text x="970" y="82" text-anchor="middle" fill="#ffffff" font-size="18" font-weight="700">4</text>
+    <text x="1004" y="82" fill="#142033" font-size="16" font-weight="700">Upload Timestamp</text>
+    <text x="958" y="118" fill="#64748b" font-size="13">อัปโหลดไฟล์สแกนเข้า-ออก</text>
+    <text x="958" y="138" fill="#64748b" font-size="13">ประจำวัน (.csv/.xlsx/.xls)</text>
+    <text x="958" y="158" fill="#64748b" font-size="13">แล้วกด Create Daily Run</text>
+    <text x="958" y="222" fill="#047857" font-size="12.5" font-weight="700">Upload Timestamp</text>
+  </g>
+
+  <!-- step 5 -->
+  <g>
+    <rect x="1242" y="40" width="262" height="220" rx="14" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5" />
+    <circle cx="1278" cy="76" r="18" fill="#047857" />
+    <text x="1278" y="82" text-anchor="middle" fill="#ffffff" font-size="18" font-weight="700">5</text>
+    <text x="1312" y="82" fill="#142033" font-size="16" font-weight="700">ดูผลลัพธ์</text>
+    <text x="1266" y="118" fill="#334155" font-size="13">Dashboard, ผลลัพธ์การจัดสรร,</text>
+    <text x="1266" y="138" fill="#334155" font-size="13">Timestamp With Dept,</text>
+    <text x="1266" y="158" fill="#334155" font-size="13">Report &amp; Dashboard,</text>
+    <text x="1266" y="178" fill="#334155" font-size="13">OT Dashboard</text>
+    <text x="1266" y="222" fill="#047857" font-size="12.5" font-weight="700">เลือกวันที่จากปุ่มปฏิทินมุมขวาบน</text>
+  </g>
+</svg>

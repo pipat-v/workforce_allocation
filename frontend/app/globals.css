@@ -6292,6 +6292,28 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   line-height: 1.5;
 }
 
+.help-section-image-link {
+  display: block;
+  margin: 0 0 14px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  line-height: 0;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.help-section-image-link:hover {
+  border-color: var(--accent);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.18);
+}
+
+.help-section-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--surface2);
+}
+
 .help-section-points {
   margin: 0;
   padding-left: 18px;
