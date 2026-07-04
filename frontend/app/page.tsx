@@ -7925,6 +7925,17 @@ function OTDashboard({
     return () => { cancelled = true; };
   }, [activeMasterMap.dayoff_shift?.file_path]);
 
+  const allManagerOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const unique: Array<{ empId: string; name: string; dept: string }> = [];
+    for (const m of managerOptions) {
+      if (seen.has(m.empId)) continue;
+      seen.add(m.empId);
+      unique.push(m);
+    }
+    return unique.sort((a, b) => a.name.localeCompare(b.name, "th"));
+  }, [managerOptions]);
+
   // Leave type per employee for the loaded day, same source ("leave_records") and
   // shape as the Dashboard's "สถานะพนักงานรายคน" box, so absent employees show
   // their actual leave type here too instead of a generic "ขาดงาน" badge.
@@ -8261,9 +8272,7 @@ function OTDashboard({
                 <col style={{width: 44}} />{/* %OT */}
                 <col style={{width: 44}} />{/* OT คน */}
                 <col style={{width: 38}} />{/* เป้า */}
-                <col style={{width: 46}} />{/* 1.5 */}
-                <col style={{width: 36}} /><col style={{width: 36}} /><col style={{width: 36}} />{/* holiday ×3 */}
-                <col style={{width: 50}} />{/* รวมชม. */}
+                <col style={{width: 64}} />{/* รวมชม. OT */}
                 <col style={{width: 58}} />{/* เฉลี่ยคน/วัน */}
                 <col style={{width: 108}} />{/* ผจก. */}
               </colgroup>
@@ -8280,7 +8289,7 @@ function OTDashboard({
                   <th rowSpan={3} className="ot-th-num ot-th-pink">%พนัก<br />ที่ OT</th>
                   <th rowSpan={3} className="ot-th-num ot-th-pink">พนักงาน<br />ที่ OT</th>
                   <th rowSpan={3} className="ot-th-num">เป้า<br />หมาย</th>
-                  <th colSpan={5} className="ot-th-group ot-th-group-ot">เปรียบเทียบ ค่าล่วงเวลา (คนงาน)</th>
+                  <th rowSpan={3} className="ot-th-num">รวม<br />ชม. OT</th>
                   <th rowSpan={3} className="ot-th-avg-yellow">เฉลี่ย<br />คน/วัน</th>
                   <th rowSpan={3} className="ot-th-mgr ot-th-mgr-header">สถาพ / ผจก.</th>
                 </tr>
@@ -8292,16 +8301,8 @@ function OTDashboard({
                   <th rowSpan={2} className="ot-th-sub ot-th-vert ot-th-absent">ขาดงาน</th>
                   <th rowSpan={2} className="ot-th-sub ot-th-vert">ลาไม่<br />จ่าย</th>
                   <th rowSpan={2} className="ot-th-sub ot-th-vert">รวมวัน<br />หยุดงาน</th>
-                  <th className="ot-th-sub ot-th-ot-normal ot-th-subgrp">OT วันปกติ</th>
-                  <th colSpan={3} className="ot-th-sub ot-th-holiday-grp ot-th-subgrp">OT วันหยุด</th>
-                  <th rowSpan={2} className="ot-th-sub ot-th-vert-num">รวม<br />ชม.</th>
                 </tr>
-                <tr>
-                  <th className="ot-th-sub ot-th-vert-num ot-th-ot-normal">1.5<br />ชม</th>
-                  <th className="ot-th-sub ot-th-vert-num ot-th-holiday">1<br />ชม</th>
-                  <th className="ot-th-sub ot-th-vert-num ot-th-holiday">2<br />ชม</th>
-                  <th className="ot-th-sub ot-th-vert-num ot-th-holiday">3<br />ชม</th>
-                </tr>
+                <tr />
               </thead>
               <tbody>
                 {deptOTRows.map((row) => {
@@ -8309,8 +8310,6 @@ function OTDashboard({
                   const pctStop = activeNonOff > 0 ? Math.round((row.absent / activeNonOff) * 100) : 0;
                   const pctOT = row.activeWorkers > 0 ? Math.round((row.otWorkers / row.activeWorkers) * 100) : 0;
                   const avgOT = row.activeWorkers > 0 ? row.totalOTHours / row.activeWorkers : 0;
-                  const mgrsForDept = managerOptions.filter((m) => m.dept === row.dept);
-                  const mgrPool = mgrsForDept.length > 0 ? mgrsForDept : managerOptions;
                   return (
                     <tr
                       key={row.dept}
@@ -8333,10 +8332,6 @@ function OTDashboard({
                         {row.otWorkers > 0 ? row.otWorkers : ""}
                       </td>
                       <td className="ot-td-num">{otTarget.toFixed(1)}</td>
-                      <td className="ot-td-num">{row.normalOTHours > 0 ? row.normalOTHours.toFixed(1) : "-"}</td>
-                      <td className="ot-td-num ot-td-muted">-</td>
-                      <td className={`ot-td-num${row.publicHolidayOTHours > 0 ? " ot-hl-orange" : " ot-td-muted"}`}>{row.publicHolidayOTHours > 0 ? row.publicHolidayOTHours.toFixed(1) : "-"}</td>
-                      <td className="ot-td-num ot-td-muted">-</td>
                       <td className="ot-td-num">{row.totalOTHours > 0 ? row.totalOTHours.toFixed(1) : "-"}</td>
                       <td className={`ot-td-num ot-td-avg-yellow${avgOT > otTarget ? " ot-hl-red" : avgOT > 0 ? " ot-hl-green" : ""}`}>
                         {avgOT > 0 ? avgOT.toFixed(1) : "-"}
@@ -8348,7 +8343,7 @@ function OTDashboard({
                           onChange={(e) => saveDeptManager(row.dept, e.target.value)}
                         >
                           <option value="">-</option>
-                          {mgrPool.map((m) => (
+                          {allManagerOptions.map((m) => (
                             <option key={m.empId} value={m.name}>{m.name}</option>
                           ))}
                         </select>
@@ -8381,10 +8376,6 @@ function OTDashboard({
                   </td>
                   <td className="ot-td-num">{totals.otWorkers > 0 ? totals.otWorkers : ""}</td>
                   <td className="ot-td-num">{otTarget.toFixed(1)}</td>
-                  <td className="ot-td-num">{totals.normalOTHours > 0 ? totals.normalOTHours.toFixed(1) : "-"}</td>
-                  <td className="ot-td-num ot-td-muted">-</td>
-                  <td className={`ot-td-num${totals.publicHolidayOTHours > 0 ? " ot-hl-orange" : " ot-td-muted"}`}>{totals.publicHolidayOTHours > 0 ? totals.publicHolidayOTHours.toFixed(1) : "-"}</td>
-                  <td className="ot-td-num ot-td-muted">-</td>
                   <td className="ot-td-num">{totals.totalOTHours > 0 ? totals.totalOTHours.toFixed(1) : "-"}</td>
                   <td className="ot-td-num ot-td-avg-yellow">{totalAvgOT > 0 ? totalAvgOT.toFixed(1) : "-"}</td>
                   <td />
