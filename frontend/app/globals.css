@@ -5186,11 +5186,45 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   width: 110px;
 }
 
+.ot-target-cfg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.ot-target-cfg-name {
+  min-width: 200px;
+  flex-shrink: 0;
+}
+
+.ot-target-cfg-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ot-target-cfg-sub .ot-cfg-input {
+  width: 64px;
+}
+
 /* Empty State */
 .ot-empty {
   padding: 60px 24px;
   text-align: center;
   color: var(--muted);
+}
+
+.ot-summary-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
 }
 
 /* Summary Table */
@@ -5776,16 +5810,6 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   background: #94a3b8;
 }
 
-.ot-target-line-h {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 0;
-  border-top: 2px dashed #ef4444;
-  pointer-events: none;
-  z-index: 3;
-}
-
 .ot-bars-flex {
   position: absolute;
   left: 0;
@@ -5804,6 +5828,16 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   align-items: center;
   justify-content: flex-end;
   height: 100%;
+}
+
+.ot-target-line-h {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px dashed #ef4444;
+  pointer-events: none;
+  z-index: 3;
 }
 
 .ot-bar-total-v2 {

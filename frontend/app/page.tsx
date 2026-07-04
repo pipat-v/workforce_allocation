@@ -7831,11 +7831,40 @@ function formatDateTH(isoDate: string) {
 // OT Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
 
-// หน่วยงานที่มีเวลาพัก 1 ชั่วโมงหลังเลิกงาน (หน่วยงานอื่นพัก 30 นาที) — ช่วงพักนี้ไม่นับเป็น OT
-const OT_LONG_BREAK_DEPTS = new Set(["งานตัดแต่งพิเศษ", "งานแยกชิ้นส่วนและตัดแต่ง"]);
+// รวมทั้งหมด row ใช้ key นี้แยกจากชื่อหน่วยงานจริง ทั้งใน otTargets และตอนแสดงผลตั้งค่า
+const OT_TOTAL_ROW_KEY = "รวมทั้งหมด";
+const FALLBACK_OT_TARGET = 2;
+const DEFAULT_TOTAL_OT_TARGET = 2;
 
-function getOTBreakMinutes(dept: string): number {
-  return OT_LONG_BREAK_DEPTS.has(dept) ? 60 : 30;
+// ค่าเริ่มต้นเป้าหมาย OT ต่อหน่วยงาน (ชม./คน/วัน) — ใช้ตอนยังไม่เคยตั้งค่าไว้ใน Supabase
+const DEFAULT_OT_TARGETS: Record<string, number> = {
+  "งานพัสดุ": 1,
+  "งานวิศวกรรม": 2.5,
+  "งานรับสุกร": 1,
+  "งานเชือดสุกร": 2,
+  "งานเครื่องใน": 2,
+  "งานผ่าซาก": 2,
+  "งานแยกชิ้นส่วนและตัดแต่ง": 3,
+  "งานตัดแต่งพิเศษ": 3,
+  "งานคลังสินค้า": 3,
+  "งานสุขศาสตร์และภาชนะบรรจุ": 2,
+  "งานเช็คจ่ายสินค้า": 2.5,
+  "งานควบคุมคุณภาพ": 2.5,
+  "งานธุรการ": 0,
+  "งานส่วนกลาง": 1,
+  "งานวางแผนและประสานงานการผลิต": 2,
+  [OT_TOTAL_ROW_KEY]: DEFAULT_TOTAL_OT_TARGET,
+};
+
+// หน่วยงานที่มีเวลาพัก 1 ชั่วโมงหลังเลิกงาน (หน่วยงานอื่นพัก 30 นาที) — ช่วงพักนี้ไม่นับเป็น OT
+const FALLBACK_BREAK_MINUTES = 30;
+const DEFAULT_BREAK_MINUTES: Record<string, number> = {
+  "งานตัดแต่งพิเศษ": 60,
+  "งานแยกชิ้นส่วนและตัดแต่ง": 60,
+};
+
+function getOTBreakMinutes(dept: string, breakMinutesByDept: Record<string, number>): number {
+  return breakMinutesByDept[dept] ?? FALLBACK_BREAK_MINUTES;
 }
 
 function calcOTHoursForRecord(scanOut: string, shiftEnd: string, breakMinutes = 0): number {
@@ -7873,16 +7902,49 @@ function OTDashboard({
   scanUploadedAt: string | null;
   holidayDates: Set<string>;
 }) {
-  const [otTarget, setOtTarget] = useState<number>(() => {
-    if (typeof window === "undefined") return 2.0;
-    const s = localStorage.getItem("ot_target");
-    return s ? parseFloat(s) : 2.0;
-  });
-  const [deptManagers, setDeptManagers] = useState<Record<string, string>>(() => {
-    if (typeof window === "undefined") return {};
-    try { return JSON.parse(localStorage.getItem("ot_dept_managers") ?? "{}"); } catch { return {}; }
-  });
+  const [otTargets, setOtTargets] = useState<Record<string, number>>(DEFAULT_OT_TARGETS);
+  const [breakMinutesByDept, setBreakMinutesByDept] = useState<Record<string, number>>(DEFAULT_BREAK_MINUTES);
+  const [deptManagers, setDeptManagers] = useState<Record<string, string>>({});
   const [managerOptions, setManagerOptions] = useState<Array<{ empId: string; name: string; dept: string }>>([]);
+  // เป้าหมาย OT เฉลี่ยรวม — ใช้วาดเส้น Target เส้นเดียวในกราฟเท่านั้น แยกจากเป้าหมายรายหน่วยงานที่ใช้ในตาราง
+  const [otTargetAvg, setOtTargetAvg] = useState<number>(DEFAULT_TOTAL_OT_TARGET);
+
+  // ตั้งค่า OT (เป้าหมายรายหน่วยงาน, เป้าหมายเฉลี่ยรวม, เวลาพัก, ผจก.) เก็บใน Supabase แทน localStorage
+  // เพื่อให้ทุกคนที่เปิดแดชบอร์ดเห็นค่าตรงกัน ไม่ผูกกับเบราว์เซอร์เครื่องใดเครื่องหนึ่ง
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("ot_dashboard_settings").select("*").eq("id", "default").maybeSingle();
+      if (cancelled) return;
+      if (data) {
+        setOtTargets({ ...DEFAULT_OT_TARGETS, ...(data.ot_targets as Record<string, number> ?? {}) });
+        setBreakMinutesByDept({ ...DEFAULT_BREAK_MINUTES, ...(data.break_minutes as Record<string, number> ?? {}) });
+        setDeptManagers(data.dept_managers as Record<string, string> ?? {});
+        setOtTargetAvg(typeof data.ot_target_avg === "number" ? data.ot_target_avg : DEFAULT_TOTAL_OT_TARGET);
+      } else {
+        await supabase.from("ot_dashboard_settings").upsert({
+          id: "default",
+          ot_targets: DEFAULT_OT_TARGETS,
+          break_minutes: DEFAULT_BREAK_MINUTES,
+          dept_managers: {},
+          ot_target_avg: DEFAULT_TOTAL_OT_TARGET,
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function persistOTSettings(patch: Partial<{ ot_targets: Record<string, number>; break_minutes: Record<string, number>; dept_managers: Record<string, string>; ot_target_avg: number }>) {
+    await supabase.from("ot_dashboard_settings").upsert({ id: "default", ...patch, updated_at: new Date().toISOString() });
+  }
+
+  function saveOTTargetAvg(value: string) {
+    const num = parseFloat(value);
+    if (!isNaN(num) && num >= 0) {
+      setOtTargetAvg(num);
+      persistOTSettings({ ot_target_avg: num });
+    }
+  }
   const [showConfig, setShowConfig] = useState(false);
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
   const chartPanelRef = useRef<HTMLDivElement>(null);
@@ -7962,11 +8024,11 @@ function OTDashboard({
     return reportData.records.map((rec) => {
       const shiftEnd = rec.shiftEnd || (rec.shiftStart ? addHoursToTime(rec.shiftStart, 9) : "");
       const otHours = shiftEnd && (rec.status === "Present" || rec.status === "Late" || rec.status === "NoScanIn")
-        ? calcOTHoursForRecord(rec.scanOut, shiftEnd, getOTBreakMinutes(rec.dept))
+        ? calcOTHoursForRecord(rec.scanOut, shiftEnd, getOTBreakMinutes(rec.dept, breakMinutesByDept))
         : 0;
       return { ...rec, shiftEnd, otHours };
     });
-  }, [reportData]);
+  }, [reportData, breakMinutesByDept]);
 
   const isPublicHoliday = reportData?.isoTargetDate
     ? holidayDates.has(reportData.isoTargetDate)
@@ -8088,14 +8150,20 @@ function OTDashboard({
     [filteredDetailRecords, otDetailSort],
   );
 
+  function getDeptTarget(dept: string): number {
+    return dept === OT_TOTAL_ROW_KEY
+      ? otTargets[OT_TOTAL_ROW_KEY] ?? DEFAULT_TOTAL_OT_TARGET
+      : otTargets[dept] ?? FALLBACK_OT_TARGET;
+  }
+
   const totalAvgOT = totals.activeWorkers > 0 ? totals.totalOTHours / totals.activeWorkers : 0;
   const chartRows = [
     ...deptOTRows,
-    { dept: "รวมทั้งหมด", activeWorkers: totals.activeWorkers, totalOTHours: totals.totalOTHours },
+    { dept: OT_TOTAL_ROW_KEY, activeWorkers: totals.activeWorkers, totalOTHours: totals.totalOTHours },
   ];
   const maxAvgOT = Math.max(
     ...chartRows.map((r) => (r.activeWorkers > 0 ? r.totalOTHours / r.activeWorkers : 0)),
-    otTarget,
+    otTargetAvg,
     0.1,
   );
   const yMax = Math.max(Math.ceil(maxAvgOT) + 1, 5);
@@ -8109,22 +8177,41 @@ function OTDashboard({
     "#64748b",
   ];
 
-  function saveOTTarget(value: string) {
+  function saveOTTarget(dept: string, value: string) {
     const num = parseFloat(value);
     if (!isNaN(num) && num >= 0) {
-      setOtTarget(num);
-      localStorage.setItem("ot_target", String(num));
+      const next = { ...otTargets, [dept]: num };
+      setOtTargets(next);
+      persistOTSettings({ ot_targets: next });
+    }
+  }
+
+  function saveBreakMinutes(dept: string, value: string) {
+    const num = parseInt(value, 10);
+    if (!isNaN(num) && num >= 0) {
+      const next = { ...breakMinutesByDept, [dept]: num };
+      setBreakMinutesByDept(next);
+      persistOTSettings({ break_minutes: next });
     }
   }
 
   function saveDeptManager(dept: string, name: string) {
     const next = { ...deptManagers, [dept]: name };
     setDeptManagers(next);
-    localStorage.setItem("ot_dept_managers", JSON.stringify(next));
+    persistOTSettings({ dept_managers: next });
   }
 
   const now = new Date();
   const timeStr = `${String(now.getHours()).padStart(2, "0")}.${String(now.getMinutes()).padStart(2, "0")} น.`;
+
+  // รายชื่อหน่วยงานที่แสดงในแผงตั้งค่า: รวมทั้งหน่วยงานที่มีข้อมูลวันนี้ และหน่วยงานที่เคยตั้งเป้าหมายไว้แล้ว
+  const targetConfigDepts = useMemo(() => {
+    const set = new Set<string>([
+      ...Object.keys(DEFAULT_OT_TARGETS).filter((d) => d !== OT_TOTAL_ROW_KEY),
+      ...deptOTRows.map((r) => r.dept),
+    ]);
+    return [...set].sort((a, b) => a.localeCompare(b, "th"));
+  }, [deptOTRows]);
 
   return (
     <section className="ot-dashboard">
@@ -8159,17 +8246,56 @@ function OTDashboard({
         <div className="panel ot-config">
           <div className="ot-config-row">
             <div className="ot-config-field">
-              <label>เป้าหมาย OT (ชม./คน/วัน)</label>
+              <label>เป้าหมาย OT เฉลี่ย (ใช้กับเส้น Target ในกราฟ)</label>
               <input
-                key={otTarget}
+                key={otTargetAvg}
                 type="number"
                 min="0"
                 step="0.5"
-                defaultValue={otTarget}
-                onBlur={(e) => saveOTTarget(e.target.value)}
+                defaultValue={otTargetAvg}
+                onBlur={(e) => saveOTTargetAvg(e.target.value)}
                 className="ot-cfg-input"
               />
             </div>
+          </div>
+          <p className="ot-config-subtitle">เป้าหมาย OT (ชม./คน/วัน) และเวลาพักหลังเลิกงาน (นาที) แยกตามหน่วยงาน (ใช้ในตารางสรุป)</p>
+          <div className="ot-target-cfg-list">
+            {[...targetConfigDepts, OT_TOTAL_ROW_KEY].map((dept) => {
+              const isTotalRow = dept === OT_TOTAL_ROW_KEY;
+              return (
+                <div className="ot-shift-cfg-row" key={dept}>
+                  <span className="ot-target-cfg-name">{dept}</span>
+                  <label className="ot-target-cfg-sub">
+                    เป้าหมาย
+                    <input
+                      key={otTargets[dept]}
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      defaultValue={otTargets[dept] ?? (isTotalRow ? DEFAULT_TOTAL_OT_TARGET : FALLBACK_OT_TARGET)}
+                      onBlur={(e) => saveOTTarget(dept, e.target.value)}
+                      className="ot-cfg-input"
+                    />
+                    ชม.
+                  </label>
+                  {!isTotalRow && (
+                    <label className="ot-target-cfg-sub">
+                      พักหลังเลิกงาน
+                      <input
+                        key={breakMinutesByDept[dept]}
+                        type="number"
+                        min="0"
+                        step="5"
+                        defaultValue={breakMinutesByDept[dept] ?? FALLBACK_BREAK_MINUTES}
+                        onBlur={(e) => saveBreakMinutes(dept, e.target.value)}
+                        className="ot-cfg-input"
+                      />
+                      นาที
+                    </label>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -8215,14 +8341,14 @@ function OTDashboard({
                 {/* Target line */}
                 <div
                   className="ot-target-line-h"
-                  style={{ bottom: (otTarget / yMax) * TRACK_H + XLAB_H }}
+                  style={{ bottom: (otTargetAvg / yMax) * TRACK_H + XLAB_H }}
                 />
                 {/* Bars */}
                 <div className="ot-bars-flex" style={{ height: TRACK_H, bottom: XLAB_H }}>
                   {chartRows.map((row, i) => {
                     const avg = row.activeWorkers > 0 ? row.totalOTHours / row.activeWorkers : 0;
                     const barH = (avg / yMax) * TRACK_H;
-                    const isTotal = row.dept === "รวมทั้งหมด";
+                    const isTotal = row.dept === OT_TOTAL_ROW_KEY;
                     const color = isTotal ? "#475569" : DEPT_BAR_COLORS[i % DEPT_BAR_COLORS.length];
                     return (
                       <div key={row.dept} className={`ot-bar-item-v2${isTotal ? " ot-bar-total-v2" : ""}`}>
@@ -8249,7 +8375,7 @@ function OTDashboard({
                 <div className="ot-legend-box-inner">
                   <div className="ot-legend-arrow">⬇</div>
                   <strong>Target</strong>
-                  <div>OT น้อยกว่า {otTarget.toFixed(1)} ชม.</div>
+                  <div>OT น้อยกว่า {otTargetAvg.toFixed(1)} ชม.</div>
                   <div>ต่อคน ต่อวัน</div>
                 </div>
               </div>
@@ -8257,7 +8383,69 @@ function OTDashboard({
           </div>}
 
           {/* ── Summary Table ── */}
-          {otSubTab === "summary" && <div className="ot-table-scroll">
+          {otSubTab === "summary" && <>
+          <div className="ot-summary-toolbar">
+            <button
+              type="button"
+              className="primary-button small"
+              onClick={() => {
+                const rows = deptOTRows.map((row) => {
+                  const activeNonOff = row.total - row.dayoff;
+                  const pctStop = activeNonOff > 0 ? Math.round((row.absent / activeNonOff) * 100) : 0;
+                  const pctOT = row.activeWorkers > 0 ? Math.round((row.otWorkers / row.activeWorkers) * 100) : 0;
+                  const avgOT = row.activeWorkers > 0 ? row.totalOTHours / row.activeWorkers : 0;
+                  return {
+                    "หน่วยงาน": row.dept,
+                    "อัตรากำลังคน": row.total,
+                    "ลาป่วย": row.sickLeave,
+                    "ลากิจ": row.personalLeave,
+                    "ลาบวช/คลอด": row.ordainMaternityLeave,
+                    "ลาพักผ่อน": row.vacationLeave,
+                    "ขาดงาน": row.unspecifiedAbsent,
+                    "ลาไม่จ่าย": row.unpaidLeave,
+                    "รวมวันหยุดงาน": row.dayoff,
+                    "%หยุดงาน": `${pctStop}%`,
+                    "พนักงานที่ทำงาน": row.activeWorkers,
+                    "%พนักงานที่ OT": row.activeWorkers > 0 ? `${pctOT}%` : "",
+                    "พนักงานที่ OT": row.otWorkers,
+                    "เป้าหมาย (ชม.)": getDeptTarget(row.dept).toFixed(1),
+                    "รวม ชม. OT": row.totalOTHours > 0 ? row.totalOTHours.toFixed(1) : "",
+                    "เฉลี่ย ชม./คน/วัน": avgOT > 0 ? avgOT.toFixed(1) : "",
+                    "ผจก.": deptManagers[row.dept] ?? "",
+                  };
+                });
+                rows.push({
+                  "หน่วยงาน": "รวมทั้งหมด",
+                  "อัตรากำลังคน": totals.total,
+                  "ลาป่วย": totals.sickLeave,
+                  "ลากิจ": totals.personalLeave,
+                  "ลาบวช/คลอด": totals.ordainMaternityLeave,
+                  "ลาพักผ่อน": totals.vacationLeave,
+                  "ขาดงาน": totals.unspecifiedAbsent,
+                  "ลาไม่จ่าย": totals.unpaidLeave,
+                  "รวมวันหยุดงาน": totals.dayoff,
+                  "%หยุดงาน": Math.max(0, totals.total - totals.dayoff) > 0
+                    ? `${Math.round((totals.absent / Math.max(0, totals.total - totals.dayoff)) * 100)}%`
+                    : "0%",
+                  "พนักงานที่ทำงาน": totals.activeWorkers,
+                  "%พนักงานที่ OT": totals.activeWorkers > 0 ? `${Math.round((totals.otWorkers / totals.activeWorkers) * 100)}%` : "",
+                  "พนักงานที่ OT": totals.otWorkers,
+                  "เป้าหมาย (ชม.)": getDeptTarget(OT_TOTAL_ROW_KEY).toFixed(1),
+                  "รวม ชม. OT": totals.totalOTHours > 0 ? totals.totalOTHours.toFixed(1) : "",
+                  "เฉลี่ย ชม./คน/วัน": totalAvgOT > 0 ? totalAvgOT.toFixed(1) : "",
+                  "ผจก.": "",
+                });
+                const ws = XLSX.utils.json_to_sheet(rows);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "OT Summary");
+                XLSX.writeFile(wb, `OT-สรุปรายหน่วยงาน-${reportData?.targetDate ?? ""}.xlsx`);
+              }}
+            >
+              <Download size={14} />
+              Export Excel
+            </button>
+          </div>
+          <div className="ot-table-scroll">
             <table className="table ot-table">
               <colgroup>
                 <col style={{width: 130}} />{/* หน่วยงาน */}
@@ -8310,6 +8498,7 @@ function OTDashboard({
                   const pctStop = activeNonOff > 0 ? Math.round((row.absent / activeNonOff) * 100) : 0;
                   const pctOT = row.activeWorkers > 0 ? Math.round((row.otWorkers / row.activeWorkers) * 100) : 0;
                   const avgOT = row.activeWorkers > 0 ? row.totalOTHours / row.activeWorkers : 0;
+                  const deptTarget = getDeptTarget(row.dept);
                   return (
                     <tr
                       key={row.dept}
@@ -8331,9 +8520,9 @@ function OTDashboard({
                       <td className={`ot-td-num${row.otWorkers > 0 ? " ot-hl-blue" : ""}`}>
                         {row.otWorkers > 0 ? row.otWorkers : ""}
                       </td>
-                      <td className="ot-td-num">{otTarget.toFixed(1)}</td>
+                      <td className="ot-td-num">{deptTarget.toFixed(1)}</td>
                       <td className="ot-td-num">{row.totalOTHours > 0 ? row.totalOTHours.toFixed(1) : "-"}</td>
-                      <td className={`ot-td-num ot-td-avg-yellow${avgOT > otTarget ? " ot-hl-red" : avgOT > 0 ? " ot-hl-green" : ""}`}>
+                      <td className={`ot-td-num ot-td-avg-yellow${avgOT > deptTarget ? " ot-hl-red" : avgOT > 0 ? " ot-hl-green" : ""}`}>
                         {avgOT > 0 ? avgOT.toFixed(1) : "-"}
                       </td>
                       <td className="ot-td-mgr" onClick={(e) => e.stopPropagation()}>
@@ -8375,14 +8564,15 @@ function OTDashboard({
                       : ""}
                   </td>
                   <td className="ot-td-num">{totals.otWorkers > 0 ? totals.otWorkers : ""}</td>
-                  <td className="ot-td-num">{otTarget.toFixed(1)}</td>
+                  <td className="ot-td-num">{getDeptTarget(OT_TOTAL_ROW_KEY).toFixed(1)}</td>
                   <td className="ot-td-num">{totals.totalOTHours > 0 ? totals.totalOTHours.toFixed(1) : "-"}</td>
                   <td className="ot-td-num ot-td-avg-yellow">{totalAvgOT > 0 ? totalAvgOT.toFixed(1) : "-"}</td>
                   <td />
                 </tr>
               </tfoot>
             </table>
-          </div>}
+          </div>
+          </>}
 
           {/* ── Employee Detail Table ── */}
           {otSubTab === "detail" && <div className="panel ot-detail-panel">
