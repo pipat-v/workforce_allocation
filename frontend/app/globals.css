@@ -2253,6 +2253,25 @@ button {
   color: #92400e;
 }
 
+.skill-file-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.skill-import-result {
+  border-left: 3px solid #2563eb;
+  padding: 7px 10px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+}
+
+.skill-import-result.error {
+  border-left-color: #dc2626;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
 .skill-add-row-bar {
   display: flex;
   align-items: center;

@@ -30,7 +30,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+import type { ChangeEvent, Dispatch, ReactNode, SetStateAction } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 
@@ -5980,6 +5980,9 @@ function SkillMatrixPage({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [unmatchedJobAssignNames, setUnmatchedJobAssignNames] = useState<string[]>([]);
+  const [empIdByNameMap, setEmpIdByNameMap] = useState<Map<string, string>>(new Map());
+  const [skillImportMessage, setSkillImportMessage] = useState("");
+  const skillImportInputRef = useRef<HTMLInputElement>(null);
 
   const LEVEL_LABELS: Record<number, string> = { 1: "น้อย", 2: "ปานกลาง", 3: "ถนัด" };
   const LEVEL_BG: Record<number, string> = { 1: "#fecaca", 2: "#fef08a", 3: "#34d399", 4: "#93c5fd", 5: "#a78bfa" };
@@ -5991,6 +5994,7 @@ function SkillMatrixPage({
       setAllEmpList([]);
       setSelectedIds(new Set());
       setUnmatchedJobAssignNames([]);
+      setEmpIdByNameMap(new Map());
       return;
     }
 
@@ -6125,6 +6129,7 @@ function SkillMatrixPage({
         setRows(parsed);
         setUnmatchedJobAssignNames(Array.from(unmatchedNames));
         setEmpInfoMap(empInfo);
+        setEmpIdByNameMap(empIdByName);
         setAllEmpList(empList);
         setSelectedIds(new Set());
       })
@@ -6132,6 +6137,7 @@ function SkillMatrixPage({
         if (!isMounted) return;
         setRows([]);
         setEmpInfoMap(new Map());
+        setEmpIdByNameMap(new Map());
         setAllEmpList([]);
         setUnmatchedJobAssignNames([]);
       })
@@ -6201,6 +6207,161 @@ function SkillMatrixPage({
     setBulkLevel("");
   }
 
+  async function handleSkillImport(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array", cellDates: true, raw: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const importedRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+        defval: "",
+        raw: true,
+      });
+      const updates: Array<{ empId: string; skill: string; level: number; jobSite: string }> = [];
+      const unmatchedNames = new Set<string>();
+      const ignoredColumns = new Set([
+        "จุดงาน", "รายชื่อพนักงาน", "ชื่อเล่น", "Employee ID", "Emp ID", "emp_id",
+        "รหัสพนักงาน", "ชื่อ", "Name", "Employee Name", "แผนก", "หน่วยงาน", "หน่วยงานย่อย",
+        "กะ", "Shift", "เวลาเข้า", "วันหยุด", "Dayoff",
+      ]);
+
+      importedRows.forEach((row) => {
+        const sourceName = String(
+          row["รายชื่อพนักงาน"] ?? row["ชื่อ"] ?? row["Name"] ?? row["Employee Name"] ?? "",
+        ).trim();
+        const directEmpId = cleanEmpId(
+          row["Employee ID"] ?? row["Emp ID"] ?? row["emp_id"] ?? row["รหัสพนักงาน"],
+        );
+        const empId = directEmpId || empIdByNameMap.get(normalizeEmployeeNameForMatch(sourceName)) || "";
+        if (!empId) {
+          if (sourceName) unmatchedNames.add(sourceName);
+          return;
+        }
+
+        const flatSkill = String(row["Skill"] ?? row["skill"] ?? row["ทักษะ"] ?? "").trim();
+        const jobSite = String(row["จุดงาน"] ?? row["หน่วยงานย่อย"] ?? "").trim();
+        if (flatSkill) {
+          updates.push({
+            empId,
+            skill: flatSkill,
+            level: Number(row["Level"] ?? row["level"] ?? row["ระดับ"]) || 0,
+            jobSite,
+          });
+          return;
+        }
+
+        Object.entries(row).forEach(([skill, rawLevel]) => {
+          if (ignoredColumns.has(skill) || skill.startsWith("__EMPTY")) return;
+          const level = rawLevel === "" || rawLevel === null || rawLevel === undefined
+            ? 0
+            : Number(rawLevel);
+          if (!Number.isFinite(level)) return;
+          updates.push({ empId, skill: skill.trim(), level, jobSite });
+        });
+      });
+
+      const nextRows = new Map(rows.map((row) => [`${row.empId}|${row.skill}`, row]));
+      let addedCount = 0;
+      let updatedCount = 0;
+      updates.forEach((update, index) => {
+        const key = `${update.empId}|${update.skill}`;
+        const existing = nextRows.get(key);
+        if (existing) {
+          const nextJobSite = update.jobSite || existing.jobSite;
+          if (existing.level === update.level && existing.jobSite === nextJobSite) return;
+          nextRows.set(key, {
+            ...existing,
+            level: update.level,
+            jobSite: nextJobSite,
+          });
+          updatedCount += 1;
+          return;
+        }
+        if (update.level <= 0) return;
+        const info = empInfoMap.get(update.empId) ?? { name: update.empId, dept: "", jobSite: "" };
+        const employeeRow = rows.find((row) => row.empId === update.empId);
+        nextRows.set(key, {
+          id: `import-${Date.now()}-${index}-${update.empId}-${update.skill}`,
+          empId: update.empId,
+          name: info.name,
+          dept: info.dept,
+          jobSite: update.jobSite || info.jobSite,
+          shift: employeeRow?.shift ?? "",
+          shiftStart: employeeRow?.shiftStart ?? "",
+          dayoff: employeeRow?.dayoff ?? "",
+          skill: update.skill,
+          level: update.level,
+          origLevel: 0,
+        });
+        addedCount += 1;
+      });
+
+      setRows(Array.from(nextRows.values()));
+      setSkillImportMessage(
+        `Import ${file.name} สำเร็จ: เพิ่ม ${addedCount} แถว, อัปเดต ${updatedCount} แถว` +
+        (unmatchedNames.size ? `, หา Emp ID ไม่พบ ${unmatchedNames.size} คน` : ""),
+      );
+    } catch (importError) {
+      setSkillImportMessage(
+        importError instanceof Error ? `Import ไม่สำเร็จ: ${importError.message}` : "Import ไม่สำเร็จ",
+      );
+    }
+  }
+
+  function handleSkillExport() {
+    const flatRows = rows.map((row) => ({
+      "Employee ID": row.empId,
+      "ชื่อ": row.name,
+      "แผนก": row.dept,
+      "หน่วยงานย่อย": row.jobSite,
+      "กะ": row.shift,
+      "เวลาเข้า": row.shiftStart,
+      "วันหยุด": row.dayoff,
+      "Skill": row.skill,
+      "Level": row.level,
+    }));
+    const skillNames = Array.from(new Set(rows.map((row) => row.skill))).sort();
+    const employees = new Map<string, SkillFlatRow[]>();
+    rows.forEach((row) => employees.set(row.empId, [...(employees.get(row.empId) ?? []), row]));
+    const summaryRows = Array.from(employees.entries()).map(([empId, employeeRows]) => {
+      const first = employeeRows[0];
+      const skillLevels = Object.fromEntries(
+        skillNames.map((skill) => [
+          skill,
+          employeeRows.find((row) => row.skill === skill)?.level ?? 0,
+        ]),
+      );
+      return {
+        "Employee ID": empId,
+        "ชื่อ": first.name,
+        "แผนก": first.dept,
+        "หน่วยงานย่อย": first.jobSite,
+        "กะ": first.shift,
+        "เวลาเข้า": first.shiftStart,
+        "วันหยุด": first.dayoff,
+        ...skillLevels,
+      };
+    });
+
+    const workbook = XLSX.utils.book_new();
+    const flatSheet = XLSX.utils.json_to_sheet(flatRows);
+    flatSheet["!cols"] = [
+      { wch: 14 }, { wch: 28 }, { wch: 24 }, { wch: 20 }, { wch: 10 },
+      { wch: 10 }, { wch: 10 }, { wch: 24 }, { wch: 10 },
+    ];
+    const summarySheet = XLSX.utils.json_to_sheet(summaryRows);
+    summarySheet["!cols"] = [
+      { wch: 14 }, { wch: 28 }, { wch: 24 }, { wch: 20 }, { wch: 10 },
+      { wch: 10 }, { wch: 10 }, ...skillNames.map(() => ({ wch: 18 })),
+    ];
+    XLSX.utils.book_append_sheet(workbook, flatSheet, "Skill Matrix");
+    XLSX.utils.book_append_sheet(workbook, summarySheet, "Skill Summary");
+    XLSX.writeFile(workbook, `skill-matrix-รวม-${toDateKey(new Date())}.xlsx`);
+  }
+
   async function handleSave() {
     setIsSaving(true);
     try {
@@ -6261,15 +6422,41 @@ function SkillMatrixPage({
           <h3>Skill Matrix</h3>
           <p>แก้ไขระดับทักษะรายคน — กรอง Skill เพื่อแก้หลายคนพร้อมกัน หรือเลือกหลายแถว bulk edit</p>
         </div>
-        <button
-          className="primary-button"
-          disabled={!rows.length || isSaving}
-          onClick={handleSave}
-          type="button"
-        >
-          <UploadCloud size={17} />
-          {isSaving ? "Saving..." : `Save${modifiedIds.size > 0 ? ` (${modifiedIds.size} แก้ไข)` : ""}`}
-        </button>
+        <div className="table-actions skill-file-actions">
+          <input
+            ref={skillImportInputRef}
+            accept=".xlsx,.xls,.csv"
+            hidden
+            type="file"
+            onChange={handleSkillImport}
+          />
+          <button
+            className="secondary-button small"
+            onClick={() => skillImportInputRef.current?.click()}
+            type="button"
+          >
+            <UploadCloud size={15} />
+            Import Skill
+          </button>
+          <button
+            className="secondary-button small"
+            disabled={!rows.length}
+            onClick={handleSkillExport}
+            type="button"
+          >
+            <Download size={15} />
+            Export รวม
+          </button>
+          <button
+            className="primary-button small"
+            disabled={!rows.length || isSaving}
+            onClick={handleSave}
+            type="button"
+          >
+            <UploadCloud size={15} />
+            {isSaving ? "Saving..." : `Save${modifiedIds.size > 0 ? ` (${modifiedIds.size} แก้ไข)` : ""}`}
+          </button>
+        </div>
       </div>
 
       <div className={`skill-import-note ${unmatchedJobAssignNames.length ? "warning" : ""}`}>
@@ -6281,6 +6468,11 @@ function SkillMatrixPage({
             : " — เชื่อมชื่อและรหัสพนักงานครบ"}
         </span>
       </div>
+      {skillImportMessage ? (
+        <div className={`skill-import-result ${skillImportMessage.startsWith("Import ไม่สำเร็จ") ? "error" : ""}`}>
+          {skillImportMessage}
+        </div>
+      ) : null}
 
       <div className="table-filters dayoff-editor-filters" style={{ gridTemplateColumns: "1fr 160px 160px 140px auto" }}>
         <input
@@ -8985,6 +9177,8 @@ const helpSections: HelpSection[] = [
       "ค้นหา/กรองตามหน่วยงาน, ทักษะ, กะ",
       "แก้ทีละคนได้จากดรอปดาวน์ Level ในตาราง (0=ยังไม่ระบุ, 1=น้อย, 2=ปานกลาง, 3=ถนัด)",
       "แก้ทีละหลายคน: ติ๊กเลือกพนักงาน แล้วใช้กล่อง \"เปลี่ยน Level...\" ด้านบน กด Apply",
+      "ปุ่ม \"Import Skill\" รองรับไฟล์แบบ Employee ID / Skill / Level และไฟล์ Mas Job Assign แบบทักษะเป็นคอลัมน์ โดยข้อมูลจะเข้าตารางให้ตรวจสอบก่อนกด Save",
+      "ปุ่ม \"Export รวม\" ดาวน์โหลด Excel 2 ชีต: Skill Matrix แบบรายแถว และ Skill Summary แบบพนักงานหนึ่งคนต่อแถวพร้อมทุกทักษะ",
       "ปุ่ม \"+ เพิ่ม Skill ให้พนักงาน\" เปิดฟอร์มเพิ่มคู่พนักงาน+ทักษะใหม่ พิมพ์รหัสพนักงาน/ชื่อทักษะจะมีตัวช่วยเดาให้ (autocomplete)",
       "ตอนกด Save ระบบจะบันทึกเฉพาะรายการที่มี Level มากกว่า 0 เท่านั้น รายการที่ยังไม่ระบุ (Level 0) จะไม่ถูกบันทึก",
     ],
