@@ -212,6 +212,7 @@ const leaveTypeOptions = [
   "ลาพักร้อน",
   "ลาตรวจครรภ์",
   "ลาคลอด",
+  "ลาคลอดคู่สมรส",
   "ลาอุบัติเหตุจากการปฏิบัติงาน",
   "ลาบวช/ลาพิธีสำคัญทางศาสนา",
   "ลาทหาร",
@@ -3274,8 +3275,8 @@ function DashboardPanels({
                 <span className="csb absent">ขาด/ลา {absent}</span>
                 {absent > 0 && (() => {
                   const deptAbsentIds = new Set(allRecords.filter(r => r.status === "Absent").map(r => r.empId));
-                  const leaveColor: Record<string, string> = { "ลาป่วย": "blue", "ลากิจ": "amber", "ลาพักร้อน": "green", "ขาดงาน": "red", "ลาตรวจครรภ์": "pink", "ลาคลอด": "rose", "ลาอุบัติเหตุจากการปฏิบัติงาน": "orange", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "purple", "ลาทหาร": "indigo", "ลาพิเศษไม่จ่าย": "gray" };
-                  const subBadges = (["ลาป่วย", "ลากิจ", "ลาพักร้อน", "ลาตรวจครรภ์", "ลาคลอด", "ลาอุบัติเหตุจากการปฏิบัติงาน", "ลาบวช/ลาพิธีสำคัญทางศาสนา", "ลาทหาร", "ลาพิเศษไม่จ่าย", "ขาดงาน"] as const).map(type => {
+                  const leaveColor: Record<string, string> = { "ลาป่วย": "blue", "ลากิจ": "amber", "ลาพักร้อน": "green", "ขาดงาน": "red", "ลาตรวจครรภ์": "pink", "ลาคลอด": "rose", "ลาคลอดคู่สมรส": "rose", "ลาอุบัติเหตุจากการปฏิบัติงาน": "orange", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "purple", "ลาทหาร": "indigo", "ลาพิเศษไม่จ่าย": "gray" };
+                  const subBadges = (["ลาป่วย", "ลากิจ", "ลาพักร้อน", "ลาตรวจครรภ์", "ลาคลอด", "ลาคลอดคู่สมรส", "ลาอุบัติเหตุจากการปฏิบัติงาน", "ลาบวช/ลาพิธีสำคัญทางศาสนา", "ลาทหาร", "ลาพิเศษไม่จ่าย", "ขาดงาน"] as const).map(type => {
                     const cnt = [...leaveMap.entries()].filter(([eid, lt]) => deptAbsentIds.has(eid) && lt === type).length;
                     return cnt ? <span key={type} className={`csb-leave ${leaveColor[type] ?? "blue"}`}>{type} {cnt}</span> : null;
                   }).filter(Boolean);
@@ -3603,7 +3604,7 @@ function DashboardPanels({
                     <td>
                       {row.status === "Absent" ? (() => {
                         const lt = leaveMap.get(row.empId) ?? "ขาดงาน";
-                        const lc = ({ "ลาป่วย": "leave-sick", "ลากิจ": "leave-personal", "ลาพักร้อน": "leave-vacation", "ลาตรวจครรภ์": "leave-prenatal", "ลาคลอด": "leave-maternity", "ลาอุบัติเหตุจากการปฏิบัติงาน": "leave-accident", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "leave-ordain", "ลาทหาร": "leave-military", "ลาพิเศษไม่จ่าย": "leave-unpaid" } as Record<string, string>)[lt] ?? "leave-absent";
+                        const lc = ({ "ลาป่วย": "leave-sick", "ลากิจ": "leave-personal", "ลาพักร้อน": "leave-vacation", "ลาตรวจครรภ์": "leave-prenatal", "ลาคลอด": "leave-maternity", "ลาคลอดคู่สมรส": "leave-maternity", "ลาอุบัติเหตุจากการปฏิบัติงาน": "leave-accident", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "leave-ordain", "ลาทหาร": "leave-military", "ลาพิเศษไม่จ่าย": "leave-unpaid" } as Record<string, string>)[lt] ?? "leave-absent";
                         return (
                           <select
                             className={`leave-select ${lc}`}
@@ -8250,15 +8251,9 @@ function ReportDashboard({
                           onChange={(e) => saveLeave(row.empId, e.target.value)}
                         >
                           <option value="">— เลือกประเภท —</option>
-                          <option value="ลาป่วย">ลาป่วย</option>
-                          <option value="ลากิจ">ลากิจ</option>
-                          <option value="ลาพักร้อน">ลาพักร้อน</option>
-                          <option value="ลาตรวจครรภ์">ลาตรวจครรภ์</option>
-                          <option value="ลาคลอด">ลาคลอด</option>
-                          <option value="ลาอุบัติเหตุจากการปฏิบัติงาน">ลาอุบัติเหตุจากการปฏิบัติงาน</option>
-                          <option value="ลาบวช/ลาพิธีสำคัญทางศาสนา">ลาบวช/ลาพิธีสำคัญทางศาสนา</option>
-                          <option value="ลาทหาร">ลาทหาร</option>
-                          <option value="ลาพิเศษไม่จ่าย">ลาพิเศษไม่จ่าย</option>
+                          {leaveTypeOptions.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
                           <option value="ขาดงาน">ขาดงาน</option>
                         </select>
                       ) : (
@@ -8785,7 +8780,7 @@ function OTDashboard({
         const leaveType = leaveMap.get(rec.empId) ?? "ขาดงาน";
         if (leaveType === "ลาป่วย") cur.sickLeave += 1;
         else if (leaveType === "ลากิจ") cur.personalLeave += 1;
-        else if (leaveType === "ลาบวช/ลาพิธีสำคัญทางศาสนา" || leaveType === "ลาคลอด") cur.ordainMaternityLeave += 1;
+        else if (leaveType === "ลาบวช/ลาพิธีสำคัญทางศาสนา" || leaveType === "ลาคลอด" || leaveType === "ลาคลอดคู่สมรส") cur.ordainMaternityLeave += 1;
         else if (leaveType === "ลาพักร้อน") cur.vacationLeave += 1;
         else if (leaveType === "ลาพิเศษไม่จ่าย") cur.unpaidLeave += 1;
         else cur.unspecifiedAbsent += 1;
@@ -9399,7 +9394,7 @@ function OTDashboard({
                         <td>
                           {rec.status === "Absent" ? (() => {
                             const lt = leaveMap.get(rec.empId) ?? "ขาดงาน";
-                            const lc = ({ "ลาป่วย": "leave-sick", "ลากิจ": "leave-personal", "ลาพักร้อน": "leave-vacation", "ลาตรวจครรภ์": "leave-prenatal", "ลาคลอด": "leave-maternity", "ลาอุบัติเหตุจากการปฏิบัติงาน": "leave-accident", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "leave-ordain", "ลาทหาร": "leave-military", "ลาพิเศษไม่จ่าย": "leave-unpaid" } as Record<string, string>)[lt] ?? "leave-absent";
+                            const lc = ({ "ลาป่วย": "leave-sick", "ลากิจ": "leave-personal", "ลาพักร้อน": "leave-vacation", "ลาตรวจครรภ์": "leave-prenatal", "ลาคลอด": "leave-maternity", "ลาคลอดคู่สมรส": "leave-maternity", "ลาอุบัติเหตุจากการปฏิบัติงาน": "leave-accident", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "leave-ordain", "ลาทหาร": "leave-military", "ลาพิเศษไม่จ่าย": "leave-unpaid" } as Record<string, string>)[lt] ?? "leave-absent";
                             return <span className={`leave-select ${lc}`} style={{ cursor: "default" }}>{lt}</span>;
                           })() : (
                             <span className={`ot-status-badge ot-status-${rec.status.toLowerCase()}`}>
