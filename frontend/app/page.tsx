@@ -82,6 +82,9 @@ type ManpowerEditorRow = {
 
 type SkillMatrixSaveRow = {
   empId: string;
+  name?: string;
+  dept?: string;
+  jobSite?: string;
   skill: string;
   level: number;
 };
@@ -788,6 +791,40 @@ export default function Home() {
     await syncActiveRunSnapshots("manpower_file_path", path);
   }
 
+  async function syncEmployeeSkillsTable(rows: SkillMatrixSaveRow[], sourceFileId: string) {
+    const deduplicatedRows = new Map<string, Record<string, unknown>>();
+    const updatedAt = new Date().toISOString();
+    rows
+      .filter((row) => row.empId && row.skill && row.level > 0)
+      .forEach((row) => {
+        deduplicatedRows.set(`${row.empId}|${row.skill}`, {
+          emp_id: row.empId,
+          employee_name: row.name ?? null,
+          dept: row.dept ?? null,
+          job_site: row.jobSite ?? null,
+          skill: row.skill,
+          level: row.level,
+          source_file_id: sourceFileId,
+          updated_at: updatedAt,
+        });
+      });
+
+    const payload = Array.from(deduplicatedRows.values());
+    for (let index = 0; index < payload.length; index += 500) {
+      const { error: upsertError } = await supabase
+        .from("employee_skills")
+        .upsert(payload.slice(index, index + 500), { onConflict: "emp_id,skill" });
+      if (upsertError) throw new Error(upsertError.message);
+    }
+
+    const staleFilter = `source_file_id.is.null,source_file_id.neq.${sourceFileId}`;
+    const { error: cleanupError } = await supabase
+      .from("employee_skills")
+      .delete()
+      .or(staleFilter);
+    if (cleanupError) throw new Error(cleanupError.message);
+  }
+
   async function saveSkillMatrixRows(rows: SkillMatrixSaveRow[]) {
     setError("");
     setMessage("");
@@ -837,7 +874,7 @@ export default function Home() {
       throw new Error(deactivateError.message);
     }
 
-    const { error: insertError } = await supabase
+    const { data: insertedSkillFile, error: insertError } = await supabase
       .from("master_data_files")
       .insert({
         owner_id: null,
@@ -845,17 +882,35 @@ export default function Home() {
         file_path: path,
         original_filename: "SkillMatrix-edited.xlsx",
         is_active: true,
-      });
+      })
+      .select("id")
+      .single();
 
-    if (insertError) {
+    if (insertError || !insertedSkillFile) {
       if (prevActiveSkillId) {
         await supabase.from("master_data_files").update({ is_active: true }).eq("id", prevActiveSkillId);
       }
-      setError(insertError.message);
-      throw new Error(insertError.message);
+      const insertMessage = insertError?.message ?? "สร้างรายการ Skill Matrix master ไม่สำเร็จ";
+      setError(insertMessage);
+      throw new Error(insertMessage);
     }
 
-    setMessage("บันทึก Skill Matrix master แล้ว");
+    try {
+      await syncEmployeeSkillsTable(rows, insertedSkillFile.id);
+    } catch (syncError) {
+      await supabase
+        .from("master_data_files")
+        .update({ is_active: false })
+        .eq("id", insertedSkillFile.id);
+      if (prevActiveSkillId) {
+        await supabase.from("master_data_files").update({ is_active: true }).eq("id", prevActiveSkillId);
+      }
+      const syncMessage = syncError instanceof Error ? syncError.message : "sync employee_skills ไม่สำเร็จ";
+      setError(`บันทึกไฟล์แล้ว แต่ sync employee_skills ไม่สำเร็จ: ${syncMessage}`);
+      throw new Error(syncMessage);
+    }
+
+    setMessage(`บันทึก Skill Matrix และ sync employee_skills ${rows.length.toLocaleString()} แถวแล้ว`);
     await loadActiveMasters();
   }
 
@@ -6367,7 +6422,14 @@ function SkillMatrixPage({
     try {
       const flatRows = rows
         .filter((r) => r.level > 0)
-        .map((r) => ({ empId: r.empId, skill: r.skill, level: r.level }));
+        .map((r) => ({
+          empId: r.empId,
+          name: r.name,
+          dept: r.dept,
+          jobSite: r.jobSite,
+          skill: r.skill,
+          level: r.level,
+        }));
       await saveSkillMatrixRows(flatRows);
       setRows((prev) => prev.map((r) => ({ ...r, origLevel: r.level })));
     } catch {
@@ -9180,7 +9242,7 @@ const helpSections: HelpSection[] = [
       "ปุ่ม \"Import Skill\" รองรับไฟล์แบบ Employee ID / Skill / Level และไฟล์ Mas Job Assign แบบทักษะเป็นคอลัมน์ โดยข้อมูลจะเข้าตารางให้ตรวจสอบก่อนกด Save",
       "ปุ่ม \"Export รวม\" ดาวน์โหลด Excel 2 ชีต: Skill Matrix แบบรายแถว และ Skill Summary แบบพนักงานหนึ่งคนต่อแถวพร้อมทุกทักษะ",
       "ปุ่ม \"+ เพิ่ม Skill ให้พนักงาน\" เปิดฟอร์มเพิ่มคู่พนักงาน+ทักษะใหม่ พิมพ์รหัสพนักงาน/ชื่อทักษะจะมีตัวช่วยเดาให้ (autocomplete)",
-      "ตอนกด Save ระบบจะบันทึกเฉพาะรายการที่มี Level มากกว่า 0 เท่านั้น รายการที่ยังไม่ระบุ (Level 0) จะไม่ถูกบันทึก",
+      "ตอนกด Save ระบบจะบันทึกเฉพาะรายการที่มี Level มากกว่า 0 และ sync ลง Supabase table employee_skills เพื่อให้ระบบอื่นเรียกใช้ผ่าน API ได้",
     ],
   },
   {
