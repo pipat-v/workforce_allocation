@@ -462,9 +462,13 @@ export default function Home() {
       downloadSheetRows(dayoffPath),
       manpowerPath ? downloadSheetRows(manpowerPath) : Promise.resolve([] as Record<string, unknown>[]),
     ])
-      .then(([employeeRows, dayoffRows, manpowerRows]) =>
-        syncProductionUsersFromMasters(workDate, employeeRows, dayoffRows, manpowerRows),
-      )
+      .then(async ([employeeRows, dayoffRows, manpowerRows]) => {
+        await syncEmployeeWorkSchedules(employeeRows, dayoffRows, manpowerRows);
+        const { error: refreshError } = await supabase.rpc("refresh_production_user", { p_work_date: workDate });
+        if (refreshError) {
+          await syncProductionUsersFromMasters(workDate, employeeRows, dayoffRows, manpowerRows);
+        }
+      })
       .catch((syncError) => {
         productionSyncKeyRef.current = "";
         setError(`sync production_user ไม่สำเร็จ: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
@@ -1435,6 +1439,50 @@ export default function Home() {
       .from("production_user")
       .delete()
       .eq("work_date", workDate)
+      .neq("sync_token", syncToken);
+    if (cleanupError) throw new Error(cleanupError.message);
+  }
+
+  async function syncEmployeeWorkSchedules(
+    employeeRows: Record<string, unknown>[],
+    dayoffRows: Record<string, unknown>[],
+    manpowerRows: Record<string, unknown>[],
+  ) {
+    const dayoffMap = buildDayoffShiftMap(dayoffRows);
+    const manpowerLookup = buildManpowerLookup(parseManpowerRows(manpowerRows));
+    const syncToken = crypto.randomUUID();
+    const syncedAt = new Date().toISOString();
+    const payload = employeeRows.map((row) => {
+      const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+      const firstName = String(row["First Name (Local)"] ?? "").trim();
+      const lastName = String(row["Last Name (Local)"] ?? "").trim();
+      const schedule = dayoffMap.get(empId);
+      const dept = String(row["หน่วยงาน"] ?? row["dept"] ?? row["Name (Section)"] ?? "ไม่ระบุ").trim() || "ไม่ระบุ";
+      const shift = normalizeShiftLabel(schedule?.shift) || "กะ 1";
+      const manpower = lookupManpowerTime(manpowerLookup, dept, schedule?.section ?? "", shift);
+      return {
+        emp_id: empId,
+        employee_name: `${firstName} ${lastName}`.trim() || String(row["Employee Name"] ?? row["Name"] ?? empId).trim(),
+        dept,
+        job_site: schedule?.section ?? "",
+        dayoff: schedule?.dayoff ?? "",
+        shift,
+        shift_start: schedule?.shiftStart || manpower?.shiftStart || "07:00",
+        shift_end: schedule?.shiftEnd || manpower?.shiftEnd || null,
+        sync_token: syncToken,
+        synced_at: syncedAt,
+      };
+    }).filter((row) => row.emp_id);
+
+    for (let index = 0; index < payload.length; index += 500) {
+      const { error } = await supabase
+        .from("employee_work_schedules")
+        .upsert(payload.slice(index, index + 500), { onConflict: "emp_id" });
+      if (error) throw new Error(error.message);
+    }
+    const { error: cleanupError } = await supabase
+      .from("employee_work_schedules")
+      .delete()
       .neq("sync_token", syncToken);
     if (cleanupError) throw new Error(cleanupError.message);
   }
