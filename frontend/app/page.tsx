@@ -1104,16 +1104,26 @@ export default function Home() {
         records: baseReport.records.map(attachLeave),
         timestampRows: baseReport.timestampRows.map(attachLeave),
       };
+      const syncErrors: string[] = [];
       try {
         await saveTimestampWithDeptRows(latestRun.id, latestReport);
-        await syncProductionUsers(latestRun.id, latestReport, leaveByEmployee);
       } catch (saveError) {
-        const errMsg =
+        syncErrors.push(
           saveError instanceof Error
             ? saveError.message
-            : (saveError as { message?: string })?.message ?? JSON.stringify(saveError);
-        setError(`โหลด report ได้ แต่ sync ตารางผลลัพธ์ไม่สำเร็จ: ${errMsg}`);
+            : (saveError as { message?: string })?.message ?? JSON.stringify(saveError),
+        );
       }
+      try {
+        await syncProductionUsers(latestRun.id, latestReport, leaveByEmployee);
+      } catch (productionError) {
+        syncErrors.push(
+          productionError instanceof Error
+            ? productionError.message
+            : (productionError as { message?: string })?.message ?? JSON.stringify(productionError),
+        );
+      }
+      if (syncErrors.length > 0) setError(`โหลด report ได้ แต่ sync ตารางผลลัพธ์บางส่วนไม่สำเร็จ: ${syncErrors.join("; ")}`);
       // Deduplicate runs by date key (keep latest upload per date) then sort ascending,
       // so that monthlyScanRows[mi-1] and [mi+1] are guaranteed to be adjacent calendar days.
       const runsByDate = new Map<string, typeof runs[0]>();
@@ -1394,6 +1404,7 @@ export default function Home() {
                       { id: "holidays", icon: CalendarDays, label: "วันพระ" },
                       { id: "public_holidays", icon: CalendarDays, label: "วันหยุดประจำปี" },
                       { id: "dayoff_shift", icon: CalendarClock, label: "Shift & Dayoff" },
+                      { id: "leave", icon: CalendarOff, label: "ลาล่วงหน้า" },
                     ] as const).map((sub) => {
                       const SubIcon = sub.icon;
                       return (
