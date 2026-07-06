@@ -21,6 +21,7 @@ import {
   Home as HomeIcon,
   LayoutGrid,
   LogOut,
+  Menu,
   Search,
   Settings,
   Trash2,
@@ -288,6 +289,7 @@ export default function Home() {
   const [prevMonthLateCounts, setPrevMonthLateCounts] = useState<Record<string, number>>({});
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [showRunPicker, setShowRunPicker] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [holidayDates, setHolidayDates] = useState<Set<string>>(() => {
     const all = new Set<string>();
     for (const s of Object.values(buddhistHolyDaysByYear)) for (const d of s) all.add(d);
@@ -1489,10 +1491,22 @@ export default function Home() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
+      <aside className={`sidebar${mobileMenuOpen ? " mobile-menu-open" : ""}`}>
         <div className="cpf-logo">
           <img alt="WAS" src="/was-logo.png" />
         </div>
+
+        <button
+          className="mobile-nav-toggle"
+          type="button"
+          aria-expanded={mobileMenuOpen}
+          aria-label={mobileMenuOpen ? "ปิดเมนู" : "เปิดเมนู"}
+          onClick={() => setMobileMenuOpen((open) => !open)}
+        >
+          <Menu size={20} />
+          <span>{activeNav?.label ?? "เมนู"}</span>
+          <ChevronDown className={mobileMenuOpen ? "open" : ""} size={18} />
+        </button>
 
         <nav className="nav-list" aria-label="Main navigation">
           {navItems.map((item) => {
@@ -1502,7 +1516,12 @@ export default function Home() {
               <div key={item.label}>
                 <button
                   className={`nav-item ${isActive ? "active" : ""}`}
-                  onClick={() => { setActiveTab(item.id as TabId); setError(""); setMessage(""); }}
+                  onClick={() => {
+                    setActiveTab(item.id as TabId);
+                    setError("");
+                    setMessage("");
+                    if (item.id !== "master" && item.id !== "ot") setMobileMenuOpen(false);
+                  }}
                   type="button"
                 >
                   <Icon size={19} />
@@ -1526,7 +1545,7 @@ export default function Home() {
                         <button
                           key={sub.id}
                           className={`nav-sub-item${masterSubTab === sub.id ? " active" : ""}${sub.id === "dayoff_shift" ? " primary" : ""}`}
-                          onClick={() => setMasterSubTab(sub.id)}
+                          onClick={() => { setMasterSubTab(sub.id); setMobileMenuOpen(false); }}
                           type="button"
                         >
                           <SubIcon size={14} />
@@ -1547,7 +1566,7 @@ export default function Home() {
                         <button
                           key={sub.id}
                           className={`nav-sub-item${otSubTab === sub.id ? " active" : ""}`}
-                          onClick={() => setOtSubTab(sub.id)}
+                          onClick={() => { setOtSubTab(sub.id); setMobileMenuOpen(false); }}
                           type="button"
                         >
                           <SubIcon size={14} />
