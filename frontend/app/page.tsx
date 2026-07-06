@@ -2344,6 +2344,15 @@ function cleanEmpId(value: unknown) {
     .replace(/\.0$/, "");
 }
 
+function normalizeEmployeeNameForMatch(value: unknown) {
+  return String(value ?? "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[-–—]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("th-TH");
+}
+
 function getAttendanceSortValue(
   row: AttendanceRecord,
   key: string,
@@ -5960,6 +5969,7 @@ function SkillMatrixPage({
   const [addOpen, setAddOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [unmatchedShoulderNames, setUnmatchedShoulderNames] = useState<string[]>([]);
 
   const LEVEL_LABELS: Record<number, string> = { 1: "น้อย", 2: "ปานกลาง", 3: "ถนัด" };
   const LEVEL_BG: Record<number, string> = { 1: "#fecaca", 2: "#fef08a", 3: "#34d399", 4: "#93c5fd", 5: "#a78bfa" };
@@ -5970,6 +5980,7 @@ function SkillMatrixPage({
       setEmpInfoMap(new Map());
       setAllEmpList([]);
       setSelectedIds(new Set());
+      setUnmatchedShoulderNames([]);
       return;
     }
 
@@ -5985,12 +5996,22 @@ function SkillMatrixPage({
     const dayoffPromise = dayoffShiftFile?.file_path
       ? downloadSheetRows(dayoffShiftFile.file_path).catch(() => [] as Record<string, unknown>[])
       : Promise.resolve([] as Record<string, unknown>[]);
+    const shoulderPromise = fetch("/mas-job-assign-shoulder.xlsx")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("โหลดไฟล์ไหล่พิเศษไม่สำเร็จ");
+        const buffer = await response.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array", cellDates: true, raw: true });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: true });
+      })
+      .catch(() => [] as Record<string, unknown>[]);
 
-    Promise.all([skillPromise, empPromise, dayoffPromise])
-      .then(([skillRows, empRows, dayoffRows]) => {
+    Promise.all([skillPromise, empPromise, dayoffPromise, shoulderPromise])
+      .then(([skillRows, empRows, dayoffRows, shoulderRows]) => {
         if (!isMounted) return;
 
         const empInfo = new Map<string, { name: string; dept: string; jobSite: string }>();
+        const empIdByName = new Map<string, string>();
         for (const row of empRows) {
           const empId = cleanEmpId(
             row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"],
@@ -6003,12 +6024,22 @@ function SkillMatrixPage({
             empId;
           const dept = String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim();
           const jobSite = String(row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim();
-          if (empId) empInfo.set(empId, { name, dept, jobSite });
+          if (empId) {
+            empInfo.set(empId, { name, dept, jobSite });
+            const englishName = [
+              row["First Name (EN) (Personal Information)"],
+              row["Last Name (EN) (Personal Information)"],
+            ].map((value) => String(value ?? "").trim()).filter(Boolean).join(" ");
+            [name, englishName, row["Employee Name"]]
+              .map(normalizeEmployeeNameForMatch)
+              .filter(Boolean)
+              .forEach((normalizedName) => empIdByName.set(normalizedName, empId));
+          }
         }
 
         const dayoffMap = buildDayoffShiftMap(dayoffRows);
 
-        const parsed: SkillFlatRow[] = skillRows
+        const activeSkillRows: SkillFlatRow[] = skillRows
           .map((row, i) => {
             const empId = cleanEmpId(
               row["Employee ID"] ?? row["Emp ID"] ?? row["emp_id"] ?? row["รหัสพนักงาน"],
@@ -6033,8 +6064,49 @@ function SkillMatrixPage({
           })
           .filter((r) => r.empId && r.skill);
 
+        const unmatchedNames = new Set<string>();
+        const importedShoulderRows: SkillFlatRow[] = [];
+        const ignoredColumns = new Set(["จุดงาน", "รายชื่อพนักงาน", "ชื่อเล่น"]);
+        shoulderRows.forEach((row, rowIndex) => {
+          const sourceName = String(row["รายชื่อพนักงาน"] ?? "").trim();
+          if (!sourceName) return;
+          const empId = empIdByName.get(normalizeEmployeeNameForMatch(sourceName));
+          if (!empId) {
+            unmatchedNames.add(sourceName);
+            return;
+          }
+
+          const info = empInfo.get(empId) ?? { name: sourceName, dept: "", jobSite: "" };
+          const ds = dayoffMap.get(empId) ?? { dayoff: "", shift: "", shiftStart: "" };
+          const jobSite = String(row["จุดงาน"] ?? "ไหล่พิเศษ").trim() || "ไหล่พิเศษ";
+          Object.entries(row).forEach(([skill, rawLevel], skillIndex) => {
+            if (ignoredColumns.has(skill) || skill.startsWith("__EMPTY")) return;
+            const level = Number(rawLevel) || 0;
+            if (level <= 0) return;
+            importedShoulderRows.push({
+              id: `shoulder-${rowIndex}-${skillIndex}-${empId}-${skill}`,
+              empId,
+              name: info.name,
+              dept: info.dept,
+              jobSite,
+              shift: ds.shift,
+              shiftStart: ds.shiftStart,
+              dayoff: ds.dayoff,
+              skill: skill.trim(),
+              level,
+              origLevel: level,
+            });
+          });
+        });
+
+        const mergedRows = new Map<string, SkillFlatRow>();
+        importedShoulderRows.forEach((row) => mergedRows.set(`${row.empId}|${row.skill}`, row));
+        activeSkillRows.forEach((row) => mergedRows.set(`${row.empId}|${row.skill}`, row));
+        const parsed = Array.from(mergedRows.values());
+
         const empList = Array.from(empInfo.entries()).map(([empId, info]) => ({ empId, name: info.name }));
         setRows(parsed);
+        setUnmatchedShoulderNames(Array.from(unmatchedNames));
         setEmpInfoMap(empInfo);
         setAllEmpList(empList);
         setSelectedIds(new Set());
@@ -6044,6 +6116,7 @@ function SkillMatrixPage({
         setRows([]);
         setEmpInfoMap(new Map());
         setAllEmpList([]);
+        setUnmatchedShoulderNames([]);
       })
       .finally(() => {
         if (!isMounted) return;
@@ -6180,6 +6253,16 @@ function SkillMatrixPage({
           <UploadCloud size={17} />
           {isSaving ? "Saving..." : `Save${modifiedIds.size > 0 ? ` (${modifiedIds.size} แก้ไข)` : ""}`}
         </button>
+      </div>
+
+      <div className={`skill-import-note ${unmatchedShoulderNames.length ? "warning" : ""}`}>
+        <FileSpreadsheet size={16} />
+        <span>
+          นำเข้าข้อมูลจาก Mas Job Assign ไหล่พิเศษแล้ว
+          {unmatchedShoulderNames.length > 0
+            ? ` — หา Emp ID ไม่พบ ${unmatchedShoulderNames.length} คน: ${unmatchedShoulderNames.join(", ")}`
+            : " — เชื่อมชื่อและรหัสพนักงานครบ"}
+        </span>
       </div>
 
       <div className="table-filters dayoff-editor-filters" style={{ gridTemplateColumns: "1fr 160px 160px 140px auto" }}>

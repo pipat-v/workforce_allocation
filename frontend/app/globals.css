@@ -2231,6 +2231,28 @@ button {
   overflow: auto;
 }
 
+.skill-import-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-left: 3px solid #10b981;
+  padding: 8px 10px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 12px;
+}
+
+.skill-import-note svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.skill-import-note.warning {
+  border-left-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+}
+
 .skill-add-row-bar {
   display: flex;
   align-items: center;
