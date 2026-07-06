@@ -152,6 +152,7 @@ type AttendanceRecord = {
   scanInDate: string;  // YYYY-MM-DD when different from isoTargetDate, else ""
   scanOutDate: string; // YYYY-MM-DD when different from isoTargetDate, else ""
   status: "Present" | "Late" | "Absent" | "DayOff" | "Pending" | "NoScanIn";
+  leaveType?: string;
   minutesLate: number;
 };
 
@@ -201,8 +202,20 @@ type TabId =
   | "setting"
   | "help";
 
-type MasterSubTab = "files" | "holidays" | "public_holidays" | "manpower" | "dayoff_shift";
+type MasterSubTab = "files" | "holidays" | "public_holidays" | "manpower" | "dayoff_shift" | "leave";
 type OtSubTab = "chart" | "summary" | "detail";
+
+const leaveTypeOptions = [
+  "ลาป่วย",
+  "ลากิจ",
+  "ลาพักร้อน",
+  "ลาตรวจครรภ์",
+  "ลาคลอด",
+  "ลาอุบัติเหตุจากการปฏิบัติงาน",
+  "ลาบวช/ลาพิธีสำคัญทางศาสนา",
+  "ลาทหาร",
+  "ลาพิเศษไม่จ่าย",
+] as const;
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: HomeIcon },
@@ -1072,15 +1085,34 @@ export default function Home() {
           : Promise.resolve([] as Record<string, unknown>[]),
       ]);
 
-      const latestReport = buildReportData(employeeRows, scanRows, manpowerRows, dayoffShiftRows, holidayDates, prevScanRows, nextScanRows, currentDateKey);
+      const baseReport = buildReportData(employeeRows, scanRows, manpowerRows, dayoffShiftRows, holidayDates, prevScanRows, nextScanRows, currentDateKey);
+      const { data: leaveRows, error: leaveError } = await supabase
+        .from("leave_records")
+        .select("emp_id, leave_type")
+        .eq("leave_date", baseReport.isoTargetDate);
+      if (leaveError) throw new Error(`โหลดข้อมูลการลาไม่สำเร็จ: ${leaveError.message}`);
+
+      const leaveByEmployee = new Map(
+        (leaveRows ?? []).map((row: { emp_id: string; leave_type: string }) => [row.emp_id, row.leave_type]),
+      );
+      const attachLeave = (row: AttendanceRecord): AttendanceRecord =>
+        row.status === "Absent" && leaveByEmployee.has(row.empId)
+          ? { ...row, leaveType: leaveByEmployee.get(row.empId) }
+          : row;
+      const latestReport: ReportData = {
+        ...baseReport,
+        records: baseReport.records.map(attachLeave),
+        timestampRows: baseReport.timestampRows.map(attachLeave),
+      };
       try {
         await saveTimestampWithDeptRows(latestRun.id, latestReport);
+        await syncProductionUsers(latestRun.id, latestReport, leaveByEmployee);
       } catch (saveError) {
         const errMsg =
           saveError instanceof Error
             ? saveError.message
             : (saveError as { message?: string })?.message ?? JSON.stringify(saveError);
-        setError(`โหลด report ได้ แต่บันทึก Timestamp With Dept ไม่สำเร็จ: ${errMsg}`);
+        setError(`โหลด report ได้ แต่ sync ตารางผลลัพธ์ไม่สำเร็จ: ${errMsg}`);
       }
       // Deduplicate runs by date key (keep latest upload per date) then sort ascending,
       // so that monthlyScanRows[mi-1] and [mi+1] are guaranteed to be adjacent calendar days.
@@ -1252,7 +1284,7 @@ export default function Home() {
         shift_start: row.shiftStart,
         scan_in: row.scanIn,
         scan_out: row.scanOut,
-        attendance_status: row.status,
+        attendance_status: row.leaveType ?? row.status,
         minutes_late: row.minutesLate,
       });
     }
@@ -1266,6 +1298,68 @@ export default function Home() {
       if (insertError) batchErrors.push(insertError.message);
     }
     if (batchErrors.length > 0) throw new Error(batchErrors.join("; "));
+  }
+
+  async function syncProductionUsers(
+    runId: string,
+    report: ReportData,
+    leaveByEmployee: Map<string, string>,
+  ) {
+    const expectedEmployees = report.records.filter(
+      (row) => row.status !== "DayOff" && !leaveByEmployee.has(row.empId),
+    );
+    const expectedById = new Map(expectedEmployees.map((row) => [row.empId, row]));
+    const ids = [...expectedById.keys()];
+    const skillRows: Array<{
+      emp_id: string;
+      employee_name: string | null;
+      dept: string | null;
+      job_site: string | null;
+      skill: string;
+      level: number;
+    }> = [];
+
+    for (let index = 0; index < ids.length; index += 200) {
+      const { data, error } = await supabase
+        .from("employee_skills")
+        .select("emp_id, employee_name, dept, job_site, skill, level")
+        .in("emp_id", ids.slice(index, index + 200));
+      if (error) throw new Error(error.message);
+      skillRows.push(...((data ?? []) as typeof skillRows));
+    }
+
+    const syncToken = crypto.randomUUID();
+    const syncedAt = new Date().toISOString();
+    const payload = skillRows.map((skill) => {
+      const attendance = expectedById.get(skill.emp_id)!;
+      return {
+        work_date: report.isoTargetDate,
+        emp_id: skill.emp_id,
+        employee_name: skill.employee_name || attendance.name,
+        dept: skill.dept || attendance.dept,
+        job_site: skill.job_site || attendance.section,
+        shift: attendance.shift,
+        shift_start: attendance.shiftStart,
+        skill: skill.skill,
+        level: skill.level,
+        source_run_id: runId,
+        sync_token: syncToken,
+        synced_at: syncedAt,
+      };
+    });
+
+    for (let index = 0; index < payload.length; index += 500) {
+      const { error } = await supabase
+        .from("production_user")
+        .upsert(payload.slice(index, index + 500), { onConflict: "work_date,emp_id,skill" });
+      if (error) throw new Error(error.message);
+    }
+    const { error: cleanupError } = await supabase
+      .from("production_user")
+      .delete()
+      .eq("work_date", report.isoTargetDate)
+      .neq("sync_token", syncToken);
+    if (cleanupError) throw new Error(cleanupError.message);
   }
 
   return (
@@ -1406,6 +1500,7 @@ export default function Home() {
                 <button className={`master-sub-tab${masterSubTab === "holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("holidays")}><CalendarDays size={15} />วันพระ</button>
                 <button className={`master-sub-tab${masterSubTab === "public_holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("public_holidays")}><CalendarDays size={15} />วันหยุดประจำปี</button>
                 <button className={`master-sub-tab master-sub-tab-primary${masterSubTab === "dayoff_shift" ? " active" : ""}`} onClick={() => setMasterSubTab("dayoff_shift")}><CalendarClock size={15} />Shift & Dayoff</button>
+                <button className={`master-sub-tab${masterSubTab === "leave" ? " active" : ""}`} onClick={() => setMasterSubTab("leave")}><CalendarOff size={15} />ลาล่วงหน้า</button>
               </div>
             ) : activeTab === "ot" ? (
               <div className="master-sub-tabs">
@@ -3371,15 +3466,9 @@ function DashboardPanels({
                             onChange={(e) => saveLeave(row.empId, e.target.value)}
                           >
                             <option value="ขาดงาน">ขาดงาน</option>
-                            <option value="ลาป่วย">ลาป่วย</option>
-                            <option value="ลากิจ">ลากิจ</option>
-                            <option value="ลาพักร้อน">ลาพักร้อน</option>
-                            <option value="ลาตรวจครรภ์">ลาตรวจครรภ์</option>
-                            <option value="ลาคลอด">ลาคลอด</option>
-                            <option value="ลาอุบัติเหตุจากการปฏิบัติงาน">ลาอุบัติเหตุจากการปฏิบัติงาน</option>
-                            <option value="ลาบวช/ลาพิธีสำคัญทางศาสนา">ลาบวช/ลาพิธีสำคัญทางศาสนา</option>
-                            <option value="ลาทหาร">ลาทหาร</option>
-                            <option value="ลาพิเศษไม่จ่าย">ลาพิเศษไม่จ่าย</option>
+                            {leaveTypeOptions.map((option) => (
+                              <option key={option} value={option}>{option}</option>
+                            ))}
                           </select>
                         );
                       })() : (
@@ -3673,7 +3762,7 @@ function MasterDataPage({
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   isSavingMasters: boolean;
   masterFileHistory: MasterFile[];
-  masterSubTab: "files" | "holidays" | "public_holidays" | "manpower" | "dayoff_shift";
+  masterSubTab: MasterSubTab;
   masterUploads: MasterUploadState;
   onDeleteMasterFile: (file: MasterFile) => Promise<void>;
   onHolidaysChanged: (dates: Set<string>) => void;
@@ -4194,7 +4283,145 @@ function MasterDataPage({
           saveManpowerRows={saveManpowerRows}
         />
       ) : null}
+
+      {masterSubTab === "leave" ? (
+        <LeavePlanningPage employeeMasterFile={activeMasterMap.employee_master} />
+      ) : null}
     </section>
+  );
+}
+
+
+function LeavePlanningPage({ employeeMasterFile }: { employeeMasterFile?: MasterFile }) {
+  type LeaveRow = { id: string; emp_id: string; leave_date: string; leave_type: string; recorded_by: string | null };
+  type EmployeeOption = { empId: string; name: string; dept: string };
+  const localToday = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  };
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [leaves, setLeaves] = useState<LeaveRow[]>([]);
+  const [empId, setEmpId] = useState("");
+  const [leaveDate, setLeaveDate] = useState(localToday);
+  const [leaveType, setLeaveType] = useState<string>(leaveTypeOptions[0]);
+  const [recordedBy, setRecordedBy] = useState("");
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.empId, employee])), [employees]);
+  const visibleLeaves = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase("th-TH");
+    if (!needle) return leaves;
+    return leaves.filter((leave) => {
+      const employee = employeeById.get(leave.emp_id);
+      return [leave.emp_id, employee?.name, employee?.dept, leave.leave_type, leave.leave_date]
+        .some((value) => String(value ?? "").toLocaleLowerCase("th-TH").includes(needle));
+    });
+  }, [employeeById, leaves, query]);
+
+  async function loadLeaves() {
+    const { data, error: loadError } = await supabase
+      .from("leave_records")
+      .select("id, emp_id, leave_date, leave_type, recorded_by")
+      .gte("leave_date", localToday())
+      .order("leave_date", { ascending: true });
+    if (loadError) throw new Error(loadError.message);
+    setLeaves((data ?? []) as LeaveRow[]);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      employeeMasterFile ? downloadSheetRows(employeeMasterFile.file_path) : Promise.resolve([]),
+      supabase.from("leave_records").select("id, emp_id, leave_date, leave_type, recorded_by").gte("leave_date", localToday()).order("leave_date", { ascending: true }),
+    ]).then(([employeeRows, leaveResult]) => {
+      if (cancelled) return;
+      if (leaveResult.error) throw new Error(leaveResult.error.message);
+      const parsed = employeeRows.map((row) => {
+        const parsedId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+        const firstName = String(row["First Name (Local)"] ?? "").trim();
+        const lastName = String(row["Last Name (Local)"] ?? "").trim();
+        return {
+          empId: parsedId,
+          name: `${firstName} ${lastName}`.trim() || String(row["Employee Name"] ?? row["Name"] ?? parsedId).trim(),
+          dept: String(row["หน่วยงาน"] ?? row["dept"] ?? row["Name (Section)"] ?? "-").trim() || "-",
+        };
+      }).filter((row) => row.empId).sort((a, b) => a.empId.localeCompare(b.empId));
+      setEmployees(parsed);
+      setLeaves((leaveResult.data ?? []) as LeaveRow[]);
+      if (parsed.length > 0) setEmpId(parsed[0].empId);
+    }).catch((reason) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : "โหลดข้อมูลไม่สำเร็จ");
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [employeeMasterFile?.file_path]);
+
+  async function saveLeavePlan() {
+    if (!empId || !leaveDate || !leaveType) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    const { error: saveError } = await supabase.from("leave_records").upsert({
+      emp_id: empId,
+      leave_date: leaveDate,
+      leave_type: leaveType,
+      recorded_by: recordedBy.trim() || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "emp_id,leave_date" });
+    if (saveError) setError(saveError.message);
+    else {
+      setMessage("บันทึกการลาล่วงหน้าแล้ว");
+      try { await loadLeaves(); } catch (reason) { setError(reason instanceof Error ? reason.message : "โหลดข้อมูลไม่สำเร็จ"); }
+    }
+    setSaving(false);
+  }
+
+  async function deleteLeave(id: string) {
+    setError("");
+    const { error: deleteError } = await supabase.from("leave_records").delete().eq("id", id);
+    if (deleteError) setError(deleteError.message);
+    else setLeaves((current) => current.filter((leave) => leave.id !== id));
+  }
+
+  return (
+    <div className="leave-planning-page">
+      <section className="panel leave-planning-form">
+        <div className="section-heading-row">
+          <div><h3>บันทึกลาล่วงหน้า</h3><p>เลือกพนักงาน ประเภทลา และวันที่ต้องการลา</p></div>
+          <CalendarOff size={24} />
+        </div>
+        {error ? <p className="error-banner">{error}</p> : null}
+        {message ? <p className="success-banner">{message}</p> : null}
+        <div className="leave-form-grid">
+          <label><span>พนักงาน</span><select value={empId} onChange={(event) => setEmpId(event.target.value)} disabled={loading}>
+            {employees.map((employee) => <option key={employee.empId} value={employee.empId}>{employee.empId} - {employee.name}</option>)}
+          </select></label>
+          <label><span>วันที่ลา</span><input type="date" min={localToday()} value={leaveDate} onChange={(event) => setLeaveDate(event.target.value)} /></label>
+          <label><span>ประเภทลา</span><select value={leaveType} onChange={(event) => setLeaveType(event.target.value)}>
+            {leaveTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select></label>
+          <label><span>ผู้บันทึก</span><input value={recordedBy} onChange={(event) => setRecordedBy(event.target.value)} placeholder="ชื่อผู้บันทึก" /></label>
+        </div>
+        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId} onClick={() => void saveLeavePlan()}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
+      </section>
+
+      <section className="panel leave-planning-list">
+        <div className="section-heading-row">
+          <div><h3>รายการลาที่กำลังจะถึง</h3><p>{visibleLeaves.length.toLocaleString()} รายการ</p></div>
+          <label className="search-box"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อ รหัส หรือหน่วยงาน" /></label>
+        </div>
+        <div className="table-wrap"><table className="table data-table"><thead><tr><th>วันที่</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>หน่วยงาน</th><th>ประเภทลา</th><th>ผู้บันทึก</th><th></th></tr></thead>
+          <tbody>{visibleLeaves.map((leave) => { const employee = employeeById.get(leave.emp_id); return <tr key={leave.id}><td>{new Date(leave.leave_date + "T00:00:00").toLocaleDateString("th-TH")}</td><td>{leave.emp_id}</td><td>{employee?.name ?? "-"}</td><td>{employee?.dept ?? "-"}</td><td><span className="status-pill absent">{leave.leave_type}</span></td><td>{leave.recorded_by ?? "-"}</td><td><button className="icon-button danger" type="button" title="ลบรายการลา" onClick={() => void deleteLeave(leave.id)}><Trash2 size={15} /></button></td></tr>; })}
+          {visibleLeaves.length === 0 ? <tr><td colSpan={7}>{loading ? "กำลังโหลด..." : "ยังไม่มีรายการลาล่วงหน้า"}</td></tr> : null}</tbody>
+        </table></div>
+      </section>
+    </div>
   );
 }
 
