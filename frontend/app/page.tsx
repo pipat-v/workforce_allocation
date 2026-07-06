@@ -237,6 +237,10 @@ type SortState = { key: string; direction: SortDirection } | null;
 
 const publicWorkspace = "public";
 
+function getLocalIsoDate(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [masterSubTab, setMasterSubTab] = useState<MasterSubTab>("files");
@@ -399,6 +403,7 @@ export default function Home() {
     new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false }),
   );
   const datePickerRef = useRef<HTMLDivElement>(null);
+  const productionSyncKeyRef = useRef("");
   const selectedDateKey = latestRun?.target_date ?? latestRun?.created_at?.slice(0, 10) ?? "";
   const availableRunsByDate = useMemo(() => {
     const map = new Map<string, AllocationRun>();
@@ -441,6 +446,34 @@ export default function Home() {
 
     void loadReportDashboard();
   }, [reportSourceKey, loadedReportKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const employeePath = activeMasterMap.employee_master?.file_path;
+    const dayoffPath = activeMasterMap.dayoff_shift?.file_path;
+    const manpowerPath = activeMasterMap.manpower_plan?.file_path;
+    if (!employeePath || !dayoffPath) return;
+    const workDate = getLocalIsoDate();
+    const syncKey = [workDate, employeePath, dayoffPath, manpowerPath].filter(Boolean).join("|");
+    if (productionSyncKeyRef.current === syncKey) return;
+    productionSyncKeyRef.current = syncKey;
+
+    Promise.all([
+      downloadSheetRows(employeePath),
+      downloadSheetRows(dayoffPath),
+      manpowerPath ? downloadSheetRows(manpowerPath) : Promise.resolve([] as Record<string, unknown>[]),
+    ])
+      .then(([employeeRows, dayoffRows, manpowerRows]) =>
+        syncProductionUsersFromMasters(workDate, employeeRows, dayoffRows, manpowerRows),
+      )
+      .catch((syncError) => {
+        productionSyncKeyRef.current = "";
+        setError(`sync production_user ไม่สำเร็จ: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
+      });
+  }, [
+    activeMasterMap.employee_master?.file_path,
+    activeMasterMap.dayoff_shift?.file_path,
+    activeMasterMap.manpower_plan?.file_path,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isoTargetDate) return;
@@ -1115,7 +1148,12 @@ export default function Home() {
         );
       }
       try {
-        await syncProductionUsers(latestRun.id, latestReport, leaveByEmployee);
+        await syncProductionUsersFromMasters(
+          latestReport.isoTargetDate,
+          employeeRows,
+          dayoffShiftRows,
+          manpowerRows,
+        );
       } catch (productionError) {
         syncErrors.push(
           productionError instanceof Error
@@ -1310,13 +1348,42 @@ export default function Home() {
     if (batchErrors.length > 0) throw new Error(batchErrors.join("; "));
   }
 
-  async function syncProductionUsers(
-    runId: string,
-    report: ReportData,
-    leaveByEmployee: Map<string, string>,
+  async function syncProductionUsersFromMasters(
+    workDate: string,
+    employeeRows: Record<string, unknown>[],
+    dayoffRows: Record<string, unknown>[],
+    manpowerRows: Record<string, unknown>[],
   ) {
-    const expectedEmployees = report.records.filter(
-      (row) => row.status !== "DayOff" && !leaveByEmployee.has(row.empId),
+    const targetDate = new Date(`${workDate}T12:00:00`);
+    const dayoffMap = buildDayoffShiftMap(dayoffRows);
+    const manpowerLookup = buildManpowerLookup(parseManpowerRows(manpowerRows));
+    const { data: leaveRows, error: leaveError } = await supabase
+      .from("leave_records")
+      .select("emp_id")
+      .eq("leave_date", workDate);
+    if (leaveError) throw new Error(leaveError.message);
+    const leaveIds = new Set((leaveRows ?? []).map((row: { emp_id: string }) => row.emp_id));
+    const expectedEmployees = employeeRows.map((row) => {
+      const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+      const firstName = String(row["First Name (Local)"] ?? "").trim();
+      const lastName = String(row["Last Name (Local)"] ?? "").trim();
+      const schedule = dayoffMap.get(empId);
+      const dept = String(row["หน่วยงาน"] ?? row["dept"] ?? row["Name (Section)"] ?? "ไม่ระบุ").trim() || "ไม่ระบุ";
+      const shift = normalizeShiftLabel(schedule?.shift) || "กะ 1";
+      const manpower = lookupManpowerTime(manpowerLookup, dept, schedule?.section ?? "", shift);
+      return {
+        empId,
+        name: `${firstName} ${lastName}`.trim() || String(row["Employee Name"] ?? row["Name"] ?? empId).trim(),
+        dept,
+        jobSite: schedule?.section ?? "",
+        shift,
+        shiftStart: schedule?.shiftStart || manpower?.shiftStart || "07:00",
+        dayoff: schedule?.dayoff,
+      };
+    }).filter((employee) =>
+      employee.empId
+      && !leaveIds.has(employee.empId)
+      && !isEmployeeDayOff(employee.dayoff, targetDate, holidayDates),
     );
     const expectedById = new Map(expectedEmployees.map((row) => [row.empId, row]));
     const ids = [...expectedById.keys()];
@@ -1343,16 +1410,16 @@ export default function Home() {
     const payload = skillRows.map((skill) => {
       const attendance = expectedById.get(skill.emp_id)!;
       return {
-        work_date: report.isoTargetDate,
+        work_date: workDate,
         emp_id: skill.emp_id,
         employee_name: skill.employee_name || attendance.name,
         dept: skill.dept || attendance.dept,
-        job_site: skill.job_site || attendance.section,
+        job_site: skill.job_site || attendance.jobSite,
         shift: attendance.shift,
         shift_start: attendance.shiftStart,
         skill: skill.skill,
         level: skill.level,
-        source_run_id: runId,
+        source_run_id: null,
         sync_token: syncToken,
         synced_at: syncedAt,
       };
@@ -1367,7 +1434,7 @@ export default function Home() {
     const { error: cleanupError } = await supabase
       .from("production_user")
       .delete()
-      .eq("work_date", report.isoTargetDate)
+      .eq("work_date", workDate)
       .neq("sync_token", syncToken);
     if (cleanupError) throw new Error(cleanupError.message);
   }
