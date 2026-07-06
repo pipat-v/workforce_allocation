@@ -6558,3 +6558,267 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
     flex-direction: column;
   }
 }
+
+@media (max-width: 820px) {
+  .app-shell {
+    display: block;
+    height: 100dvh;
+    overflow-y: auto;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    height: auto;
+    min-height: 64px;
+    padding: 10px;
+    gap: 0;
+    background: #111827;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.22);
+  }
+
+  .sidebar:has(.nav-sub-list) {
+    padding-bottom: 66px;
+  }
+
+  .cpf-logo,
+  .logout {
+    display: none;
+  }
+
+  .nav-list {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    scroll-snap-type: x proximity;
+  }
+
+  .nav-list > div {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+
+  .nav-item {
+    width: auto;
+    min-width: max-content;
+    min-height: 44px;
+    grid-template-columns: 19px auto 14px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  .nav-sub-list {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 8px;
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+    margin: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav-sub-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-sub-item {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 42px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    font-size: 12px;
+  }
+
+  .nav-sub-item.active {
+    border-color: rgba(16, 185, 129, 0.7);
+    background: rgba(16, 185, 129, 0.22);
+  }
+
+  .main {
+    height: auto;
+    min-height: calc(100dvh - 116px);
+    overflow: visible;
+    padding: 12px 12px 24px;
+  }
+
+  .topbar {
+    gap: 10px;
+    padding: 0 0 12px;
+  }
+
+  .title {
+    font-size: 21px;
+  }
+
+  .subtitle,
+  .today-chip {
+    display: none;
+  }
+
+  .topbar-date-group,
+  .date-picker-wrap,
+  .date-picker {
+    width: 100%;
+  }
+
+  .date-picker {
+    min-width: 0;
+    min-height: 52px;
+  }
+
+  .dashboard-head,
+  .dashboard-head-left {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dashboard-head h2 {
+    font-size: 22px;
+  }
+
+  .dashboard-head .master-sub-tabs {
+    display: none;
+  }
+
+  .leave-planning-page {
+    gap: 12px;
+  }
+
+  .leave-planning-form,
+  .leave-planning-list {
+    padding: 14px;
+    border-radius: 8px;
+  }
+
+  .leave-planning-page .section-heading-row {
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .leave-planning-page .section-heading-row > svg {
+    display: none;
+  }
+
+  .leave-form-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .leave-form-grid input,
+  .leave-form-grid select {
+    height: 50px;
+    font-size: 16px;
+  }
+
+  .leave-form-actions {
+    margin-top: 14px;
+  }
+
+  .leave-form-actions .primary-button {
+    width: 100%;
+    min-height: 50px;
+    justify-content: center;
+    font-size: 15px;
+  }
+
+  .leave-planning-list .section-heading-row {
+    align-items: stretch;
+  }
+
+  .leave-planning-list .search-box {
+    width: 100%;
+    min-height: 46px;
+  }
+
+  .leave-planning-list .table-wrap {
+    overflow: visible;
+  }
+
+  .leave-planning-list .data-table {
+    display: block;
+    min-width: 0;
+    margin-top: 8px;
+  }
+
+  .leave-planning-list .data-table thead {
+    display: none;
+  }
+
+  .leave-planning-list .data-table tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .leave-planning-list .data-table tr {
+    position: relative;
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 7px 10px;
+    padding: 12px 48px 12px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .leave-planning-list .data-table td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .leave-planning-list .data-table td::before {
+    display: inline-block;
+    width: 92px;
+    margin-right: 10px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .leave-planning-list .data-table td:nth-child(1)::before { content: "วันที่"; }
+  .leave-planning-list .data-table td:nth-child(2)::before { content: "รหัส"; }
+  .leave-planning-list .data-table td:nth-child(3)::before { content: "ชื่อ"; }
+  .leave-planning-list .data-table td:nth-child(4)::before { content: "หน่วยงาน"; }
+  .leave-planning-list .data-table td:nth-child(5)::before { content: "ประเภทลา"; }
+  .leave-planning-list .data-table td:nth-child(6)::before { content: "ผู้บันทึก"; }
+
+  .leave-planning-list .data-table td:nth-child(-n+6) {
+    grid-column: 1 / -1;
+  }
+
+  .leave-planning-list .data-table td:last-child {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+  }
+
+  .leave-planning-list .data-table tr:has(td[colspan]) {
+    display: block;
+    padding: 18px 12px;
+    text-align: center;
+  }
+
+  .leave-planning-list .data-table td[colspan] {
+    position: static;
+  }
+
+  .leave-planning-list .data-table td[colspan]::before {
+    display: none;
+  }
+
+  .leave-planning-list .data-table .icon-button {
+    width: 38px;
+    height: 38px;
+  }
+}
