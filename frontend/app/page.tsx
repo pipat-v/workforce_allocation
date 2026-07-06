@@ -176,6 +176,16 @@ const masterFileTypes = [
   { key: "dayoff_shift", label: "Dayoff & Shift" },
 ] as const;
 
+const masJobAssignFiles = [
+  { label: "เผาขา", path: "/mas-job-assign-fire-leg.xlsx" },
+  { label: "เลาะขา", path: "/mas-job-assign-debone-leg.xlsx" },
+  { label: "ไหล่พิเศษ", path: "/mas-job-assign-shoulder.xlsx" },
+  { label: "สไลด์", path: "/mas-job-assign-slice.xlsx" },
+  { label: "สะโพกพิเศษ", path: "/mas-job-assign-special-hip.xlsx" },
+  { label: "สามชั้นพิเศษ", path: "/mas-job-assign-special-belly.xlsx" },
+  { label: "หมูบด", path: "/mas-job-assign-ground-pork.xlsx" },
+] as const;
+
 type TabId =
   | "dashboard"
   | "timestamp"
@@ -5969,7 +5979,7 @@ function SkillMatrixPage({
   const [addOpen, setAddOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [unmatchedShoulderNames, setUnmatchedShoulderNames] = useState<string[]>([]);
+  const [unmatchedJobAssignNames, setUnmatchedJobAssignNames] = useState<string[]>([]);
 
   const LEVEL_LABELS: Record<number, string> = { 1: "น้อย", 2: "ปานกลาง", 3: "ถนัด" };
   const LEVEL_BG: Record<number, string> = { 1: "#fecaca", 2: "#fef08a", 3: "#34d399", 4: "#93c5fd", 5: "#a78bfa" };
@@ -5980,7 +5990,7 @@ function SkillMatrixPage({
       setEmpInfoMap(new Map());
       setAllEmpList([]);
       setSelectedIds(new Set());
-      setUnmatchedShoulderNames([]);
+      setUnmatchedJobAssignNames([]);
       return;
     }
 
@@ -5996,18 +6006,24 @@ function SkillMatrixPage({
     const dayoffPromise = dayoffShiftFile?.file_path
       ? downloadSheetRows(dayoffShiftFile.file_path).catch(() => [] as Record<string, unknown>[])
       : Promise.resolve([] as Record<string, unknown>[]);
-    const shoulderPromise = fetch("/mas-job-assign-shoulder.xlsx")
-      .then(async (response) => {
-        if (!response.ok) throw new Error("โหลดไฟล์ไหล่พิเศษไม่สำเร็จ");
-        const buffer = await response.arrayBuffer();
-        const workbook = XLSX.read(buffer, { type: "array", cellDates: true, raw: true });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: true });
-      })
-      .catch(() => [] as Record<string, unknown>[]);
+    const jobAssignPromise = Promise.all(
+      masJobAssignFiles.map(async (file) => {
+        try {
+          const response = await fetch(file.path);
+          if (!response.ok) throw new Error(`โหลดไฟล์ ${file.label} ไม่สำเร็จ`);
+          const buffer = await response.arrayBuffer();
+          const workbook = XLSX.read(buffer, { type: "array", cellDates: true, raw: true });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: true });
+          return rows.map((row) => ({ ...row, __sourceFile: file.label }));
+        } catch {
+          return [] as Record<string, unknown>[];
+        }
+      }),
+    ).then((fileRows) => fileRows.flat());
 
-    Promise.all([skillPromise, empPromise, dayoffPromise, shoulderPromise])
-      .then(([skillRows, empRows, dayoffRows, shoulderRows]) => {
+    Promise.all([skillPromise, empPromise, dayoffPromise, jobAssignPromise])
+      .then(([skillRows, empRows, dayoffRows, jobAssignRows]) => {
         if (!isMounted) return;
 
         const empInfo = new Map<string, { name: string; dept: string; jobSite: string }>();
@@ -6065,9 +6081,9 @@ function SkillMatrixPage({
           .filter((r) => r.empId && r.skill);
 
         const unmatchedNames = new Set<string>();
-        const importedShoulderRows: SkillFlatRow[] = [];
-        const ignoredColumns = new Set(["จุดงาน", "รายชื่อพนักงาน", "ชื่อเล่น"]);
-        shoulderRows.forEach((row, rowIndex) => {
+        const importedJobAssignRows: SkillFlatRow[] = [];
+        const ignoredColumns = new Set(["จุดงาน", "รายชื่อพนักงาน", "ชื่อเล่น", "__sourceFile"]);
+        jobAssignRows.forEach((row, rowIndex) => {
           const sourceName = String(row["รายชื่อพนักงาน"] ?? "").trim();
           if (!sourceName) return;
           const empId = empIdByName.get(normalizeEmployeeNameForMatch(sourceName));
@@ -6078,13 +6094,14 @@ function SkillMatrixPage({
 
           const info = empInfo.get(empId) ?? { name: sourceName, dept: "", jobSite: "" };
           const ds = dayoffMap.get(empId) ?? { dayoff: "", shift: "", shiftStart: "" };
-          const jobSite = String(row["จุดงาน"] ?? "ไหล่พิเศษ").trim() || "ไหล่พิเศษ";
+          const sourceFile = String(row.__sourceFile ?? "").trim();
+          const jobSite = String(row["จุดงาน"] ?? sourceFile).trim() || sourceFile;
           Object.entries(row).forEach(([skill, rawLevel], skillIndex) => {
             if (ignoredColumns.has(skill) || skill.startsWith("__EMPTY")) return;
             const level = Number(rawLevel) || 0;
             if (level <= 0) return;
-            importedShoulderRows.push({
-              id: `shoulder-${rowIndex}-${skillIndex}-${empId}-${skill}`,
+            importedJobAssignRows.push({
+              id: `job-assign-${rowIndex}-${skillIndex}-${empId}-${skill}`,
               empId,
               name: info.name,
               dept: info.dept,
@@ -6100,13 +6117,13 @@ function SkillMatrixPage({
         });
 
         const mergedRows = new Map<string, SkillFlatRow>();
-        importedShoulderRows.forEach((row) => mergedRows.set(`${row.empId}|${row.skill}`, row));
+        importedJobAssignRows.forEach((row) => mergedRows.set(`${row.empId}|${row.skill}`, row));
         activeSkillRows.forEach((row) => mergedRows.set(`${row.empId}|${row.skill}`, row));
         const parsed = Array.from(mergedRows.values());
 
         const empList = Array.from(empInfo.entries()).map(([empId, info]) => ({ empId, name: info.name }));
         setRows(parsed);
-        setUnmatchedShoulderNames(Array.from(unmatchedNames));
+        setUnmatchedJobAssignNames(Array.from(unmatchedNames));
         setEmpInfoMap(empInfo);
         setAllEmpList(empList);
         setSelectedIds(new Set());
@@ -6116,7 +6133,7 @@ function SkillMatrixPage({
         setRows([]);
         setEmpInfoMap(new Map());
         setAllEmpList([]);
-        setUnmatchedShoulderNames([]);
+        setUnmatchedJobAssignNames([]);
       })
       .finally(() => {
         if (!isMounted) return;
@@ -6255,12 +6272,12 @@ function SkillMatrixPage({
         </button>
       </div>
 
-      <div className={`skill-import-note ${unmatchedShoulderNames.length ? "warning" : ""}`}>
+      <div className={`skill-import-note ${unmatchedJobAssignNames.length ? "warning" : ""}`}>
         <FileSpreadsheet size={16} />
         <span>
-          นำเข้าข้อมูลจาก Mas Job Assign ไหล่พิเศษแล้ว
-          {unmatchedShoulderNames.length > 0
-            ? ` — หา Emp ID ไม่พบ ${unmatchedShoulderNames.length} คน: ${unmatchedShoulderNames.join(", ")}`
+          นำเข้าข้อมูล Mas Job Assign ครบ {masJobAssignFiles.length} ไฟล์แล้ว
+          {unmatchedJobAssignNames.length > 0
+            ? ` — หา Emp ID ไม่พบ ${unmatchedJobAssignNames.length} คน: ${unmatchedJobAssignNames.join(", ")}`
             : " — เชื่อมชื่อและรหัสพนักงานครบ"}
         </span>
       </div>
