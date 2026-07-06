@@ -6393,6 +6393,7 @@ function SkillMatrixPage({
   saveSkillMatrixRows: (rows: SkillMatrixSaveRow[]) => Promise<void>;
 }) {
   const [rows, setRows] = useState<SkillFlatRow[]>([]);
+  const [deletedRows, setDeletedRows] = useState<Map<string, SkillFlatRow>>(new Map());
   const [empInfoMap, setEmpInfoMap] = useState<Map<string, { name: string; dept: string; jobSite: string }>>(new Map());
   const [allEmpList, setAllEmpList] = useState<Array<{ empId: string; name: string }>>([]);
   const [query, setQuery] = useState("");
@@ -6418,6 +6419,7 @@ function SkillMatrixPage({
   useEffect(() => {
     if (!employeeMasterFile?.file_path && !activeFile?.file_path) {
       setRows([]);
+      setDeletedRows(new Map());
       setEmpInfoMap(new Map());
       setAllEmpList([]);
       setSelectedIds(new Set());
@@ -6452,7 +6454,9 @@ function SkillMatrixPage({
           return [] as Record<string, unknown>[];
         }
       }),
-    ).then((fileRows) => fileRows.flat());
+    ).then((fileRows): Record<string, unknown>[] =>
+      fileRows.flat() as Record<string, unknown>[],
+    );
 
     Promise.all([skillPromise, empPromise, dayoffPromise, jobAssignPromise])
       .then(([skillRows, empRows, dayoffRows, jobAssignRows]) => {
@@ -6551,10 +6555,11 @@ function SkillMatrixPage({
         const mergedRows = new Map<string, SkillFlatRow>();
         importedJobAssignRows.forEach((row) => mergedRows.set(`${row.empId}|${row.skill}`, row));
         activeSkillRows.forEach((row) => mergedRows.set(`${row.empId}|${row.skill}`, row));
-        const parsed = Array.from(mergedRows.values());
+        const parsed = Array.from(mergedRows.values()).filter((row) => row.level > 0);
 
         const empList = Array.from(empInfo.entries()).map(([empId, info]) => ({ empId, name: info.name }));
         setRows(parsed);
+        setDeletedRows(new Map());
         setUnmatchedJobAssignNames(Array.from(unmatchedNames));
         setEmpInfoMap(empInfo);
         setEmpIdByNameMap(empIdByName);
@@ -6564,6 +6569,7 @@ function SkillMatrixPage({
       .catch(() => {
         if (!isMounted) return;
         setRows([]);
+        setDeletedRows(new Map());
         setEmpInfoMap(new Map());
         setEmpIdByNameMap(new Map());
         setAllEmpList([]);
@@ -6599,6 +6605,23 @@ function SkillMatrixPage({
 
   function updateRow(id: string, level: number) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, level } : r)));
+  }
+
+  function deleteSkillRow(row: SkillFlatRow) {
+    if (!window.confirm(`ลบ Skill "${row.skill}" ของ ${row.name || row.empId} ใช่หรือไม่?`)) return;
+    setRows((current) => current.filter((item) => item.id !== row.id));
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      next.delete(row.id);
+      return next;
+    });
+    if (row.origLevel > 0) {
+      setDeletedRows((current) => {
+        const next = new Map(current);
+        next.set(`${row.empId}|${row.skill}`, { ...row, level: 0 });
+        return next;
+      });
+    }
   }
 
   function toggleSelect(id: string) {
@@ -6803,8 +6826,19 @@ function SkillMatrixPage({
           skill: r.skill,
           level: r.level,
         }));
+      deletedRows.forEach((row) => {
+        flatRows.push({
+          empId: row.empId,
+          name: row.name,
+          dept: row.dept,
+          jobSite: row.jobSite,
+          skill: row.skill,
+          level: 0,
+        });
+      });
       await saveSkillMatrixRows(flatRows);
       setRows((prev) => prev.map((r) => ({ ...r, origLevel: r.level })));
+      setDeletedRows(new Map());
     } catch {
       // error already set by saveSkillMatrixRows
     } finally {
@@ -6816,6 +6850,11 @@ function SkillMatrixPage({
     const empId = addEmpId.trim();
     const skill = addSkill.trim();
     if (!empId || !skill) return;
+    setDeletedRows((current) => {
+      const next = new Map(current);
+      next.delete(`${empId}|${skill}`);
+      return next;
+    });
 
     const existing = rows.find((r) => r.empId === empId && r.skill === skill);
     if (existing) {
@@ -6884,12 +6923,12 @@ function SkillMatrixPage({
           </button>
           <button
             className="primary-button small"
-            disabled={!rows.length || isSaving}
+            disabled={(rows.length === 0 && deletedRows.size === 0) || isSaving}
             onClick={handleSave}
             type="button"
           >
             <UploadCloud size={15} />
-            {isSaving ? "Saving..." : `Save${modifiedIds.size > 0 ? ` (${modifiedIds.size} แก้ไข)` : ""}`}
+            {isSaving ? "Saving..." : `Save${modifiedIds.size + deletedRows.size > 0 ? ` (${modifiedIds.size + deletedRows.size} แก้ไข)` : ""}`}
           </button>
         </div>
       </div>
@@ -6932,6 +6971,7 @@ function SkillMatrixPage({
         <span className="dayoff-count">
           {filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} แถว
           {modifiedIds.size > 0 && <span className="modified-badge">{modifiedIds.size} แก้ไข</span>}
+          {deletedRows.size > 0 && <span className="modified-badge">{deletedRows.size} ลบ</span>}
         </span>
       </div>
 
@@ -6986,6 +7026,7 @@ function SkillMatrixPage({
               <th>วันหยุด</th>
               <th>Skill</th>
               <th>Level</th>
+              <th style={{ width: 48 }} aria-label="การทำงาน"></th>
             </tr>
           </thead>
           <tbody>
@@ -7026,16 +7067,27 @@ function SkillMatrixPage({
                     {row.level > 3 && <option value={row.level}>{row.level} — (เก่า)</option>}
                   </select>
                 </td>
+                <td>
+                  <button
+                    className="icon-button danger"
+                    type="button"
+                    title="ลบ Skill แถวนี้"
+                    aria-label={`ลบ Skill ${row.skill} ของ ${row.name || row.empId}`}
+                    onClick={() => deleteSkillRow(row)}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </td>
               </tr>
             ))}
             {!employeeMasterFile && !activeFile ? (
-              <tr><td colSpan={10} style={{ color: "var(--muted)", textAlign: "center", padding: "24px 0" }}>อัปโหลดไฟล์รายชื่อพนักงาน (Master Data → Files) เพื่อเริ่มต้นใช้งาน</td></tr>
+              <tr><td colSpan={11} style={{ color: "var(--muted)", textAlign: "center", padding: "24px 0" }}>อัปโหลดไฟล์รายชื่อพนักงาน (Master Data → Files) เพื่อเริ่มต้นใช้งาน</td></tr>
             ) : null}
             {isLoading ? (
-              <tr><td colSpan={10} style={{ textAlign: "center", padding: "24px 0" }}>กำลังโหลด...</td></tr>
+              <tr><td colSpan={11} style={{ textAlign: "center", padding: "24px 0" }}>กำลังโหลด...</td></tr>
             ) : null}
             {!isLoading && (employeeMasterFile || activeFile) && filteredRows.length === 0 ? (
-              <tr><td colSpan={10} style={{ color: "var(--muted)", textAlign: "center", padding: "24px 0" }}>ยังไม่มี Skill — กด "+ เพิ่ม Skill ให้พนักงาน" เพื่อเริ่มเพิ่มข้อมูล</td></tr>
+              <tr><td colSpan={11} style={{ color: "var(--muted)", textAlign: "center", padding: "24px 0" }}>ยังไม่มี Skill — กด "+ เพิ่ม Skill ให้พนักงาน" เพื่อเริ่มเพิ่มข้อมูล</td></tr>
             ) : null}
           </tbody>
         </table>
