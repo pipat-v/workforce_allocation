@@ -9943,6 +9943,21 @@ function formatHelpStep(text: string, fallbackIndex: number): { marker: string; 
   };
 }
 
+const helpImageMarkerPositions = [
+  { top: "14%", left: "12%" },
+  { top: "14%", left: "50%" },
+  { top: "34%", left: "18%" },
+  { top: "34%", left: "66%" },
+  { top: "56%", left: "14%" },
+  { top: "56%", left: "62%" },
+  { top: "78%", left: "24%" },
+  { top: "78%", left: "72%" },
+];
+
+function helpImageMarkerStyle(index: number) {
+  return helpImageMarkerPositions[index % helpImageMarkerPositions.length];
+}
+
 function HelpGuidePage({
   setActiveTab,
   setMasterSubTab,
@@ -10066,8 +10081,21 @@ function HelpGuidePage({
                                 title="คลิกเพื่อดูภาพขนาดเต็ม"
                               >
                                 <img className="help-section-image" src={s.image} alt={`ตัวอย่างหน้าจอ: ${s.title}`} loading="lazy" />
+                                {steps.map((p, i) => {
+                                  const step = formatHelpStep(p, i);
+                                  return (
+                                    <span
+                                      key={`${s.id}-marker-${i}`}
+                                      className="help-image-marker"
+                                      style={helpImageMarkerStyle(i)}
+                                      aria-hidden="true"
+                                    >
+                                      {step.marker}
+                                    </span>
+                                  );
+                                })}
                               </a>
-                              <figcaption>ดูภาพประกอบ แล้วไล่ตามหมายเลขด้านขวาได้เลย</figcaption>
+                              <figcaption>เลขบนภาพตรงกับเลขของคำอธิบายด้านล่าง คลิกภาพเพื่อดูขนาดเต็ม</figcaption>
                             </figure>
                           ) : null}
                           <ol className="help-section-points">
