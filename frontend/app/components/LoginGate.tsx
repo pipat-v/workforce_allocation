@@ -29,7 +29,7 @@ export default function LoginGate({
     try {
       const { data, error: dbError } = await supabase
         .from("login_users")
-        .select("username, position, password, menu_access")
+        .select("username, position, password, menu_access, menu_view_access")
         .eq("username", username.trim())
         .maybeSingle();
       if (dbError) throw new Error(dbError.message);
