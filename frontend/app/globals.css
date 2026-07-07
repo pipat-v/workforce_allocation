@@ -6925,3 +6925,98 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
     height: 38px;
   }
 }
+
+/* Sidebar logged-in user badge */
+.sidebar-user {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.sidebar-user-name { font-size: 13px; font-weight: 600; color: #fff; }
+.sidebar-user-position { font-size: 11px; color: rgba(255, 255, 255, 0.6); }
+
+/* Login gate (shown in place of a protected tab's content) */
+.login-gate {
+  max-width: 380px;
+  margin: 40px auto;
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.login-gate h3 { margin: 0; font-size: 17px; }
+.login-gate-desc { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
+.login-gate-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: #ecfdf5;
+  color: #047857;
+}
+.login-gate-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+.login-gate-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--muted);
+}
+.login-gate-field input {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 14px;
+  color: var(--text);
+}
+.login-gate-error { margin: 0; font-size: 13px; color: #dc2626; }
+
+/* Setting tab: user access upload page */
+.settings-page {
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.settings-page-header h3 { margin: 0 0 6px; font-size: 18px; }
+.settings-page-header p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
+.settings-success { margin: 0; font-size: 13px; color: #047857; }
+.settings-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.settings-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.settings-table-wrap { overflow-x: auto; }
+.settings-current { display: flex; flex-direction: column; gap: 10px; }
+.settings-current-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-current-header h4 { margin: 0; font-size: 14px; }
+.settings-current h4 { margin: 4px 0 0; font-size: 14px; }

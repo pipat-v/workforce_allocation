@@ -35,6 +35,9 @@ import {
 import type { ChangeEvent, Dispatch, ReactNode, SetStateAction } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
+import { clearSession, getSession, hasMenuAccess, type LoginSession } from "@/lib/auth";
+import LoginGate from "./components/LoginGate";
+import UserAccessSettings from "./components/UserAccessSettings";
 
 type AllocationRun = {
   id: string;
@@ -292,6 +295,7 @@ export default function Home() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [showRunPicker, setShowRunPicker] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [session, setSession] = useState<LoginSession | null>(null);
   const [holidayDates, setHolidayDates] = useState<Set<string>>(() => {
     const all = new Set<string>();
     for (const s of Object.values(buddhistHolyDaysByYear)) for (const d of s) all.add(d);
@@ -438,6 +442,58 @@ export default function Home() {
   }, []);
 
   const activeNav = navItems.find((item) => item.id === activeTab);
+  const [loginPrompt, setLoginPrompt] = useState<{
+    menuLabel: string;
+    menuNo: number;
+    onSuccess: () => void;
+    onCancel?: () => void;
+  } | null>(null);
+
+  // Every menu can be viewed without logging in; only actions that write data
+  // (upload/save/delete) are gated. Call this instead of running the action
+  // directly — it prompts for login first if needed, then re-checks that the
+  // logged-in account's menu_access actually covers menuNo before proceeding.
+  // onCancel fires if the user dismisses the login prompt without logging in,
+  // so callers awaiting a guarded action's promise don't hang forever.
+  function guardAction(menuNo: number, menuLabel: string, action: () => void, onCancel?: () => void) {
+    const current = getSession();
+    if (!current) {
+      setLoginPrompt({ menuNo, menuLabel, onSuccess: action, onCancel });
+      return;
+    }
+    if (!hasMenuAccess(current, menuNo)) {
+      alert(`บัญชี ${current.username} ไม่มีสิทธิ์แก้ไขเมนู "${menuLabel}"`);
+      onCancel?.();
+      return;
+    }
+    action();
+  }
+
+  // Wraps a prop function that returns Promise<void> (upload/save handlers awaited
+  // by child components) so a required login doesn't resolve the promise early —
+  // it only settles once the real action runs, and rejects if login is cancelled,
+  // so callers' existing try/catch (which assumes success only after a real save) stays correct.
+  function guardedProp<Args extends unknown[]>(
+    menuNo: number,
+    menuLabel: string,
+    fn: (...args: Args) => Promise<void>,
+  ) {
+    return (...args: Args) =>
+      new Promise<void>((resolve, reject) => {
+        guardAction(
+          menuNo,
+          menuLabel,
+          () => {
+            fn(...args).then(resolve, reject);
+          },
+          () => reject(new Error("ยกเลิกการเข้าสู่ระบบ")),
+        );
+      });
+  }
+
+  useEffect(() => {
+    setSession(getSession());
+  }, []);
 
   useEffect(() => {
     void loadDashboard();
@@ -1583,14 +1639,28 @@ export default function Home() {
           })}
         </nav>
 
-        <button
-          className="logout"
-          type="button"
-          onClick={() => { if (window.confirm("ต้องการออกจากระบบ?")) window.location.reload(); }}
-        >
-          <LogOut size={19} />
-          <span>ออกจากระบบ</span>
-        </button>
+        {session ? (
+          <>
+            <div className="sidebar-user">
+              <span className="sidebar-user-name">{session.username}</span>
+              {session.position ? <span className="sidebar-user-position">{session.position}</span> : null}
+            </div>
+            <button
+              className="logout"
+              type="button"
+              onClick={() => {
+                if (window.confirm("ต้องการออกจากระบบ?")) {
+                  clearSession();
+                  setSession(null);
+                  setActiveTab("dashboard");
+                }
+              }}
+            >
+              <LogOut size={19} />
+              <span>ออกจากระบบ</span>
+            </button>
+          </>
+        ) : null}
       </aside>
 
       <section className="main" data-tab={activeTab}>
@@ -1637,6 +1707,10 @@ export default function Home() {
           </div>
         </header>
 
+        {activeTab === "setting" ? (
+          <UserAccessSettings session={session} onLoginSuccess={(newSession) => setSession(newSession)} />
+        ) : (
+          <>
         <section className="dashboard-head">
           <div className="dashboard-head-left">
             <div className="dashboard-head-title-row">
@@ -1799,9 +1873,10 @@ export default function Home() {
               dashboardSectionFilter={dashboardSectionFilter}
               detailStatusFilter={detailStatusFilter}
               setDetailStatusFilter={setDetailStatusFilter}
+              guardAction={guardAction}
               isoTargetDate={isoTargetDate}
               reportData={dashboardReport}
-              toggleWarning={toggleWarning}
+              toggleWarning={guardedProp(0, "Dashboard", toggleWarning)}
               totalActivePeople={totalActivePeople}
               warnCountMap={warnCountMap}
               warnedIds={warnedIds}
@@ -1813,16 +1888,17 @@ export default function Home() {
         {activeTab === "master" ? (
           <MasterDataPage
             activeMasterMap={activeMasterMap}
+            guardAction={guardAction}
             isSavingMasters={isSavingMasters}
             masterFileHistory={masterFileHistory}
             masterSubTab={masterSubTab}
             masterUploads={masterUploads}
-            onDeleteMasterFile={deleteMasterFile}
+            onDeleteMasterFile={guardedProp(4, "Master Data", deleteMasterFile)}
             onHolidaysChanged={(dates) => setHolidayDates(dates)}
             onMastersSaved={loadActiveMasters}
-            saveDayoffShiftRows={saveDayoffShiftRows}
-            saveManpowerRows={saveManpowerRows}
-            saveMasterFiles={saveMasterFiles}
+            saveDayoffShiftRows={guardedProp(4, "Master Data", saveDayoffShiftRows)}
+            saveManpowerRows={guardedProp(4, "Master Data", saveManpowerRows)}
+            saveMasterFiles={guardedProp(4, "Master Data", saveMasterFiles)}
             setError={setError}
             setMessage={setMessage}
             setMasterUploads={setMasterUploads}
@@ -1831,8 +1907,8 @@ export default function Home() {
 
         {activeTab === "timestamp" ? (
           <TimestampPage
-            createDailyRun={createDailyRun}
-            deleteRun={deleteRun}
+            createDailyRun={guardedProp(1, "Upload Timestamp", createDailyRun)}
+            deleteRun={guardedProp(1, "Upload Timestamp", deleteRun)}
             downloadTimestampFile={downloadTimestampFile}
             hasAllActiveMasters={hasAllActiveMasters}
             isCreatingRun={isCreatingRun}
@@ -1872,6 +1948,7 @@ export default function Home() {
         {activeTab === "report" ? (
           <ReportDashboard
             deptFilter={reportLateDept}
+            guardAction={guardAction}
             monthlyLateMinutes={monthlyLateMinutes}
             prevMonthLateCounts={prevMonthLateCounts}
             query={reportLateQuery}
@@ -1890,7 +1967,7 @@ export default function Home() {
             activeFile={activeMasterMap.skill_matrix}
             dayoffShiftFile={activeMasterMap.dayoff_shift}
             employeeMasterFile={activeMasterMap.employee_master}
-            saveSkillMatrixRows={saveSkillMatrixRows}
+            saveSkillMatrixRows={guardedProp(5, "Skill Matrix", saveSkillMatrixRows)}
           />
         ) : null}
 
@@ -1898,6 +1975,7 @@ export default function Home() {
           <OTDashboard
             reportData={reportData}
             activeMasterMap={activeMasterMap}
+            guardAction={guardAction}
             isLoadingReport={isLoadingReport}
             otSubTab={otSubTab}
             setOtSubTab={setOtSubTab}
@@ -1909,14 +1987,44 @@ export default function Home() {
         {activeTab === "help" ? (
           <HelpGuidePage setActiveTab={setActiveTab} setMasterSubTab={setMasterSubTab} setOtSubTab={setOtSubTab} />
         ) : null}
+          </>
+        )}
 
-        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report", "skill", "ot", "help"].includes(activeTab) ? (
+        {!["dashboard", "master", "timestamp", "results", "timestamp_dept", "report", "skill", "ot", "help", "setting"].includes(activeTab) ? (
           <section className="panel empty-page">
             <h3>{activeNav?.label}</h3>
             <p>แท็บนี้จะเชื่อมข้อมูลจริงในขั้นถัดไป</p>
           </section>
         ) : null}
       </section>
+
+      {loginPrompt ? (
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            loginPrompt.onCancel?.();
+            setLoginPrompt(null);
+            setMessage("");
+            setError("ยกเลิกการเข้าสู่ระบบ — ไม่ได้บันทึกการเปลี่ยนแปลง");
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <LoginGate
+              menuLabel={loginPrompt.menuLabel}
+              onSuccess={(newSession) => {
+                setSession(newSession);
+                setLoginPrompt(null);
+                if (hasMenuAccess(newSession, loginPrompt.menuNo)) {
+                  loginPrompt.onSuccess();
+                } else {
+                  alert(`บัญชี ${newSession.username} ไม่มีสิทธิ์แก้ไขเมนู "${loginPrompt.menuLabel}"`);
+                  loginPrompt.onCancel?.();
+                }
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -3098,6 +3206,7 @@ function DashboardPanels({
   dashboardSectionFilter,
   detailStatusFilter,
   setDetailStatusFilter,
+  guardAction,
   isoTargetDate,
   reportData,
   toggleWarning,
@@ -3112,6 +3221,7 @@ function DashboardPanels({
   dashboardSectionFilter: string;
   detailStatusFilter: string;
   setDetailStatusFilter: (v: string) => void;
+  guardAction: (menuNo: number, menuLabel: string, action: () => void, onCancel?: () => void) => void;
   isoTargetDate: string;
   reportData: ReportData | null;
   toggleWarning: (empId: string) => Promise<void>;
@@ -3321,13 +3431,13 @@ function DashboardPanels({
                     placeholder="กรอกชื่อหัวหน้าหน่วยงานก่อนยืนยัน"
                     value={confirmName}
                     onChange={(e) => setConfirmName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") handleConfirm(); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") guardAction(0, "Dashboard", handleConfirm); }}
                   />
                 </div>
                 <button
                   className={`confirm-submit-btn${!confirmName.trim() ? " needs-name" : ""}`}
                   disabled={isConfirming}
-                  onClick={handleConfirm}
+                  onClick={() => guardAction(0, "Dashboard", handleConfirm)}
                 >
                   <CheckCircle2 size={13} />
                   {isConfirming ? "กำลังบันทึก..." : "ยืนยันรับทราบ"}
@@ -3628,7 +3738,7 @@ function DashboardPanels({
                           <select
                             className={`leave-select ${lc}`}
                             value={lt}
-                            onChange={(e) => saveLeave(row.empId, e.target.value)}
+                            onChange={(e) => guardAction(0, "Dashboard", () => saveLeave(row.empId, e.target.value))}
                           >
                             <option value="ขาดงาน">ขาดงาน</option>
                             {leaveTypeOptions.map((option) => (
@@ -3910,6 +4020,7 @@ function DiffPreviewModal({
 
 function MasterDataPage({
   activeMasterMap,
+  guardAction,
   isSavingMasters,
   masterFileHistory,
   masterSubTab,
@@ -3925,6 +4036,7 @@ function MasterDataPage({
   setMasterUploads,
 }: {
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
+  guardAction: (menuNo: number, menuLabel: string, action: () => void, onCancel?: () => void) => void;
   isSavingMasters: boolean;
   masterFileHistory: MasterFile[];
   masterSubTab: MasterSubTab;
@@ -4194,11 +4306,11 @@ function MasterDataPage({
     <section className="md-page">
 
       {masterSubTab === "holidays" ? (
-        <HolidayMasterPage onHolidaysChanged={onHolidaysChanged} />
+        <HolidayMasterPage guardAction={guardAction} onHolidaysChanged={onHolidaysChanged} />
       ) : null}
 
       {masterSubTab === "public_holidays" ? (
-        <PublicHolidayPage onHolidaysChanged={onHolidaysChanged} />
+        <PublicHolidayPage guardAction={guardAction} onHolidaysChanged={onHolidaysChanged} />
       ) : null}
 
       {showDiffModal && diffResult && (
@@ -4206,7 +4318,7 @@ function MasterDataPage({
           diff={diffResult}
           isSaving={isSavingCombined}
           onCancel={() => { setShowDiffModal(false); setDiffResult(null); }}
-          onConfirm={() => void saveCombinedFromDiff()}
+          onConfirm={() => guardAction(4, "Master Data", () => void saveCombinedFromDiff())}
         />
       )}
 
@@ -4450,14 +4562,20 @@ function MasterDataPage({
       ) : null}
 
       {masterSubTab === "leave" ? (
-        <LeavePlanningPage employeeMasterFile={activeMasterMap.employee_master} />
+        <LeavePlanningPage guardAction={guardAction} employeeMasterFile={activeMasterMap.employee_master} />
       ) : null}
     </section>
   );
 }
 
 
-function LeavePlanningPage({ employeeMasterFile }: { employeeMasterFile?: MasterFile }) {
+function LeavePlanningPage({
+  employeeMasterFile,
+  guardAction,
+}: {
+  employeeMasterFile?: MasterFile;
+  guardAction: (menuNo: number, menuLabel: string, action: () => void, onCancel?: () => void) => void;
+}) {
   type LeaveRow = { id: string; emp_id: string; leave_date: string; leave_type: string; recorded_by: string | null };
   type EmployeeOption = { empId: string; name: string; dept: string };
   const localToday = () => {
@@ -4573,7 +4691,7 @@ function LeavePlanningPage({ employeeMasterFile }: { employeeMasterFile?: Master
           </select></label>
           <label><span>ผู้บันทึก</span><input value={recordedBy} onChange={(event) => setRecordedBy(event.target.value)} placeholder="ชื่อผู้บันทึก" /></label>
         </div>
-        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId} onClick={() => void saveLeavePlan()}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
+        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId} onClick={() => guardAction(4, "Master Data", () => void saveLeavePlan())}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
       </section>
 
       <section className="panel leave-planning-list">
@@ -4582,7 +4700,7 @@ function LeavePlanningPage({ employeeMasterFile }: { employeeMasterFile?: Master
           <label className="search-box"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อ รหัส หรือหน่วยงาน" /></label>
         </div>
         <div className="table-wrap"><table className="table data-table"><thead><tr><th>วันที่</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>หน่วยงาน</th><th>ประเภทลา</th><th>ผู้บันทึก</th><th></th></tr></thead>
-          <tbody>{visibleLeaves.map((leave) => { const employee = employeeById.get(leave.emp_id); return <tr key={leave.id}><td>{new Date(leave.leave_date + "T00:00:00").toLocaleDateString("th-TH")}</td><td>{leave.emp_id}</td><td>{employee?.name ?? "-"}</td><td>{employee?.dept ?? "-"}</td><td><span className="status-pill absent">{leave.leave_type}</span></td><td>{leave.recorded_by ?? "-"}</td><td><button className="icon-button danger" type="button" title="ลบรายการลา" onClick={() => void deleteLeave(leave.id)}><Trash2 size={15} /></button></td></tr>; })}
+          <tbody>{visibleLeaves.map((leave) => { const employee = employeeById.get(leave.emp_id); return <tr key={leave.id}><td>{new Date(leave.leave_date + "T00:00:00").toLocaleDateString("th-TH")}</td><td>{leave.emp_id}</td><td>{employee?.name ?? "-"}</td><td>{employee?.dept ?? "-"}</td><td><span className="status-pill absent">{leave.leave_type}</span></td><td>{leave.recorded_by ?? "-"}</td><td><button className="icon-button danger" type="button" title="ลบรายการลา" onClick={() => guardAction(4, "Master Data", () => void deleteLeave(leave.id))}><Trash2 size={15} /></button></td></tr>; })}
           {visibleLeaves.length === 0 ? <tr><td colSpan={7}>{loading ? "กำลังโหลด..." : "ยังไม่มีรายการลาล่วงหน้า"}</td></tr> : null}</tbody>
         </table></div>
       </section>
@@ -4654,8 +4772,10 @@ function CalendarPicker({
 }
 
 function HolidayMasterPage({
+  guardAction,
   onHolidaysChanged,
 }: {
+  guardAction: (menuNo: number, menuLabel: string, action: () => void, onCancel?: () => void) => void;
   onHolidaysChanged: (dates: Set<string>) => void;
 }) {
   const [holidays, setHolidays] = useState<HolidayRow[]>([]);
@@ -4750,7 +4870,7 @@ function HolidayMasterPage({
             placeholder="ชื่อวันหยุด เช่น วันสงกรานต์"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void addHoliday()}
+            onKeyDown={(e) => e.key === "Enter" && guardAction(4, "Master Data", () => void addHoliday())}
           />
           <select
             className="holiday-type-select"
@@ -4763,7 +4883,7 @@ function HolidayMasterPage({
           </select>
           <button
             className="primary-button"
-            onClick={addHoliday}
+            onClick={() => guardAction(4, "Master Data", () => void addHoliday())}
             disabled={saving || !newDate || !newName.trim()}
           >
             + เพิ่มวันหยุด
@@ -4820,7 +4940,7 @@ function HolidayMasterPage({
                     <td>
                       <button
                         className="holiday-delete-btn"
-                        onClick={() => deleteHoliday(h.id)}
+                        onClick={() => guardAction(4, "Master Data", () => void deleteHoliday(h.id))}
                         title="ลบวันหยุดนี้"
                       >
                         <X size={14} />
@@ -4845,8 +4965,10 @@ function HolidayMasterPage({
 }
 
 function PublicHolidayPage({
+  guardAction,
   onHolidaysChanged,
 }: {
+  guardAction: (menuNo: number, menuLabel: string, action: () => void, onCancel?: () => void) => void;
   onHolidaysChanged: (dates: Set<string>) => void;
 }) {
   const [holidays, setHolidays] = useState<HolidayRow[]>([]);
@@ -4971,7 +5093,7 @@ function PublicHolidayPage({
             placeholder="ชื่อวันหยุด เช่น วันสงกรานต์"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void addHoliday()}
+            onKeyDown={(e) => e.key === "Enter" && guardAction(4, "Master Data", () => void addHoliday())}
           />
           <select
             className="holiday-type-select"
@@ -4983,7 +5105,7 @@ function PublicHolidayPage({
           </select>
           <button
             className="primary-button"
-            onClick={addHoliday}
+            onClick={() => guardAction(4, "Master Data", () => void addHoliday())}
             disabled={saving || !newDate || !newName.trim()}
           >
             + เพิ่มวันหยุด
@@ -5050,7 +5172,7 @@ function PublicHolidayPage({
                     <td>
                       <button
                         className="holiday-delete-btn"
-                        onClick={() => deleteHoliday(h.id)}
+                        onClick={() => guardAction(4, "Master Data", () => void deleteHoliday(h.id))}
                         title="ลบวันหยุดนี้"
                       >
                         <X size={14} />
@@ -7228,15 +7350,24 @@ function TimestampPage({
 
   async function handleUploadClick() {
     if (isStorageWarning) { setShowStorageWarn(true); return; }
-    await createDailyRun();
+    try {
+      await createDailyRun();
+    } catch {
+      // login was cancelled or denied — nothing else to clean up here
+    }
   }
 
   async function confirmDelete() {
     if (!pendingDelete) return;
     setIsDeleting(true);
-    await deleteRun(pendingDelete);
-    setIsDeleting(false);
-    setPendingDelete(null);
+    try {
+      await deleteRun(pendingDelete);
+      setPendingDelete(null);
+    } catch {
+      // login was cancelled or denied — keep the confirm dialog open so the user can retry
+    } finally {
+      setIsDeleting(false);
+    }
   }
 
   return (
@@ -7831,6 +7962,7 @@ function TablePagination({
 
 function ReportDashboard({
   deptFilter,
+  guardAction,
   monthlyLateMinutes,
   prevMonthLateCounts,
   query,
@@ -7843,6 +7975,7 @@ function ReportDashboard({
   warnDates,
 }: {
   deptFilter: string;
+  guardAction: (menuNo: number, menuLabel: string, action: () => void, onCancel?: () => void) => void;
   monthlyLateMinutes: Record<string, number>;
   prevMonthLateCounts: Record<string, number>;
   query: string;
@@ -8319,7 +8452,7 @@ function ReportDashboard({
                         <select
                           className={`leave-select${leaveMap.has(row.empId) ? " saved" : ""}`}
                           value={leaveMap.get(row.empId) ?? ""}
-                          onChange={(e) => saveLeave(row.empId, e.target.value)}
+                          onChange={(e) => guardAction(6, "Report & Dashboard", () => saveLeave(row.empId, e.target.value))}
                         >
                           <option value="">— เลือกประเภท —</option>
                           {leaveTypeOptions.map((option) => (
@@ -8680,6 +8813,7 @@ type OTRecord = AttendanceRecord & { shiftEnd: string; otHours: number };
 function OTDashboard({
   reportData,
   activeMasterMap,
+  guardAction,
   isLoadingReport,
   otSubTab,
   setOtSubTab,
@@ -8688,6 +8822,7 @@ function OTDashboard({
 }: {
   reportData: ReportData | null;
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
+  guardAction: (menuNo: number, menuLabel: string, action: () => void, onCancel?: () => void) => void;
   isLoadingReport: boolean;
   otSubTab: "chart" | "summary" | "detail";
   setOtSubTab: Dispatch<SetStateAction<"chart" | "summary" | "detail">>;
@@ -8733,8 +8868,10 @@ function OTDashboard({
   function saveOTTargetAvg(value: string) {
     const num = parseFloat(value);
     if (!isNaN(num) && num >= 0) {
-      setOtTargetAvg(num);
-      persistOTSettings({ ot_target_avg: num });
+      guardAction(7, "OT Dashboard", () => {
+        setOtTargetAvg(num);
+        persistOTSettings({ ot_target_avg: num });
+      });
     }
   }
   const [showConfig, setShowConfig] = useState(false);
@@ -8972,25 +9109,31 @@ function OTDashboard({
   function saveOTTarget(dept: string, value: string) {
     const num = parseFloat(value);
     if (!isNaN(num) && num >= 0) {
-      const next = { ...otTargets, [dept]: num };
-      setOtTargets(next);
-      persistOTSettings({ ot_targets: next });
+      guardAction(7, "OT Dashboard", () => {
+        const next = { ...otTargets, [dept]: num };
+        setOtTargets(next);
+        persistOTSettings({ ot_targets: next });
+      });
     }
   }
 
   function saveBreakMinutes(dept: string, value: string) {
     const num = parseInt(value, 10);
     if (!isNaN(num) && num >= 0) {
-      const next = { ...breakMinutesByDept, [dept]: num };
-      setBreakMinutesByDept(next);
-      persistOTSettings({ break_minutes: next });
+      guardAction(7, "OT Dashboard", () => {
+        const next = { ...breakMinutesByDept, [dept]: num };
+        setBreakMinutesByDept(next);
+        persistOTSettings({ break_minutes: next });
+      });
     }
   }
 
   function saveDeptManager(dept: string, name: string) {
-    const next = { ...deptManagers, [dept]: name };
-    setDeptManagers(next);
-    persistOTSettings({ dept_managers: next });
+    guardAction(7, "OT Dashboard", () => {
+      const next = { ...deptManagers, [dept]: name };
+      setDeptManagers(next);
+      persistOTSettings({ dept_managers: next });
+    });
   }
 
   const now = new Date();
