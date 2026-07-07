@@ -6434,9 +6434,34 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   line-height: 1.5;
 }
 
+.help-section-walkthrough {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.95fr) minmax(280px, 1.05fr);
+  align-items: start;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.help-section-walkthrough.no-image {
+  display: block;
+}
+
+.help-section-figure {
+  position: sticky;
+  top: 14px;
+  margin: 0;
+}
+
+.help-section-figure figcaption {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .help-section-image-link {
   display: block;
-  margin: 0 0 14px;
+  margin: 0;
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -6458,10 +6483,11 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 
 .help-section-points {
   margin: 0;
-  padding-left: 18px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 9px;
+  list-style: none;
 }
 
 .help-section-notes {
@@ -6497,9 +6523,31 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 }
 
 .help-section-points li {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
   font-size: 13px;
   line-height: 1.6;
   color: var(--text);
+}
+
+.help-step-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .help-guide-panel mark {
@@ -6519,6 +6567,12 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
     flex-wrap: wrap;
     max-height: none;
     width: 100%;
+  }
+  .help-section-walkthrough {
+    grid-template-columns: 1fr;
+  }
+  .help-section-figure {
+    position: static;
   }
 }
 

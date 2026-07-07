@@ -9932,6 +9932,17 @@ function splitPointsAndNotes(points: string[]): { steps: string[]; notes: string
   return { steps, notes };
 }
 
+const helpStepNumberRe = /^(\d+)[).]\s*/;
+
+function formatHelpStep(text: string, fallbackIndex: number): { marker: string; text: string } {
+  const match = text.match(helpStepNumberRe);
+  if (!match) return { marker: String(fallbackIndex + 1), text };
+  return {
+    marker: match[1],
+    text: text.replace(helpStepNumberRe, ""),
+  };
+}
+
 function HelpGuidePage({
   setActiveTab,
   setMasterSubTab,
@@ -9972,7 +9983,7 @@ function HelpGuidePage({
           <span className="help-guide-icon"><BookOpen size={22} /></span>
           <div>
             <h2>คู่มือการใช้งานระบบ</h2>
-            <p>คำอธิบายแต่ละหน้าในระบบ สำหรับผู้ที่เพิ่งเริ่มใช้งาน</p>
+            <p>คำอธิบายแต่ละหน้าในระบบ วางคู่กับภาพหน้าจอเพื่อให้รู้ว่ากำลังพูดถึงส่วนไหน</p>
           </div>
         </div>
         <div className="help-search-wrap">
@@ -10044,22 +10055,33 @@ function HelpGuidePage({
                           ) : null}
                         </div>
                         <p className="help-section-summary">{highlightMatches(s.summary, q)}</p>
-                        {s.image ? (
-                          <a
-                            className="help-section-image-link"
-                            href={s.image}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="คลิกเพื่อดูภาพขนาดเต็ม"
-                          >
-                            <img className="help-section-image" src={s.image} alt={`ตัวอย่างหน้าจอ: ${s.title}`} loading="lazy" />
-                          </a>
-                        ) : null}
-                        <ul className="help-section-points">
-                          {steps.map((p, i) => (
-                            <li key={i}>{highlightMatches(p, q)}</li>
-                          ))}
-                        </ul>
+                        <div className={`help-section-walkthrough${s.image ? "" : " no-image"}`}>
+                          {s.image ? (
+                            <figure className="help-section-figure">
+                              <a
+                                className="help-section-image-link"
+                                href={s.image}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="คลิกเพื่อดูภาพขนาดเต็ม"
+                              >
+                                <img className="help-section-image" src={s.image} alt={`ตัวอย่างหน้าจอ: ${s.title}`} loading="lazy" />
+                              </a>
+                              <figcaption>ดูภาพประกอบ แล้วไล่ตามหมายเลขด้านขวาได้เลย</figcaption>
+                            </figure>
+                          ) : null}
+                          <ol className="help-section-points">
+                            {steps.map((p, i) => {
+                              const step = formatHelpStep(p, i);
+                              return (
+                                <li key={i}>
+                                  <span className="help-step-marker" aria-hidden="true">{step.marker}</span>
+                                  <span>{highlightMatches(step.text, q)}</span>
+                                </li>
+                              );
+                            })}
+                          </ol>
+                        </div>
                         {notes.length > 0 ? (
                           <div className="help-section-notes">
                             <span className="help-notes-label">เพิ่มเติม</span>
