@@ -6487,23 +6487,32 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   background: var(--surface2);
 }
 
-.help-image-marker {
+.help-image-box {
   position: absolute;
+  border: 2.5px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(16, 185, 129, 0.14);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+  pointer-events: none;
+}
+
+.help-image-box-label {
+  position: absolute;
+  top: -13px;
+  left: -13px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  transform: translate(-50%, -50%);
+  width: 26px;
+  height: 26px;
   border-radius: 999px;
   border: 2px solid #fff;
   background: var(--accent);
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 900;
   line-height: 1;
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.22);
-  pointer-events: none;
 }
 
 .help-section-points {
@@ -6542,6 +6551,38 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 }
 
 .help-section-notes li {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.help-section-caveats {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.help-caveats-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin-bottom: 6px;
+}
+
+.help-section-caveats ul {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.help-section-caveats li {
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--text);
@@ -6599,10 +6640,10 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   .help-section-image {
     max-height: 460px;
   }
-  .help-image-marker {
-    width: 26px;
-    height: 26px;
-    font-size: 12px;
+  .help-image-box-label {
+    width: 22px;
+    height: 22px;
+    font-size: 11px;
   }
 }
 
