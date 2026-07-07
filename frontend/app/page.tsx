@@ -4585,6 +4585,8 @@ function LeavePlanningPage({
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [leaves, setLeaves] = useState<LeaveRow[]>([]);
   const [empId, setEmpId] = useState("");
+  const [empQuery, setEmpQuery] = useState("");
+  const [showEmpSuggestions, setShowEmpSuggestions] = useState(false);
   const [leaveDate, setLeaveDate] = useState(localToday);
   const [leaveType, setLeaveType] = useState<string>(leaveTypeOptions[0]);
   const [recordedBy, setRecordedBy] = useState("");
@@ -4595,6 +4597,42 @@ function LeavePlanningPage({
   const [message, setMessage] = useState("");
 
   const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.empId, employee])), [employees]);
+  const empSuggestions = useMemo(() => {
+    const needle = empQuery.trim().toLocaleLowerCase("th-TH");
+    const matches = !needle
+      ? employees
+      : employees.filter((employee) =>
+          `${employee.empId} ${employee.name}`.toLocaleLowerCase("th-TH").includes(needle),
+        );
+    return matches.slice(0, 50);
+  }, [employees, empQuery]);
+
+  function selectEmployee(employee: EmployeeOption) {
+    setEmpId(employee.empId);
+    setEmpQuery(`${employee.empId} - ${employee.name}`);
+    setShowEmpSuggestions(false);
+  }
+
+  // If the field is left with typed text that was never actually picked from
+  // the dropdown, empId (what saveLeavePlan uses) would silently stay on the
+  // previous selection while the input shows something else entirely — snap
+  // back to the real selection, or resolve an exact id/name match if there is one.
+  function reconcileEmpSelection() {
+    const needle = empQuery.trim().toLocaleLowerCase("th-TH");
+    const currentEmployee = employeeById.get(empId);
+    const expectedQuery = currentEmployee ? `${currentEmployee.empId} - ${currentEmployee.name}` : "";
+    if (empQuery === expectedQuery) return;
+    const exactMatch = employees.find(
+      (employee) =>
+        employee.empId.toLowerCase() === needle || employee.name.toLocaleLowerCase("th-TH") === needle,
+    );
+    if (exactMatch) {
+      setEmpId(exactMatch.empId);
+      setEmpQuery(`${exactMatch.empId} - ${exactMatch.name}`);
+    } else {
+      setEmpQuery(expectedQuery);
+    }
+  }
   const visibleLeaves = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("th-TH");
     if (!needle) return leaves;
@@ -4636,7 +4674,10 @@ function LeavePlanningPage({
       }).filter((row) => row.empId).sort((a, b) => a.empId.localeCompare(b.empId));
       setEmployees(parsed);
       setLeaves((leaveResult.data ?? []) as LeaveRow[]);
-      if (parsed.length > 0) setEmpId(parsed[0].empId);
+      if (parsed.length > 0) {
+        setEmpId(parsed[0].empId);
+        setEmpQuery(`${parsed[0].empId} - ${parsed[0].name}`);
+      }
     }).catch((reason) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : "โหลดข้อมูลไม่สำเร็จ");
     }).finally(() => {
@@ -4682,9 +4723,36 @@ function LeavePlanningPage({
         {error ? <p className="error-banner">{error}</p> : null}
         {message ? <p className="success-banner">{message}</p> : null}
         <div className="leave-form-grid">
-          <label><span>พนักงาน</span><select value={empId} onChange={(event) => setEmpId(event.target.value)} disabled={loading}>
-            {employees.map((employee) => <option key={employee.empId} value={employee.empId}>{employee.empId} - {employee.name}</option>)}
-          </select></label>
+          <label className="emp-search-field">
+            <span>พนักงาน</span>
+            <input
+              value={empQuery}
+              onChange={(event) => {
+                setEmpQuery(event.target.value);
+                setShowEmpSuggestions(true);
+              }}
+              onFocus={() => setShowEmpSuggestions(true)}
+              onBlur={() => setTimeout(() => { setShowEmpSuggestions(false); reconcileEmpSelection(); }, 150)}
+              disabled={loading}
+              placeholder="ค้นหาชื่อหรือรหัสพนักงาน..."
+              autoComplete="off"
+            />
+            {showEmpSuggestions && empSuggestions.length > 0 ? (
+              <div className="emp-search-suggestions">
+                {empSuggestions.map((employee) => (
+                  <button
+                    key={employee.empId}
+                    type="button"
+                    className="emp-search-suggestion-item"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectEmployee(employee)}
+                  >
+                    {employee.empId} - {employee.name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </label>
           <label><span>วันที่ลา</span><input type="date" min={localToday()} value={leaveDate} onChange={(event) => setLeaveDate(event.target.value)} /></label>
           <label><span>ประเภทลา</span><select value={leaveType} onChange={(event) => setLeaveType(event.target.value)}>
             {leaveTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
