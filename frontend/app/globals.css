@@ -622,11 +622,16 @@ button {
   background: #fee2e2;
 }
 
+.kpi-body {
+  min-width: 0;
+}
+
 .kpi-body span,
 .kpi-body p {
   color: #475569;
   font-size: 14px;
   font-weight: 500;
+  overflow-wrap: break-word;
 }
 
 .kpi-body div {
