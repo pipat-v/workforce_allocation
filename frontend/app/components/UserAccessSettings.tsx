@@ -509,10 +509,12 @@ export default function UserAccessSettings({
       <div className="settings-page-header">
         <div className="settings-current-header">
           <h3>ผู้ใช้ระบบ & สิทธิ์การเข้าเมนู</h3>
-          <button className="secondary-button small" type="button" onClick={() => void loadCurrent()} disabled={isLoading}>
-            <RotateCw size={14} />
-            รีเฟรช
-          </button>
+          {canEdit ? (
+            <button className="secondary-button small" type="button" onClick={() => void loadCurrent()} disabled={isLoading}>
+              <RotateCw size={14} />
+              รีเฟรช
+            </button>
+          ) : null}
         </div>
         <p>ดูรายชื่อผู้ใช้และแก้ไข/เพิ่ม/ลบผู้ใช้ได้เฉพาะบัญชีตำแหน่ง &quot;HR&quot; หรือ &quot;เถ้าแก่&quot; เท่านั้น</p>
       </div>
