@@ -9943,19 +9943,107 @@ function formatHelpStep(text: string, fallbackIndex: number): { marker: string; 
   };
 }
 
-const helpImageMarkerPositions = [
-  { top: "14%", left: "12%" },
-  { top: "14%", left: "50%" },
-  { top: "34%", left: "18%" },
-  { top: "34%", left: "66%" },
-  { top: "56%", left: "14%" },
-  { top: "56%", left: "62%" },
-  { top: "78%", left: "24%" },
-  { top: "78%", left: "72%" },
-];
+const helpImageMarkerPositionsBySection: Record<string, Array<{ top: string; left: string }>> = {
+  dashboard: [
+    { top: "22%", left: "50%" },
+    { top: "36%", left: "72%" },
+    { top: "54%", left: "48%" },
+    { top: "24%", left: "76%" },
+    { top: "93%", left: "90%" },
+    { top: "88%", left: "44%" },
+  ],
+  timestamp: [
+    { top: "44%", left: "47%" },
+    { top: "63%", left: "48%" },
+    { top: "43%", left: "82%" },
+    { top: "68%", left: "47%" },
+  ],
+  results: [
+    { top: "29%", left: "56%" },
+    { top: "43%", left: "53%" },
+    { top: "30%", left: "88%" },
+  ],
+  "timestamp-dept": [
+    { top: "24%", left: "56%" },
+    { top: "24%", left: "91%" },
+    { top: "46%", left: "56%" },
+  ],
+  "master-files": [
+    { top: "34%", left: "36%" },
+    { top: "76%", left: "37%" },
+    { top: "61%", left: "39%" },
+    { top: "46%", left: "31%" },
+    { top: "38%", left: "70%" },
+    { top: "58%", left: "42%" },
+  ],
+  manpower: [
+    { top: "26%", left: "43%" },
+    { top: "32%", left: "52%" },
+    { top: "51%", left: "53%" },
+    { top: "51%", left: "58%" },
+    { top: "60%", left: "53%" },
+    { top: "20%", left: "89%" },
+  ],
+  "holy-days": [
+    { top: "31%", left: "46%" },
+    { top: "43%", left: "40%" },
+    { top: "46%", left: "92%" },
+  ],
+  "public-holidays": [
+    { top: "47%", left: "53%" },
+    { top: "31%", left: "91%" },
+    { top: "48%", left: "78%" },
+  ],
+  "dayoff-shift": [
+    { top: "25%", left: "55%" },
+    { top: "45%", left: "58%" },
+    { top: "37%", left: "31%" },
+    { top: "16%", left: "82%" },
+    { top: "16%", left: "66%" },
+    { top: "58%", left: "74%" },
+    { top: "16%", left: "93%" },
+  ],
+  "skill-matrix": [
+    { top: "32%", left: "54%" },
+    { top: "46%", left: "62%" },
+    { top: "39%", left: "41%" },
+    { top: "19%", left: "73%" },
+    { top: "19%", left: "82%" },
+    { top: "19%", left: "67%" },
+    { top: "46%", left: "54%" },
+  ],
+  "report-dashboard": [
+    { top: "18%", left: "34%" },
+    { top: "49%", left: "31%" },
+    { top: "46%", left: "68%" },
+    { top: "52%", left: "82%" },
+    { top: "88%", left: "66%" },
+    { top: "18%", left: "48%" },
+  ],
+  "ot-chart": [
+    { top: "55%", left: "55%" },
+    { top: "18%", left: "79%" },
+    { top: "49%", left: "47%" },
+  ],
+  "ot-summary": [
+    { top: "18%", left: "79%" },
+    { top: "44%", left: "50%" },
+    { top: "46%", left: "91%" },
+    { top: "31%", left: "64%" },
+  ],
+  "ot-detail": [
+    { top: "28%", left: "51%" },
+    { top: "28%", left: "88%" },
+    { top: "28%", left: "78%" },
+    { top: "53%", left: "52%" },
+  ],
+  setting: [
+    { top: "31%", left: "35%" },
+  ],
+};
 
-function helpImageMarkerStyle(index: number) {
-  return helpImageMarkerPositions[index % helpImageMarkerPositions.length];
+function helpImageMarkerStyle(sectionId: string, index: number) {
+  return helpImageMarkerPositionsBySection[sectionId]?.[index] ?? null;
 }
 
 function HelpGuidePage({
@@ -10082,12 +10170,14 @@ function HelpGuidePage({
                               >
                                 <img className="help-section-image" src={s.image} alt={`ตัวอย่างหน้าจอ: ${s.title}`} loading="lazy" />
                                 {steps.map((p, i) => {
+                                  const markerStyle = helpImageMarkerStyle(s.id, i);
+                                  if (!markerStyle) return null;
                                   const step = formatHelpStep(p, i);
                                   return (
                                     <span
                                       key={`${s.id}-marker-${i}`}
                                       className="help-image-marker"
-                                      style={helpImageMarkerStyle(i)}
+                                      style={markerStyle}
                                       aria-hidden="true"
                                     >
                                       {step.marker}
