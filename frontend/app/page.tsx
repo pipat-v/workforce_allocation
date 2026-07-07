@@ -22,6 +22,7 @@ import {
   LayoutGrid,
   LogOut,
   Menu,
+  RotateCw,
   Search,
   Settings,
   Trash2,
@@ -1638,7 +1639,17 @@ export default function Home() {
 
         <section className="dashboard-head">
           <div className="dashboard-head-left">
-            <h2>{activeNav?.label ?? "Dashboard"}</h2>
+            <div className="dashboard-head-title-row">
+              <h2>{activeNav?.label ?? "Dashboard"}</h2>
+              <button
+                className="reload-fab reload-fab-inline"
+                type="button"
+                onClick={() => window.location.reload()}
+              >
+                <RotateCw size={15} />
+                <span>รีโหลด</span>
+              </button>
+            </div>
             {activeTab === "master" ? (
               <div className="master-sub-tabs">
                 <button className={`master-sub-tab${masterSubTab === "files" ? " active" : ""}`} onClick={() => setMasterSubTab("files")}><FileSpreadsheet size={15} />Master Files</button>
@@ -1706,6 +1717,14 @@ export default function Home() {
                 {isLoadingReport ? "กำลังโหลด..." : "โหลดข้อมูล"}
               </button>
             ) : null}
+            <button
+              className="reload-fab reload-fab-end"
+              type="button"
+              onClick={() => window.location.reload()}
+            >
+              <RotateCw size={15} />
+              <span>รีโหลด</span>
+            </button>
           </div>
           {(message || error) ? (
             <div className={`toast ${error ? "error" : ""}`}>

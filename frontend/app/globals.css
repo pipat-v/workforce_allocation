@@ -187,6 +187,32 @@ button {
   display: none;
 }
 
+.reload-fab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+
+.reload-fab:hover {
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.18);
+  transform: translateY(-1px);
+}
+
+.reload-fab:active {
+  transform: translateY(0);
+}
+
 .main {
   min-width: 0;
   height: 100vh;
@@ -338,6 +364,21 @@ button {
 .dashboard-head h2 {
   margin: 0;
   font-size: 26px;
+}
+
+.dashboard-head-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.reload-fab-inline {
+  display: none;
+}
+
+.reload-fab-end {
+  margin-left: auto;
 }
 
 .dashboard-head .dept-filter-select {
@@ -3735,7 +3776,27 @@ button.stacked-row {
     flex-wrap: wrap;
   }
 
+  .confirm-attendance-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .confirm-card-action {
+    width: 100%;
+  }
+
+  .confirm-form-row {
+    flex-wrap: wrap;
+  }
+
+  .confirm-name-input {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+
   .kpi-grid,
+  .kpi-grid.kpi-grid-5,
   .dashboard-grid,
   .workspace-grid,
   .master-upload-grid,
@@ -6580,6 +6641,19 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
     gap: 0;
     background: #111827;
     box-shadow: 0 4px 14px rgba(15, 23, 42, 0.22);
+  }
+
+  .reload-fab {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+
+  .reload-fab-end {
+    display: none;
+  }
+
+  .reload-fab-inline {
+    display: flex;
   }
 
   .mobile-nav-toggle {
