@@ -20,6 +20,66 @@ export default function LoginGate({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [showRegister, setShowRegister] = useState(false);
+  const [regPosition, setRegPosition] = useState("");
+  const [regUsername, setRegUsername] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regConfirmPassword, setRegConfirmPassword] = useState("");
+  const [regError, setRegError] = useState("");
+  const [regMessage, setRegMessage] = useState("");
+  const [regLoading, setRegLoading] = useState(false);
+
+  function openRegister() {
+    setShowRegister(true);
+    setRegError("");
+    setRegMessage("");
+    setRegPosition("");
+    setRegUsername("");
+    setRegPassword("");
+    setRegConfirmPassword("");
+  }
+
+  async function handleRegisterSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!regUsername.trim() || !regPassword) {
+      setRegError("กรุณากรอก User และ Password");
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
+      setRegError("รหัสผ่านทั้งสองช่องไม่ตรงกัน");
+      return;
+    }
+    setRegLoading(true);
+    setRegError("");
+    try {
+      const { error: existingErr, data: existing } = await supabase
+        .from("login_users")
+        .select("username")
+        .eq("username", regUsername.trim())
+        .maybeSingle();
+      if (existingErr) throw new Error(existingErr.message);
+      if (existing) throw new Error("มีชื่อผู้ใช้นี้อยู่แล้ว");
+
+      const { error: insErr } = await supabase.from("registration_requests").insert([
+        {
+          position: regPosition.trim() || null,
+          username: regUsername.trim(),
+          password: regPassword,
+        },
+      ]);
+      if (insErr) throw new Error(insErr.message);
+      setRegMessage("ส่งคำขอลงทะเบียนแล้ว รอการอนุมัติจาก HR, เถ้าแก่ หรือ ผู้จัดการ");
+      setRegPosition("");
+      setRegUsername("");
+      setRegPassword("");
+      setRegConfirmPassword("");
+    } catch (err) {
+      setRegError(err instanceof Error ? err.message : "ส่งคำขอไม่สำเร็จ");
+    } finally {
+      setRegLoading(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!username.trim() || !password) {
@@ -77,12 +137,65 @@ export default function LoginGate({
   );
 
   if (variant === "page") {
+    if (showRegister) {
+      return (
+        <div className="login-form-page">
+          <h2>ลงทะเบียน</h2>
+          <p className="login-form-page-desc">กรอกข้อมูลเพื่อขอสิทธิ์เข้าใช้งาน {menuLabel}</p>
+          <form className="login-gate-form" onSubmit={(e) => void handleRegisterSubmit(e)}>
+            <label className="login-gate-field">
+              <span>ตำแหน่ง</span>
+              <input type="text" value={regPosition} onChange={(e) => setRegPosition(e.target.value)} autoFocus />
+            </label>
+            <label className="login-gate-field">
+              <span>Username</span>
+              <input
+                type="text"
+                value={regUsername}
+                onChange={(e) => setRegUsername(e.target.value)}
+                autoComplete="username"
+                placeholder="เช่น somchai.jai"
+              />
+            </label>
+            <label className="login-gate-field">
+              <span>Password</span>
+              <input
+                type="password"
+                value={regPassword}
+                onChange={(e) => setRegPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </label>
+            <label className="login-gate-field">
+              <span>ยืนยัน Password</span>
+              <input
+                type="password"
+                value={regConfirmPassword}
+                onChange={(e) => setRegConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </label>
+            {regError ? <p className="login-gate-error">{regError}</p> : null}
+            {regMessage ? <p className="settings-success">{regMessage}</p> : null}
+            <button className="primary-button" type="submit" disabled={regLoading}>
+              {regLoading ? "กำลังส่งคำขอ..." : "ส่งคำขอลงทะเบียน"}
+            </button>
+            <button className="link-button" type="button" onClick={() => setShowRegister(false)}>
+              กลับไปเข้าสู่ระบบ
+            </button>
+          </form>
+        </div>
+      );
+    }
     return (
       <div className="login-form-page">
         <h2>เข้าสู่ระบบ</h2>
         <p className="login-form-page-desc">กรอกข้อมูลบัญชีเพื่อเข้าใช้งาน {menuLabel}</p>
         <form className="login-gate-form" onSubmit={handleSubmit}>
           {fields}
+          <button className="link-button" type="button" onClick={openRegister}>
+            ลงทะเบียน
+          </button>
         </form>
       </div>
     );

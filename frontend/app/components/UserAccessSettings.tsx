@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ChevronDown, Download, FileSpreadsheet, KeyRound, Plus, RotateCw, ShieldCheck, Trash2, UploadCloud, UserPlus, Users } from "lucide-react";
+import { Check, ChevronDown, Download, FileSpreadsheet, KeyRound, Plus, RotateCw, ShieldCheck, Trash2, UploadCloud, UserPlus, Users, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 import { canManageSettingUsers, isAllMenuAccess, parseMenuNumbers, type LoginSession } from "@/lib/auth";
@@ -19,6 +19,13 @@ type ParsedMenu = { menu_no: number; menu_name: string };
 
 type LoginUserRow = ParsedUser & { id: number };
 type LoginMenuRow = ParsedMenu & { id: number };
+type RegistrationRequestRow = {
+  id: number;
+  position: string | null;
+  username: string;
+  password: string;
+  created_at: string;
+};
 
 function menuAccessBadgeInfo(value: string, totalMenus: number): { label: string; variant: "all" | "partial" | "none" } {
   if (isAllMenuAccess(value)) return { label: "ทั้งหมด", variant: "all" };
@@ -293,26 +300,83 @@ export default function UserAccessSettings({
   const [isAddingUser, setIsAddingUser] = useState(false);
   const addGrid = useMenuAccessGrid(currentMenus);
 
+  const [pendingRequests, setPendingRequests] = useState<RegistrationRequestRow[]>([]);
+  const [processingRequestId, setProcessingRequestId] = useState<number | null>(null);
+  const [requestsError, setRequestsError] = useState("");
+
   // Only HR / เถ้าแก่ can manage users/passwords here — having menu_access
   // to menu 8 is not enough (e.g. an "All"-access account with another position).
   const canEdit = canManageSettingUsers(session);
 
   async function loadCurrent() {
     setIsLoading(true);
-    const [{ data: users, error: usersError }, { data: menus, error: menusError }] = await Promise.all([
+    const [{ data: users, error: usersError }, { data: menus, error: menusError }, { data: requests, error: requestsErr }] = await Promise.all([
       supabase
         .from("login_users")
         .select("id, position, username, menu_access, menu_view_access")
         .order("id"),
       supabase.from("login_menus").select("id, menu_no, menu_name").order("menu_no"),
+      supabase
+        .from("registration_requests")
+        .select("id, position, username, password, created_at")
+        .eq("status", "pending")
+        .order("created_at"),
     ]);
     const failures: string[] = [];
     if (usersError) failures.push(`ผู้ใช้: ${usersError.message}`);
     else if (users) setCurrentUsers(users as LoginUserRow[]);
     if (menusError) failures.push(`เมนู: ${menusError.message}`);
     else if (menus) setCurrentMenus(menus as LoginMenuRow[]);
+    if (requestsErr) failures.push(`คำขอลงทะเบียน: ${requestsErr.message}`);
+    else if (requests) setPendingRequests(requests as RegistrationRequestRow[]);
     setLoadError(failures.join(" / "));
     setIsLoading(false);
+  }
+
+  async function handleApproveRequest(request: RegistrationRequestRow) {
+    setProcessingRequestId(request.id);
+    setRequestsError("");
+    const { error: insErr } = await supabase.from("login_users").insert([
+      {
+        position: request.position,
+        username: request.username,
+        password: request.password,
+        menu_access: "All",
+        menu_view_access: "All",
+      },
+    ]);
+    if (insErr) {
+      setRequestsError(insErr.code === "23505" ? "มีชื่อผู้ใช้นี้อยู่แล้ว" : insErr.message);
+      setProcessingRequestId(null);
+      return;
+    }
+    const { error: updErr } = await supabase
+      .from("registration_requests")
+      .update({ status: "approved" })
+      .eq("id", request.id);
+    setProcessingRequestId(null);
+    if (updErr) {
+      setRequestsError(updErr.message);
+      return;
+    }
+    setMessage(`อนุมัติ ${request.username} แล้ว — สามารถปรับแต่งสิทธิ์ Edit/View เพิ่มเติมได้ในตาราง`);
+    await loadCurrent();
+  }
+
+  async function handleRejectRequest(request: RegistrationRequestRow) {
+    if (!window.confirm(`ปฏิเสธคำขอลงทะเบียนของ ${request.username}?`)) return;
+    setProcessingRequestId(request.id);
+    setRequestsError("");
+    const { error: updErr } = await supabase
+      .from("registration_requests")
+      .update({ status: "rejected" })
+      .eq("id", request.id);
+    setProcessingRequestId(null);
+    if (updErr) {
+      setRequestsError(updErr.message);
+      return;
+    }
+    await loadCurrent();
   }
 
   useEffect(() => {
@@ -574,6 +638,59 @@ export default function UserAccessSettings({
               </form>
             ) : null}
           </div>
+
+          {pendingRequests.length > 0 ? (
+            <div className="settings-section settings-section-alert">
+              <div className="settings-section-header">
+                <h4>
+                  <UserPlus size={16} />
+                  คำขอลงทะเบียนรออนุมัติ ({pendingRequests.length})
+                </h4>
+              </div>
+              {requestsError ? <p className="login-gate-error">{requestsError}</p> : null}
+              <div className="settings-table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>ตำแหน่ง</th>
+                      <th>User</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingRequests.map((req) => (
+                      <tr key={req.id}>
+                        <td>{req.position || "-"}</td>
+                        <td>{req.username}</td>
+                        <td>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button
+                              className="request-action-button accept"
+                              type="button"
+                              disabled={processingRequestId === req.id}
+                              onClick={() => void handleApproveRequest(req)}
+                            >
+                              <Check size={16} />
+                              Accept
+                            </button>
+                            <button
+                              className="request-action-button reject"
+                              type="button"
+                              disabled={processingRequestId === req.id}
+                              onClick={() => void handleRejectRequest(req)}
+                            >
+                              <X size={16} />
+                              Reject
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
 
           <div className="settings-section">
             <div className="settings-section-header">

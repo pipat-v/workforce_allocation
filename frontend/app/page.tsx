@@ -35,7 +35,7 @@ import {
 import type { ChangeEvent, Dispatch, ReactNode, SetStateAction } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
-import { clearSession, getSession, hasMenuAccess, type LoginSession } from "@/lib/auth";
+import { canManageSettingUsers, clearSession, getSession, hasMenuAccess, type LoginSession } from "@/lib/auth";
 import LoginGate from "./components/LoginGate";
 import UserAccessSettings from "./components/UserAccessSettings";
 
@@ -296,6 +296,7 @@ export default function Home() {
   const [showRunPicker, setShowRunPicker] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [session, setSession] = useState<LoginSession | null>(null);
+  const [pendingRegistrationCount, setPendingRegistrationCount] = useState(0);
   const [holidayDates, setHolidayDates] = useState<Set<string>>(() => {
     const all = new Set<string>();
     for (const s of Object.values(buddhistHolyDaysByYear)) for (const d of s) all.add(d);
@@ -494,6 +495,24 @@ export default function Home() {
   useEffect(() => {
     setSession(getSession());
   }, []);
+
+  useEffect(() => {
+    if (!canManageSettingUsers(session)) {
+      setPendingRegistrationCount(0);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from("registration_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending")
+      .then(({ count }) => {
+        if (!cancelled) setPendingRegistrationCount(count ?? 0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, activeTab]);
 
   useEffect(() => {
     void loadDashboard();
@@ -1610,6 +1629,9 @@ export default function Home() {
                 >
                   <Icon size={19} />
                   <span>{item.label}</span>
+                  {item.id === "setting" && pendingRegistrationCount > 0 ? (
+                    <span className="nav-badge">{pendingRegistrationCount}</span>
+                  ) : null}
                   {item.label === "Master Data" || item.label === "Report & Dashboard" || item.label === "OT Dashboard" ? (
                     <ChevronDown className={`nav-chevron${isActive ? " open" : ""}`} size={15} />
                   ) : null}
