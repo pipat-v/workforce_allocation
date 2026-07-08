@@ -1756,7 +1756,11 @@ export default function Home() {
         </header>
 
         {activeTab === "setting" ? (
-          <UserAccessSettings session={session} onLoginSuccess={(newSession) => setSession(newSession)} />
+          <UserAccessSettings
+            session={session}
+            onLoginSuccess={(newSession) => setSession(newSession)}
+            onPendingRequestsChange={setPendingRegistrationCount}
+          />
         ) : (
           <>
         <section className="dashboard-head">

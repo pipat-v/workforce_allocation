@@ -265,9 +265,11 @@ function MenuAccessSummary({
 export default function UserAccessSettings({
   session,
   onLoginSuccess,
+  onPendingRequestsChange,
 }: {
   session: LoginSession | null;
   onLoginSuccess: (session: LoginSession) => void;
+  onPendingRequestsChange?: (count: number) => void;
 }) {
   const [currentUsers, setCurrentUsers] = useState<LoginUserRow[]>([]);
   const [currentMenus, setCurrentMenus] = useState<LoginMenuRow[]>([]);
@@ -328,7 +330,10 @@ export default function UserAccessSettings({
     if (menusError) failures.push(`เมนู: ${menusError.message}`);
     else if (menus) setCurrentMenus(menus as LoginMenuRow[]);
     if (requestsErr) failures.push(`คำขอลงทะเบียน: ${requestsErr.message}`);
-    else if (requests) setPendingRequests(requests as RegistrationRequestRow[]);
+    else if (requests) {
+      setPendingRequests(requests as RegistrationRequestRow[]);
+      onPendingRequestsChange?.(requests.length);
+    }
     setLoadError(failures.join(" / "));
     setIsLoading(false);
   }
