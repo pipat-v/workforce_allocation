@@ -10268,6 +10268,25 @@ function HelpGuidePage({
     .map((group) => ({ group, sections: filtered.filter((s) => s.group === group) }))
     .filter((g) => g.sections.length > 0);
 
+  async function exportGuide() {
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".help-section-image"));
+    await Promise.all(
+      images.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            img.loading = "eager";
+            if (img.complete && img.naturalWidth > 0) {
+              img.decode?.().then(() => resolve()).catch(() => resolve());
+              return;
+            }
+            img.addEventListener("load", () => resolve(), { once: true });
+            img.addEventListener("error", () => resolve(), { once: true });
+          }),
+      ),
+    );
+    window.print();
+  }
+
   return (
     <section className="panel help-guide-panel">
       <div className="help-guide-header">
@@ -10278,20 +10297,26 @@ function HelpGuidePage({
             <p>คำอธิบายแต่ละหน้าในระบบ วางคู่กับภาพหน้าจอเพื่อให้รู้ว่ากำลังพูดถึงส่วนไหน</p>
           </div>
         </div>
-        <div className="help-search-wrap">
-          <Search size={16} />
-          <input
-            type="search"
-            aria-label="ค้นหาคู่มือการใช้งาน"
-            placeholder="ค้นหาคำสำคัญ เช่น อัปโหลด, กะ, Manpower, Export..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {query ? (
-            <button type="button" className="help-search-clear" onClick={() => setQuery("")} aria-label="ล้างคำค้นหา">
-              <X size={14} />
-            </button>
-          ) : null}
+        <div className="help-guide-actions">
+          <div className="help-search-wrap">
+            <Search size={16} />
+            <input
+              type="search"
+              aria-label="ค้นหาคู่มือการใช้งาน"
+              placeholder="ค้นหาคำสำคัญ เช่น อัปโหลด, กะ, Manpower, Export..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query ? (
+              <button type="button" className="help-search-clear" onClick={() => setQuery("")} aria-label="ล้างคำค้นหา">
+                <X size={14} />
+              </button>
+            ) : null}
+          </div>
+          <button type="button" className="help-export-btn" onClick={exportGuide}>
+            <Download size={15} />
+            Export PDF
+          </button>
         </div>
       </div>
 
@@ -10336,7 +10361,7 @@ function HelpGuidePage({
                     const SectionIcon = s.icon;
                     const { steps, notes } = splitPointsAndNotes(s.points);
                     return (
-                      <article key={s.id} id={`help-${s.id}`} className="help-section-card">
+                      <article key={s.id} id={`help-${s.id}`} className={`help-section-card${s.openTab ? "" : " help-section-overview"}`}>
                         <div className="help-section-hdr">
                           <span className="help-section-icon"><SectionIcon size={18} /></span>
                           <h3>{highlightMatches(s.title, q)}</h3>
@@ -10357,7 +10382,7 @@ function HelpGuidePage({
                                 rel="noopener noreferrer"
                                 title="คลิกเพื่อดูภาพขนาดเต็ม"
                               >
-                                <img className="help-section-image" src={s.image} alt={`ตัวอย่างหน้าจอ: ${s.title}`} loading="lazy" />
+                                <img className="help-section-image" src={s.image} alt={`ตัวอย่างหน้าจอ: ${s.title}`} loading="eager" />
                                 {steps.map((p, i) => {
                                   const markerStyle = helpImageMarkerStyle(s.id, i);
                                   if (!markerStyle) return null;

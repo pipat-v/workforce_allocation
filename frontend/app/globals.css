@@ -6216,6 +6216,14 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   color: var(--muted);
 }
 
+.help-guide-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .help-search-wrap {
   display: flex;
   align-items: center;
@@ -6268,6 +6276,30 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 .help-search-clear:hover {
   background: var(--line);
   color: var(--text);
+}
+
+.help-export-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.18);
+  transition: background 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.help-export-btn:hover {
+  background: var(--green-dark);
+  box-shadow: 0 5px 14px rgba(16, 185, 129, 0.26);
+  transform: translateY(-1px);
 }
 
 .help-search-count {
@@ -6624,6 +6656,14 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 }
 
 @media (max-width: 980px) {
+  .help-guide-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .help-search-wrap {
+    flex: 1;
+    min-width: min(100%, 300px);
+  }
   .help-guide-body {
     flex-direction: column;
   }
@@ -6644,6 +6684,250 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
     width: 22px;
     height: 22px;
     font-size: 11px;
+  }
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  html,
+  body {
+    width: auto;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .app-shell {
+    display: block !important;
+    width: auto;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .sidebar,
+  .topbar,
+  .dashboard-head,
+  .help-guide-sidebar,
+  .help-guide-header,
+  .help-guide-actions,
+  .help-content-group-title,
+  .help-section-overview,
+  .help-open-btn,
+  .help-section-figure figcaption {
+    display: none !important;
+  }
+
+  .main {
+    display: block !important;
+    width: auto;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .help-guide-panel {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+  }
+
+  .help-guide-header {
+    margin: 0;
+  }
+
+  .help-guide-title {
+    align-items: flex-start;
+  }
+
+  .help-guide-title h2 {
+    font-size: 18px;
+  }
+
+  .help-guide-title p {
+    font-size: 11.5px;
+  }
+
+  .help-guide-body,
+  .help-guide-content,
+  .help-guide-sections {
+    display: block;
+  }
+
+  .help-content-group {
+    break-after: auto;
+  }
+
+  .help-content-group-title {
+    margin: 12px 0 8px;
+    break-after: avoid;
+  }
+
+  .help-section-card {
+    display: block;
+    margin: 0;
+    min-height: 270mm;
+    padding: 5mm;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: none;
+    break-after: page;
+    break-inside: avoid;
+    page-break-after: always;
+    page-break-inside: avoid;
+  }
+
+  .help-section-card + .help-section-card {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .help-section-card:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .help-section-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: none;
+  }
+
+  .help-section-hdr {
+    gap: 6px;
+    margin-bottom: 4px;
+    break-after: avoid;
+  }
+
+  .help-section-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+  }
+
+  .help-section-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .help-section-hdr h3 {
+    font-size: 13px;
+  }
+
+  .help-section-summary {
+    margin-bottom: 5px;
+    line-height: 1.3;
+  }
+
+  .help-section-summary,
+  .help-section-points li,
+  .help-section-notes li,
+  .help-section-caveats li {
+    font-size: 9px;
+  }
+
+  .help-section-walkthrough {
+    display: block;
+    margin-top: 5px;
+  }
+
+  .help-section-figure {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin: 0;
+  }
+
+  .help-section-image-link {
+    display: block;
+    border-radius: 6px;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .help-section-image {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    max-height: 154mm;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .help-section-points {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px 4mm;
+    margin-top: 5px;
+  }
+
+  .help-section-points li {
+    grid-template-columns: 17px 1fr;
+    gap: 5px;
+    padding: 3px 5px;
+    border-radius: 5px;
+    line-height: 1.25;
+  }
+
+  .help-step-marker {
+    width: 16px;
+    height: 16px;
+    font-size: 8.5px;
+  }
+
+  .help-image-box {
+    border-width: 1.5px;
+    box-shadow: none;
+  }
+
+  .help-image-box-label {
+    top: -8px;
+    left: -8px;
+    width: 17px;
+    height: 17px;
+    border-width: 1.5px;
+    font-size: 8.5px;
+    box-shadow: none;
+  }
+
+  .help-section-notes,
+  .help-section-caveats {
+    margin-top: 4px;
+    padding: 4px 6px;
+    border-radius: 5px;
+  }
+
+  .help-notes-label,
+  .help-caveats-label {
+    margin-bottom: 2px;
+    font-size: 8px;
+  }
+
+  .help-section-notes ul,
+  .help-section-caveats ul {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 4mm;
+    padding-left: 12px;
   }
 }
 
