@@ -5585,28 +5585,25 @@ function ManpowerEditor({
         <div className="holiday-add-form-fields">
           <input
             type="text"
-            className="holiday-input"
+            className="holiday-input mp-form-dept"
             placeholder="หน่วยงาน เช่น งานเครื่องใน"
             value={newDept}
             onChange={(e) => setNewDept(e.target.value)}
-            style={{ flex: 2, minWidth: 160 }}
           />
           <input
             type="text"
-            className="holiday-input"
+            className="holiday-input mp-form-jobsite"
             placeholder="หน่วยงานย่อย (ว่าง = ทั้งหน่วยงาน)"
             value={newJobSite}
             onChange={(e) => setNewJobSite(e.target.value)}
-            style={{ flex: 2, minWidth: 160 }}
           />
           <input
             type="text"
-            className="holiday-input"
+            className="holiday-input mp-form-shift"
             placeholder="กะ เช่น กะ1"
             value={newShift}
             onChange={(e) => setNewShift(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addRow()}
-            style={{ flex: 1, minWidth: 90 }}
           />
           <TimeInput24
             value={newShiftStart}
