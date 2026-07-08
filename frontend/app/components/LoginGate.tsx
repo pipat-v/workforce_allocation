@@ -196,6 +196,11 @@ export default function LoginGate({
           <button className="link-button" type="button" onClick={openRegister}>
             ลงทะเบียน
           </button>
+          <p className="login-form-page-note">
+            *คำขอลงทะเบียน ต้องรอการอนุมัติจาก HR, เถ้าแก่ หรือ ผู้จัดการ
+            <br />
+            **หากลืมรหัสผ่าน ให้ลงทะเบียนใหม่ และแจ้งลบ Account เก่าออก
+          </p>
         </form>
       </div>
     );

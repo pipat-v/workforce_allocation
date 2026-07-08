@@ -6353,7 +6353,7 @@ function DayoffShiftEditor({
           <h3>แก้ไข Dayoff & Shift</h3>
           <p>ปรับวันหยุดประจำสัปดาห์และกะทำงานรายคน แล้วบันทึกเป็น master active ชุดใหม่</p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button
             className="secondary-button"
             disabled={!rows.length}
@@ -7246,7 +7246,7 @@ function SkillMatrixPage({
         </div>
       ) : null}
 
-      <div className="table-filters dayoff-editor-filters" style={{ gridTemplateColumns: "1fr 160px 160px 140px auto" }}>
+      <div className="table-filters dayoff-editor-filters skill-matrix-filters">
         <input
           aria-label="ค้นหา skill matrix"
           placeholder="ค้นหา รหัส ชื่อ แผนก กะ วันหยุด ทักษะ"
