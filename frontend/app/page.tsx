@@ -1552,7 +1552,7 @@ export default function Home() {
       <main className="login-wall">
         <div className="login-wall-brand">
           <div className="login-wall-brand-inner">
-            <img className="login-wall-brand-logo" src="/was-logo.png" alt="WAS" />
+            <img className="login-wall-brand-logo" src="/was-logo-mark.png" alt="WAS" />
             <h1>ระบบจัดสรรกำลังคน</h1>
             <p>Workforce Allocation System</p>
             <ul className="login-wall-brand-points">

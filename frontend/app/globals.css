@@ -7132,14 +7132,15 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   color: #ffffff;
 }
 .login-wall-brand-logo {
-  width: 60px;
-  height: 60px;
-  border-radius: 14px;
+  width: 92px;
+  height: 92px;
+  border-radius: 20px;
   background: #ffffff;
-  padding: 8px;
+  padding: 10px;
   object-fit: contain;
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
   margin-bottom: 28px;
+  margin-left: 70px;
 }
 .login-wall-brand-inner h1 {
   margin: 0 0 8px;
