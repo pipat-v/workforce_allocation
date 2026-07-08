@@ -787,7 +787,7 @@ export default function UserAccessSettings({
                   <thead>
                     <tr>
                       <th>ตำแหน่ง</th>
-                      <th>User</th>
+                      <th>Username</th>
                       <th>Edit</th>
                       <th>View</th>
                       <th></th>
