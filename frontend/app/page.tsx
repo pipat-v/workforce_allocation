@@ -32,7 +32,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import type { ChangeEvent, Dispatch, ReactNode, SetStateAction } from "react";
+import type { ChangeEvent, CSSProperties, Dispatch, ReactNode, SetStateAction } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 import { canManageSettingUsers, clearSession, getSession, hasMenuAccess, type LoginSession } from "@/lib/auth";
@@ -9421,7 +9421,10 @@ function OTDashboard({
                 ))}
               </div>
               {/* Chart track */}
-              <div className="ot-chart-track-wrap" style={{ height: TRACK_H + XLAB_H }}>
+              <div
+                className="ot-chart-track-wrap"
+                style={{ height: TRACK_H + XLAB_H, "--ot-track-min-w": `${Math.max(640, chartRows.length * 165)}px` } as CSSProperties}
+              >
                 {/* Gridlines */}
                 {yTicks.map((tick) => (
                   <div
