@@ -6974,45 +6974,57 @@ function SkillMatrixPage({
         });
       });
 
-      const nextRows = new Map(rows.map((row) => [`${row.empId}|${row.skill}`, row]));
+      const importedByKey = new Map<string, { empId: string; skill: string; level: number; jobSite: string }>();
+      updates.forEach((update) => {
+        if (!update.skill.trim() || update.level <= 0) return;
+        importedByKey.set(`${update.empId}|${update.skill}`, update);
+      });
+
+      const previousRows = new Map(rows.map((row) => [`${row.empId}|${row.skill}`, row]));
+      const nextRows = new Map<string, SkillFlatRow>();
       let addedCount = 0;
       let updatedCount = 0;
-      updates.forEach((update, index) => {
+      let unchangedCount = 0;
+      Array.from(importedByKey.values()).forEach((update, index) => {
         const key = `${update.empId}|${update.skill}`;
-        const existing = nextRows.get(key);
+        const existing = previousRows.get(key);
+        const info = empInfoMap.get(update.empId) ?? { name: update.empId, dept: "", jobSite: "" };
+        const employeeRow = existing ?? rows.find((row) => row.empId === update.empId);
+        const nextRow: SkillFlatRow = existing
+          ? {
+              ...existing,
+              level: update.level,
+              jobSite: update.jobSite || existing.jobSite,
+            }
+          : {
+              id: `import-${Date.now()}-${index}-${update.empId}-${update.skill}`,
+              empId: update.empId,
+              name: info.name,
+              dept: info.dept,
+              jobSite: update.jobSite || info.jobSite,
+              shift: employeeRow?.shift ?? "",
+              shiftStart: employeeRow?.shiftStart ?? "",
+              dayoff: employeeRow?.dayoff ?? "",
+              skill: update.skill,
+              level: update.level,
+              origLevel: 0,
+            };
+        nextRows.set(key, nextRow);
         if (existing) {
           const nextJobSite = update.jobSite || existing.jobSite;
-          if (existing.level === update.level && existing.jobSite === nextJobSite) return;
-          nextRows.set(key, {
-            ...existing,
-            level: update.level,
-            jobSite: nextJobSite,
-          });
-          updatedCount += 1;
+          if (existing.level === update.level && existing.jobSite === nextJobSite) unchangedCount += 1;
+          else updatedCount += 1;
           return;
         }
-        if (update.level <= 0) return;
-        const info = empInfoMap.get(update.empId) ?? { name: update.empId, dept: "", jobSite: "" };
-        const employeeRow = rows.find((row) => row.empId === update.empId);
-        nextRows.set(key, {
-          id: `import-${Date.now()}-${index}-${update.empId}-${update.skill}`,
-          empId: update.empId,
-          name: info.name,
-          dept: info.dept,
-          jobSite: update.jobSite || info.jobSite,
-          shift: employeeRow?.shift ?? "",
-          shiftStart: employeeRow?.shiftStart ?? "",
-          dayoff: employeeRow?.dayoff ?? "",
-          skill: update.skill,
-          level: update.level,
-          origLevel: 0,
-        });
         addedCount += 1;
       });
 
+      const removedCount = [...previousRows.keys()].filter((key) => !nextRows.has(key)).length;
       setRows(Array.from(nextRows.values()));
+      setDeletedRows(new Map());
+      setSelectedIds(new Set());
       setSkillImportMessage(
-        `Import ${file.name} สำเร็จ: เพิ่ม ${addedCount} แถว, อัปเดต ${updatedCount} แถว` +
+        `Import ${file.name} สำเร็จ: เพิ่ม ${addedCount} แถว, อัปเดต ${updatedCount} แถว, ลบ ${removedCount} แถว, ไม่เปลี่ยน ${unchangedCount} แถว` +
         (unmatchedNames.size ? `, หา Emp ID ไม่พบ ${unmatchedNames.size} คน` : ""),
       );
     } catch (importError) {
