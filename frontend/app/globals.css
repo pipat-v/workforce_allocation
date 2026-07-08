@@ -3881,6 +3881,16 @@ button.stacked-row {
     min-width: 0;
     flex: 1 1 100%;
   }
+
+  .dayoff-editor-filters {
+    flex-wrap: wrap;
+  }
+
+  .dayoff-editor-filters input[type="search"],
+  .dayoff-editor-filters select,
+  .dayoff-editor-filters button {
+    flex: 1 1 100%;
+  }
 }
 
 /* ── Skill Matrix – List View ── */
