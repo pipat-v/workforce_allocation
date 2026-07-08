@@ -4621,6 +4621,8 @@ function LeavePlanningPage({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const minLeaveDate = localToday();
+  const isPastLeaveDate = Boolean(leaveDate && leaveDate < minLeaveDate);
 
   const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.empId, employee])), [employees]);
   const empSuggestions = useMemo(() => {
@@ -4659,6 +4661,17 @@ function LeavePlanningPage({
       setEmpQuery(expectedQuery);
     }
   }
+
+  function updateLeaveDate(nextDate: string) {
+    setMessage("");
+    if (nextDate && nextDate < minLeaveDate) {
+      setLeaveDate(minLeaveDate);
+      setError("เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต");
+      return;
+    }
+    setLeaveDate(nextDate);
+    if (error === "เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต") setError("");
+  }
   const visibleLeaves = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("th-TH");
     if (!needle) return leaves;
@@ -4673,7 +4686,7 @@ function LeavePlanningPage({
     const { data, error: loadError } = await supabase
       .from("leave_records")
       .select("id, emp_id, leave_date, leave_type, recorded_by")
-      .gte("leave_date", localToday())
+      .gte("leave_date", minLeaveDate)
       .order("leave_date", { ascending: true });
     if (loadError) throw new Error(loadError.message);
     setLeaves((data ?? []) as LeaveRow[]);
@@ -4684,7 +4697,7 @@ function LeavePlanningPage({
     setLoading(true);
     Promise.all([
       employeeMasterFile ? downloadSheetRows(employeeMasterFile.file_path) : Promise.resolve([]),
-      supabase.from("leave_records").select("id, emp_id, leave_date, leave_type, recorded_by").gte("leave_date", localToday()).order("leave_date", { ascending: true }),
+      supabase.from("leave_records").select("id, emp_id, leave_date, leave_type, recorded_by").gte("leave_date", minLeaveDate).order("leave_date", { ascending: true }),
     ]).then(([employeeRows, leaveResult]) => {
       if (cancelled) return;
       if (leaveResult.error) throw new Error(leaveResult.error.message);
@@ -4710,6 +4723,12 @@ function LeavePlanningPage({
 
   async function saveLeavePlan() {
     if (!empId || !leaveDate || !leaveType || !recordedBy.trim()) return;
+    if (leaveDate < minLeaveDate) {
+      setLeaveDate(minLeaveDate);
+      setError("เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต");
+      setMessage("");
+      return;
+    }
     setSaving(true);
     setError("");
     setMessage("");
@@ -4775,13 +4794,23 @@ function LeavePlanningPage({
               </div>
             ) : null}
           </label>
-          <label><span>วันที่ลา<span className="required-mark">*</span></span><input type="date" min={localToday()} value={leaveDate} onChange={(event) => setLeaveDate(event.target.value)} /></label>
+          <label>
+            <span>วันที่ลา<span className="required-mark">*</span></span>
+            <input
+              type="date"
+              min={minLeaveDate}
+              value={leaveDate}
+              onInput={(event) => updateLeaveDate(event.currentTarget.value)}
+              onChange={(event) => updateLeaveDate(event.target.value)}
+              onBlur={(event) => updateLeaveDate(event.target.value)}
+            />
+          </label>
           <label><span>ประเภทลา<span className="required-mark">*</span></span><select value={leaveType} onChange={(event) => setLeaveType(event.target.value)}>
             {leaveTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select></label>
           <label><span>ผู้บันทึก<span className="required-mark">*</span></span><input value={recordedBy} onChange={(event) => setRecordedBy(event.target.value)} placeholder="ชื่อผู้บันทึก" /></label>
         </div>
-        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId || !leaveDate || !leaveType || !recordedBy.trim()} onClick={() => guardAction(4, "Master Data", () => void saveLeavePlan())}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
+        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId || !leaveDate || isPastLeaveDate || !leaveType || !recordedBy.trim()} onClick={() => guardAction(4, "Master Data", () => void saveLeavePlan())}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
       </section>
 
       <section className="panel leave-planning-list">
