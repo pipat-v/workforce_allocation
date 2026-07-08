@@ -4700,10 +4700,6 @@ function LeavePlanningPage({
       }).filter((row) => row.empId).sort((a, b) => a.empId.localeCompare(b.empId));
       setEmployees(parsed);
       setLeaves((leaveResult.data ?? []) as LeaveRow[]);
-      if (parsed.length > 0) {
-        setEmpId(parsed[0].empId);
-        setEmpQuery(`${parsed[0].empId} - ${parsed[0].name}`);
-      }
     }).catch((reason) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : "โหลดข้อมูลไม่สำเร็จ");
     }).finally(() => {
@@ -4713,7 +4709,7 @@ function LeavePlanningPage({
   }, [employeeMasterFile?.file_path]);
 
   async function saveLeavePlan() {
-    if (!empId || !leaveDate || !leaveType) return;
+    if (!empId || !leaveDate || !leaveType || !recordedBy.trim()) return;
     setSaving(true);
     setError("");
     setMessage("");
@@ -4750,7 +4746,7 @@ function LeavePlanningPage({
         {message ? <p className="success-banner">{message}</p> : null}
         <div className="leave-form-grid">
           <label className="emp-search-field">
-            <span>พนักงาน</span>
+            <span>พนักงาน<span className="required-mark">*</span></span>
             <input
               value={empQuery}
               onChange={(event) => {
@@ -4779,13 +4775,13 @@ function LeavePlanningPage({
               </div>
             ) : null}
           </label>
-          <label><span>วันที่ลา</span><input type="date" min={localToday()} value={leaveDate} onChange={(event) => setLeaveDate(event.target.value)} /></label>
-          <label><span>ประเภทลา</span><select value={leaveType} onChange={(event) => setLeaveType(event.target.value)}>
+          <label><span>วันที่ลา<span className="required-mark">*</span></span><input type="date" min={localToday()} value={leaveDate} onChange={(event) => setLeaveDate(event.target.value)} /></label>
+          <label><span>ประเภทลา<span className="required-mark">*</span></span><select value={leaveType} onChange={(event) => setLeaveType(event.target.value)}>
             {leaveTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select></label>
-          <label><span>ผู้บันทึก</span><input value={recordedBy} onChange={(event) => setRecordedBy(event.target.value)} placeholder="ชื่อผู้บันทึก" /></label>
+          <label><span>ผู้บันทึก<span className="required-mark">*</span></span><input value={recordedBy} onChange={(event) => setRecordedBy(event.target.value)} placeholder="ชื่อผู้บันทึก" /></label>
         </div>
-        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId} onClick={() => guardAction(4, "Master Data", () => void saveLeavePlan())}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
+        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId || !leaveDate || !leaveType || !recordedBy.trim()} onClick={() => guardAction(4, "Master Data", () => void saveLeavePlan())}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
       </section>
 
       <section className="panel leave-planning-list">

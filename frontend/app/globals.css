@@ -6690,6 +6690,11 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   font-weight: 700;
 }
 
+.required-mark {
+  color: #dc2626;
+  margin-left: 3px;
+}
+
 .leave-form-grid input,
 .leave-form-grid select {
   width: 100%;
