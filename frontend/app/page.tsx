@@ -10139,23 +10139,23 @@ const helpImageMarkerPositionsBySection: Record<string, HelpMarkerRect[]> = {
     { top: "1.3%", left: "78.4%", width: "12.7%", height: "6.6%" },
     { top: "31.3%", left: "92.0%", width: "6.3%", height: "4.0%" },
     { top: "49.0%", left: "66.9%", width: "2.8%", height: "3.4%" },
-    { top: "87.7%", left: "90.3%", width: "8.0%", height: "4.4%" },
+    { top: "88.1%", left: "90.6%", width: "7.3%", height: "3.1%" },
     { top: "81.0%", left: "13.2%", width: "85.1%", height: "3.6%" },
   ],
   timestamp: [
-    { top: "20.2%", left: "13.1%", width: "56.0%", height: "14.5%" },
-    { top: "39.0%", left: "13.1%", width: "56.0%", height: "4.4%" },
-    { top: "23.5%", left: "71.0%", width: "5.9%", height: "2.6%" },
+    { top: "40.0%", left: "13.2%", width: "55.7%", height: "26.2%" },
+    { top: "76.2%", left: "13.2%", width: "55.7%", height: "6.9%" },
+    { top: "46.7%", left: "71.3%", width: "26.2%", height: "50.9%" },
   ],
   results: [
-    { top: "1.0%", left: "78.3%", width: "12.9%", height: "5.5%" },
-    { top: "13.7%", left: "23.1%", width: "51.4%", height: "3.6%" },
-    { top: "17.5%", left: "88.3%", width: "10.0%", height: "3.5%" },
+    { top: "3.5%", left: "78.7%", width: "12.2%", height: "10.4%" },
+    { top: "32.8%", left: "24.2%", width: "60.3%", height: "6.0%" },
+    { top: "41.2%", left: "41.5%", width: "48.5%", height: "5.8%" },
   ],
   "timestamp-dept": [
-    { top: "13.7%", left: "23.8%", width: "53.1%", height: "3.6%" },
-    { top: "17.5%", left: "78.9%", width: "10.0%", height: "3.5%" },
-    { top: "13.7%", left: "91.3%", width: "7.1%", height: "3.7%" },
+    { top: "32.8%", left: "25.0%", width: "62.8%", height: "6.0%" },
+    { top: "41.2%", left: "51.2%", width: "46.8%", height: "5.8%" },
+    { top: "32.8%", left: "92.5%", width: "5.5%", height: "6.0%" },
   ],
   "master-files": [
     { top: "84.0%", left: "27.2%", width: "9.8%", height: "7.2%" },
@@ -10223,10 +10223,10 @@ const helpImageMarkerPositionsBySection: Record<string, HelpMarkerRect[]> = {
     { top: "23.8%", left: "90.6%", width: "6.9%", height: "5.2%" },
   ],
   setting: [
-    { top: "27.4%", left: "18.6%", width: "78.8%", height: "5.4%" },
-    { top: "37.2%", left: "90.1%", width: "6.0%", height: "7.1%" },
-    { top: "52.4%", left: "19.8%", width: "18.7%", height: "5.4%" },
-    { top: "86.2%", left: "19.8%", width: "10.8%", height: "5.4%" },
+    { top: "15.8%", left: "13.6%", width: "31.0%", height: "7.0%" },
+    { top: "27.5%", left: "92.8%", width: "4.8%", height: "4.2%" },
+    { top: "36.0%", left: "13.6%", width: "84.2%", height: "19.8%" },
+    { top: "74.0%", left: "72.8%", width: "5.1%", height: "19.4%" },
   ],
 };
 
