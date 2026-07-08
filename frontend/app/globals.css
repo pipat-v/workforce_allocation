@@ -7097,6 +7097,175 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 .sidebar-user-name { font-size: 13px; font-weight: 600; color: #fff; }
 .sidebar-user-position { font-size: 11px; color: rgba(255, 255, 255, 0.6); }
 
+/* Full-page login wall (shown instead of any content until the user logs in) */
+.login-wall {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.login-wall-brand {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(16, 185, 129, 0.28), transparent 45%),
+    radial-gradient(circle at 82% 82%, rgba(37, 99, 235, 0.2), transparent 45%),
+    #0b1220;
+}
+.login-wall-brand::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px);
+  background-size: 24px 24px;
+  -webkit-mask-image: radial-gradient(circle at 50% 40%, black, transparent 72%);
+  mask-image: radial-gradient(circle at 50% 40%, black, transparent 72%);
+}
+.login-wall-brand-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 380px;
+  color: #ffffff;
+}
+.login-wall-brand-logo {
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 8px;
+  object-fit: contain;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
+  margin-bottom: 28px;
+}
+.login-wall-brand-inner h1 {
+  margin: 0 0 8px;
+  font-size: 27px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+.login-wall-brand-inner > p {
+  margin: 0 0 32px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.login-wall-brand-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login-wall-brand-points li {
+  position: relative;
+  padding-left: 26px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
+}
+.login-wall-brand-points li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.6);
+}
+.login-wall-brand-points li::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.login-wall-form {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  background: var(--bg);
+}
+.login-form-page {
+  width: 100%;
+  max-width: 340px;
+}
+.login-form-page h2 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text);
+}
+.login-form-page-desc {
+  margin: 0 0 28px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.login-form-page .login-gate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.login-form-page .login-gate-field input {
+  height: 44px;
+  border-radius: 9px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.login-form-page .login-gate-field input:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+.login-form-page .primary-button {
+  height: 46px;
+  border-radius: 9px;
+  font-size: 15px;
+  margin-top: 4px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 12px 24px -8px rgba(16, 185, 129, 0.5);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.login-form-page .primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 28px -8px rgba(16, 185, 129, 0.6);
+}
+
+@media (max-width: 860px) {
+  .login-wall {
+    grid-template-columns: 1fr;
+  }
+  .login-wall-brand {
+    padding: 36px 24px;
+    min-height: 260px;
+  }
+  .login-wall-brand-inner {
+    text-align: center;
+    margin: 0 auto;
+  }
+  .login-wall-brand-logo {
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .login-wall-brand-points {
+    display: none;
+  }
+  .login-wall-form {
+    padding: 32px 24px 48px;
+  }
+}
+
 /* Login gate (shown in place of a protected tab's content) */
 .login-gate {
   max-width: 380px;

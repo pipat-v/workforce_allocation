@@ -9,9 +9,11 @@ import { saveSession, type LoginSession } from "@/lib/auth";
 export default function LoginGate({
   menuLabel,
   onSuccess,
+  variant = "modal",
 }: {
   menuLabel: string;
   onSuccess: (session: LoginSession) => void;
+  variant?: "modal" | "page";
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -46,6 +48,46 @@ export default function LoginGate({
     }
   }
 
+  const fields = (
+    <>
+      <label className="login-gate-field">
+        <span>User</span>
+        <input
+          type="text"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoComplete="username"
+          autoFocus
+        />
+      </label>
+      <label className="login-gate-field">
+        <span>Password</span>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+        />
+      </label>
+      {error ? <p className="login-gate-error">{error}</p> : null}
+      <button className="primary-button" type="submit" disabled={loading}>
+        {loading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ"}
+      </button>
+    </>
+  );
+
+  if (variant === "page") {
+    return (
+      <div className="login-form-page">
+        <h2>เข้าสู่ระบบ</h2>
+        <p className="login-form-page-desc">กรอกข้อมูลบัญชีเพื่อเข้าใช้งาน {menuLabel}</p>
+        <form className="login-gate-form" onSubmit={handleSubmit}>
+          {fields}
+        </form>
+      </div>
+    );
+  }
+
   return (
     <section className="panel login-gate">
       <div className="login-gate-icon">
@@ -54,29 +96,7 @@ export default function LoginGate({
       <h3>เข้าสู่ระบบเพื่อใช้งาน &quot;{menuLabel}&quot;</h3>
       <p className="login-gate-desc">เมนูนี้ต้องเข้าสู่ระบบก่อนจึงจะเข้าใช้งานได้</p>
       <form className="login-gate-form" onSubmit={handleSubmit}>
-        <label className="login-gate-field">
-          <span>User</span>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
-            autoFocus
-          />
-        </label>
-        <label className="login-gate-field">
-          <span>Password</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-          />
-        </label>
-        {error ? <p className="login-gate-error">{error}</p> : null}
-        <button className="primary-button" type="submit" disabled={loading}>
-          {loading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ"}
-        </button>
+        {fields}
       </form>
     </section>
   );

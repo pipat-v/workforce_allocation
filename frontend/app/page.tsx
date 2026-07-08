@@ -449,12 +449,12 @@ export default function Home() {
     onCancel?: () => void;
   } | null>(null);
 
-  // Every menu can be viewed without logging in; only actions that write data
-  // (upload/save/delete) are gated. Call this instead of running the action
-  // directly — it prompts for login first if needed, then re-checks that the
-  // logged-in account's menu_access actually covers menuNo before proceeding.
-  // onCancel fires if the user dismisses the login prompt without logging in,
-  // so callers awaiting a guarded action's promise don't hang forever.
+  // Viewing any page requires login (see the `if (!session)` wall below the
+  // hooks). guardAction is a second, separate gate on top of that: it checks
+  // the logged-in account's menu_access actually covers menuNo before letting
+  // write actions (upload/save/delete) proceed. onCancel fires if the user
+  // dismisses the login prompt without logging in, so callers awaiting a
+  // guarded action's promise don't hang forever.
   function guardAction(menuNo: number, menuLabel: string, action: () => void, onCancel?: () => void) {
     const current = getSession();
     if (!current) {
@@ -1545,6 +1545,32 @@ export default function Home() {
       .delete()
       .neq("sync_token", syncToken);
     if (cleanupError) throw new Error(cleanupError.message);
+  }
+
+  if (!session) {
+    return (
+      <main className="login-wall">
+        <div className="login-wall-brand">
+          <div className="login-wall-brand-inner">
+            <img className="login-wall-brand-logo" src="/was-logo.png" alt="WAS" />
+            <h1>ระบบจัดสรรกำลังคน</h1>
+            <p>Workforce Allocation System</p>
+            <ul className="login-wall-brand-points">
+              <li>วางแผนและจัดตารางกำลังคนแบบเรียลไทม์</li>
+              <li>ติดตามการลงเวลาและ OT ครบทุกแผนก</li>
+              <li>รายงานและแดชบอร์ดสรุปผลอัตโนมัติ</li>
+            </ul>
+          </div>
+        </div>
+        <div className="login-wall-form">
+          <LoginGate
+            menuLabel="ระบบจัดสรรกำลังคน"
+            variant="page"
+            onSuccess={(newSession) => setSession(newSession)}
+          />
+        </div>
+      </main>
+    );
   }
 
   return (
