@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { saveSession, type LoginSession } from "@/lib/auth";
+import { loadActiveMasterPositions } from "@/lib/masterPositions";
 
 export default function LoginGate({
   menuLabel,
@@ -28,11 +29,39 @@ export default function LoginGate({
   const [regError, setRegError] = useState("");
   const [regMessage, setRegMessage] = useState("");
   const [regLoading, setRegLoading] = useState(false);
+  const [positionOptions, setPositionOptions] = useState<string[]>([]);
+  const [positionsLoading, setPositionsLoading] = useState(false);
+  const [positionsError, setPositionsError] = useState("");
+
+  useEffect(() => {
+    if (!showRegister) return;
+    let cancelled = false;
+    setPositionsLoading(true);
+    setPositionsError("");
+
+    void (async () => {
+      try {
+        const options = await loadActiveMasterPositions();
+        if (!cancelled) setPositionOptions(options);
+      } catch (loadError) {
+        if (!cancelled) {
+          setPositionsError(loadError instanceof Error ? loadError.message : "โหลดตำแหน่งไม่สำเร็จ");
+        }
+      } finally {
+        if (!cancelled) setPositionsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showRegister]);
 
   function openRegister() {
     setShowRegister(true);
     setRegError("");
     setRegMessage("");
+    setPositionsError("");
     setRegPosition("");
     setRegUsername("");
     setRegPassword("");
@@ -41,6 +70,10 @@ export default function LoginGate({
 
   async function handleRegisterSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!regPosition) {
+      setRegError("กรุณาเลือกตำแหน่ง");
+      return;
+    }
     if (!regUsername.trim() || !regPassword) {
       setRegError("กรุณากรอก User และ Password");
       return;
@@ -145,8 +178,22 @@ export default function LoginGate({
           <form className="login-gate-form" onSubmit={(e) => void handleRegisterSubmit(e)}>
             <label className="login-gate-field">
               <span>ตำแหน่ง</span>
-              <input type="text" value={regPosition} onChange={(e) => setRegPosition(e.target.value)} autoFocus />
+              <select
+                value={regPosition}
+                onChange={(e) => setRegPosition(e.target.value)}
+                disabled={positionsLoading || positionOptions.length === 0}
+                autoFocus
+                required
+              >
+                <option value="">
+                  {positionsLoading ? "กำลังโหลดตำแหน่ง..." : "— เลือกตำแหน่ง —"}
+                </option>
+                {positionOptions.map((position) => (
+                  <option key={position} value={position}>{position}</option>
+                ))}
+              </select>
             </label>
+            {positionsError ? <p className="login-gate-error">{positionsError}</p> : null}
             <label className="login-gate-field">
               <span>Username</span>
               <input

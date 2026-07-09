@@ -223,6 +223,23 @@ const leaveTypeOptions = [
   "ลาพิเศษไม่จ่าย",
 ] as const;
 
+const leaveTypeClass: Record<string, string> = {
+  "ลาป่วย": "leave-sick",
+  "ลากิจ": "leave-personal",
+  "ลาพักร้อน": "leave-vacation",
+  "ลาตรวจครรภ์": "leave-prenatal",
+  "ลาคลอด": "leave-maternity",
+  "ลาคลอดคู่สมรส": "leave-maternity",
+  "ลาอุบัติเหตุจากการปฏิบัติงาน": "leave-accident",
+  "ลาบวช/ลาพิธีสำคัญทางศาสนา": "leave-ordain",
+  "ลาทหาร": "leave-military",
+  "ลาพิเศษไม่จ่าย": "leave-unpaid",
+};
+
+function getLeaveTypeClass(leaveType: string): string {
+  return leaveTypeClass[leaveType] ?? "leave-absent";
+}
+
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: HomeIcon },
   { id: "timestamp", label: "Upload Timestamp", icon: UploadCloud },
@@ -1057,6 +1074,18 @@ export default function Home() {
 
   async function deleteRun(run: AllocationRun) {
     setError("");
+    const { data: sharedRuns, error: sharedRunError } = run.scan_file_path
+      ? await supabase
+          .from("allocation_runs")
+          .select("id")
+          .eq("scan_file_path", run.scan_file_path)
+          .neq("id", run.id)
+          .limit(1)
+      : { data: [], error: null };
+    if (sharedRunError) {
+      setError(sharedRunError.message);
+      return;
+    }
     const { error: deleteError } = await supabase
       .from("allocation_runs")
       .delete()
@@ -1065,7 +1094,7 @@ export default function Home() {
       setError(deleteError.message);
       return;
     }
-    if (run.scan_file_path) {
+    if (run.scan_file_path && (sharedRuns ?? []).length === 0) {
       await supabase.storage.from("workforce-inputs").remove([run.scan_file_path]);
     }
     await loadRuns();
@@ -1099,37 +1128,50 @@ export default function Home() {
       if (!timestampFile) { setError("กรุณาเลือกไฟล์ timestamp"); return; }
       if (!hasAllActiveMasters) { setError("กรุณา upload master files ให้ครบก่อนสร้าง daily run"); return; }
 
-      let recordCount: number | null = null;
-      try {
-        const buffer = await timestampFile.arrayBuffer();
-        const workbook = XLSX.read(buffer, { type: "array" });
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        recordCount = XLSX.utils.sheet_to_json(firstSheet).length;
-      } catch { /* ignore count error */ }
+      const buffer = await timestampFile.arrayBuffer();
+      const timestampRows = parseSheetRows(buffer);
+      const recordCountsByDate = new Map<string, number>();
+      for (const row of timestampRows) {
+        const timestamp = parseTimestamp(row["Timestamp"]);
+        if (!timestamp) continue;
+        const date = getLocalIsoDate(timestamp);
+        recordCountsByDate.set(date, (recordCountsByDate.get(date) ?? 0) + 1);
+      }
+      const targetDates = [...recordCountsByDate.keys()].sort();
+      if (targetDates.length === 0) {
+        setError("ไม่พบวันที่ที่อ่านได้ในคอลัมน์ Timestamp");
+        return;
+      }
 
-      const runId = crypto.randomUUID();
-      const scanPath = `${publicWorkspace}/runs/${runId}/timestamp${getSafeFileExtension(timestampFile.name)}`;
+      const uploadId = crypto.randomUUID();
+      const scanPath = `${publicWorkspace}/runs/${uploadId}/timestamp${getSafeFileExtension(timestampFile.name)}`;
       const { error: uploadError } = await supabase.storage
         .from("workforce-inputs")
         .upload(scanPath, timestampFile, { upsert: true });
       if (uploadError) { setError(uploadError.message); return; }
 
-      const { error: insertError } = await supabase.from("allocation_runs").insert({
-        id: runId,
+      const runRows = targetDates.map((targetDate) => ({
+        id: crypto.randomUUID(),
         owner_id: null,
         status: "uploaded",
+        target_date: targetDate,
         scan_file_path: scanPath,
         original_filename: timestampFile.name,
-        record_count: recordCount,
+        record_count: recordCountsByDate.get(targetDate) ?? null,
         master_file_path: activeMasterMap.employee_master?.file_path,
         manpower_file_path: activeMasterMap.manpower_plan?.file_path,
         skill_file_path: activeMasterMap.skill_matrix?.file_path,
         dayoff_shift_file_path: activeMasterMap.dayoff_shift?.file_path,
-      });
-      if (insertError) { setError(insertError.message); return; }
+      }));
+      const { error: insertError } = await supabase.from("allocation_runs").insert(runRows);
+      if (insertError) {
+        await supabase.storage.from("workforce-inputs").remove([scanPath]);
+        setError(insertError.message);
+        return;
+      }
 
       setTimestampFile(null);
-      setMessage("สร้าง daily run แล้ว รอ worker ประมวลผล");
+      setMessage(`สร้าง Daily Run ${targetDates.length} วันแล้ว (${targetDates.join(", ")})`);
       await loadRuns();
     } catch (e) {
       setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
@@ -2102,6 +2144,10 @@ async function downloadSheetRows(path: string): Promise<Record<string, unknown>[
   }
 
   const buffer = await data.arrayBuffer();
+  return parseSheetRows(buffer);
+}
+
+function parseSheetRows(buffer: ArrayBuffer): Record<string, unknown>[] {
   // raw:true stops SheetJS from auto-guessing ambiguous CSV date strings (e.g. "02-07-2026" as
   // US-style MM-DD when day <= 12, silently producing the wrong month). Real .xlsx date cells are
   // unaffected (their type is explicit in the file); text stays text for parseTimestamp to parse
@@ -3785,7 +3831,7 @@ function DashboardPanels({
                     <td>
                       {row.status === "Absent" ? (() => {
                         const lt = leaveMap.get(row.empId) ?? "ขาดงาน";
-                        const lc = ({ "ลาป่วย": "leave-sick", "ลากิจ": "leave-personal", "ลาพักร้อน": "leave-vacation", "ลาตรวจครรภ์": "leave-prenatal", "ลาคลอด": "leave-maternity", "ลาคลอดคู่สมรส": "leave-maternity", "ลาอุบัติเหตุจากการปฏิบัติงาน": "leave-accident", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "leave-ordain", "ลาทหาร": "leave-military", "ลาพิเศษไม่จ่าย": "leave-unpaid" } as Record<string, string>)[lt] ?? "leave-absent";
+                        const lc = getLeaveTypeClass(lt);
                         return (
                           <select
                             className={`leave-select ${lc}`}
@@ -4846,7 +4892,7 @@ function LeavePlanningPage({
           <label className="search-box"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อ รหัส หรือหน่วยงาน" /></label>
         </div>
         <div className="table-wrap"><table className="table data-table"><thead><tr><th>วันที่</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>หน่วยงาน</th><th>ประเภทลา</th><th>ผู้บันทึก</th><th></th></tr></thead>
-          <tbody>{visibleLeaves.map((leave) => { const employee = employeeById.get(leave.emp_id); return <tr key={leave.id}><td>{new Date(leave.leave_date + "T00:00:00").toLocaleDateString("th-TH")}</td><td>{leave.emp_id}</td><td>{employee?.name ?? "-"}</td><td>{employee?.dept ?? "-"}</td><td><span className="status-pill absent">{leave.leave_type}</span></td><td>{leave.recorded_by ?? "-"}</td><td><button className="icon-button danger" type="button" title="ลบรายการลา" onClick={() => guardAction(4, "Master Data", () => void deleteLeave(leave.id))}><Trash2 size={15} /></button></td></tr>; })}
+          <tbody>{visibleLeaves.map((leave) => { const employee = employeeById.get(leave.emp_id); return <tr key={leave.id}><td>{new Date(leave.leave_date + "T00:00:00").toLocaleDateString("th-TH")}</td><td>{leave.emp_id}</td><td>{employee?.name ?? "-"}</td><td>{employee?.dept ?? "-"}</td><td><span className={`leave-select ${getLeaveTypeClass(leave.leave_type)}`} style={{ cursor: "default" }}>{leave.leave_type}</span></td><td>{leave.recorded_by ?? "-"}</td><td><button className="icon-button danger" type="button" title="ลบรายการลา" onClick={() => guardAction(4, "Master Data", () => void deleteLeave(leave.id))}><Trash2 size={15} /></button></td></tr>; })}
           {visibleLeaves.length === 0 ? <tr><td colSpan={7}>{loading ? "กำลังโหลด..." : "ยังไม่มีรายการลาล่วงหน้า"}</td></tr> : null}</tbody>
         </table></div>
       </section>
@@ -6802,13 +6848,21 @@ function SkillMatrixPage({
 
         const unmatchedNames = new Set<string>();
         const importedJobAssignRows: SkillFlatRow[] = [];
-        const ignoredColumns = new Set(["จุดงาน", "รายชื่อพนักงาน", "ชื่อเล่น", "__sourceFile"]);
+        const ignoredColumns = new Set([
+          "จุดงาน", "รายชื่อพนักงาน", "ชื่อเล่น", "__sourceFile",
+          "Employee ID", "Emp ID", "emp_id", "รหัสพนักงาน",
+        ]);
         jobAssignRows.forEach((row, rowIndex) => {
           const sourceName = String(row["รายชื่อพนักงาน"] ?? "").trim();
-          if (!sourceName) return;
-          const empId = empIdByName.get(normalizeEmployeeNameForMatch(sourceName));
+          const directEmpId = cleanEmpId(
+            row["Employee ID"] ?? row["Emp ID"] ?? row["emp_id"] ?? row["รหัสพนักงาน"],
+          );
+          const empId = directEmpId
+            ? (empInfo.has(directEmpId) ? directEmpId : "")
+            : empIdByName.get(normalizeEmployeeNameForMatch(sourceName)) ?? "";
           if (!empId) {
-            unmatchedNames.add(sourceName);
+            if (directEmpId) unmatchedNames.add(`รหัส ${directEmpId}${sourceName ? ` (${sourceName})` : ""}`);
+            else if (sourceName) unmatchedNames.add(sourceName);
             return;
           }
 
@@ -7193,6 +7247,15 @@ function SkillMatrixPage({
           <p>แก้ไขระดับทักษะรายคน — กรอง Skill เพื่อแก้หลายคนพร้อมกัน หรือเลือกหลายแถว bulk edit</p>
         </div>
         <div className="table-actions skill-file-actions">
+          {(activeFile || employeeMasterFile) && !addOpen ? (
+            <button
+              className="secondary-button small"
+              onClick={() => setAddOpen(true)}
+              type="button"
+            >
+              + เพิ่ม Skill ให้พนักงาน
+            </button>
+          ) : null}
           <input
             ref={skillImportInputRef}
             accept=".xlsx,.xls,.csv"
@@ -7234,13 +7297,73 @@ function SkillMatrixPage({
         <span>
           นำเข้าข้อมูล Mas Job Assign ครบ {masJobAssignFiles.length} ไฟล์แล้ว
           {unmatchedJobAssignNames.length > 0
-            ? ` — หา Emp ID ไม่พบ ${unmatchedJobAssignNames.length} คน: ${unmatchedJobAssignNames.join(", ")}`
-            : " — เชื่อมชื่อและรหัสพนักงานครบ"}
+            ? ` — จับคู่ Employee ID ไม่ได้ ${unmatchedJobAssignNames.length} คน: ${unmatchedJobAssignNames.join(", ")}`
+            : " — จับคู่ Employee ID ครบ"}
         </span>
       </div>
       {skillImportMessage ? (
         <div className={`skill-import-result ${skillImportMessage.startsWith("Import ไม่สำเร็จ") ? "error" : ""}`}>
           {skillImportMessage}
+        </div>
+      ) : null}
+
+      {(activeFile || employeeMasterFile) && addOpen ? (
+        <div className="skill-add-row-bar">
+          <input
+            className="skill-add-empid"
+            list="skill-emp-datalist"
+            placeholder="Emp ID หรือชื่อ..."
+            value={addEmpId}
+            onChange={(e) => setAddEmpId(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") setAddOpen(false); }}
+          />
+          <datalist id="skill-emp-datalist">
+            {(allEmpList.length > 0 ? allEmpList : Array.from(new Set(rows.map((r) => r.empId))).map((id) => ({ empId: id, name: rows.find((x) => x.empId === id)?.name ?? id }))).map(({ empId, name }) => (
+              <option key={empId} value={empId}>{name}</option>
+            ))}
+          </datalist>
+          <input
+            className="skill-add-skillname"
+            list="skill-name-datalist"
+            placeholder="ชื่อ Skill..."
+            value={addSkill}
+            onChange={(e) => setAddSkill(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addRow();
+              if (e.key === "Escape") setAddOpen(false);
+            }}
+          />
+          <datalist id="skill-name-datalist">
+            {Array.from(new Set(rows.map((r) => r.skill))).sort().map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
+          <select
+            value={addLevel}
+            onChange={(e) => setAddLevel(Number(e.target.value))}
+            style={{ background: levelBg[addLevel] ?? "", height: 34, border: "1px solid var(--line)", borderRadius: 6, padding: "0 8px", fontWeight: 600 }}
+          >
+            {([1, 2, 3] as const).map((v) => (
+              <option key={v} value={v}>{v} — {LEVEL_LABELS[v]}</option>
+            ))}
+          </select>
+          <button
+            className="primary-button"
+            disabled={!addEmpId.trim() || !addSkill.trim()}
+            onClick={addRow}
+            style={{ height: 34, fontSize: 13, padding: "0 16px" }}
+            type="button"
+          >
+            เพิ่ม
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => { setAddOpen(false); setAddEmpId(""); setAddSkill(""); }}
+            style={{ height: 34, fontSize: 13, padding: "0 12px" }}
+            type="button"
+          >
+            ยกเลิก
+          </button>
         </div>
       ) : null}
 
@@ -7389,74 +7512,6 @@ function SkillMatrixPage({
         </table>
       </div>
 
-      {/* Add row */}
-      {(activeFile || employeeMasterFile) && (
-        <div className="skill-add-row-bar">
-          {addOpen ? (
-            <>
-              <input
-                className="skill-add-empid"
-                list="skill-emp-datalist"
-                placeholder="Emp ID หรือชื่อ..."
-                value={addEmpId}
-                onChange={(e) => setAddEmpId(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Escape") setAddOpen(false); }}
-              />
-              <datalist id="skill-emp-datalist">
-                {(allEmpList.length > 0 ? allEmpList : Array.from(new Set(rows.map((r) => r.empId))).map((id) => ({ empId: id, name: rows.find((x) => x.empId === id)?.name ?? id }))).map(({ empId, name }) => (
-                  <option key={empId} value={empId}>{name}</option>
-                ))}
-              </datalist>
-              <input
-                className="skill-add-skillname"
-                list="skill-name-datalist"
-                placeholder="ชื่อ Skill..."
-                value={addSkill}
-                onChange={(e) => setAddSkill(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") addRow();
-                  if (e.key === "Escape") setAddOpen(false);
-                }}
-              />
-              <datalist id="skill-name-datalist">
-                {Array.from(new Set(rows.map((r) => r.skill))).sort().map((s) => (
-                  <option key={s} value={s} />
-                ))}
-              </datalist>
-              <select
-                value={addLevel}
-                onChange={(e) => setAddLevel(Number(e.target.value))}
-                style={{ background: levelBg[addLevel] ?? "", height: 34, border: "1px solid var(--line)", borderRadius: 6, padding: "0 8px", fontWeight: 600 }}
-              >
-                {([1, 2, 3] as const).map((v) => (
-                  <option key={v} value={v}>{v} — {LEVEL_LABELS[v]}</option>
-                ))}
-              </select>
-              <button
-                className="primary-button"
-                disabled={!addEmpId.trim() || !addSkill.trim()}
-                onClick={addRow}
-                style={{ height: 34, fontSize: 13, padding: "0 16px" }}
-                type="button"
-              >
-                เพิ่ม
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => { setAddOpen(false); setAddEmpId(""); setAddSkill(""); }}
-                style={{ height: 34, fontSize: 13, padding: "0 12px" }}
-                type="button"
-              >
-                ยกเลิก
-              </button>
-            </>
-          ) : (
-            <button className="skill-add-row-btn" onClick={() => setAddOpen(true)} type="button">
-              + เพิ่ม Skill ให้พนักงาน
-            </button>
-          )}
-        </div>
-      )}
     </section>
   );
 }
@@ -7530,7 +7585,7 @@ function TimestampPage({
       <section className="panel ts-upload-panel">
         <div className="ts-panel-header">
           <h3>Upload Timestamp</h3>
-          <p>อัปโหลดไฟล์ timestamp รายวัน ระบบจะใช้ master data ชุด active ล่าสุด</p>
+          <p>ระบบจะอ่านวันที่จากไฟล์และสร้าง Daily Run ให้ทุกวันที่พบโดยอัตโนมัติ</p>
         </div>
 
         <label className={`ts-dropzone ${timestampFile ? "has-file" : ""}`}>
@@ -7638,6 +7693,9 @@ function TimestampPage({
               hour12: false,
             });
             const meta = [
+              run.target_date
+                ? new Date(run.target_date + "T00:00:00").toLocaleDateString("th-TH", { dateStyle: "medium" })
+                : null,
               run.record_count != null ? `${run.record_count.toLocaleString()} รายการ` : null,
               dateText,
             ].filter(Boolean).join(" · ");
@@ -9766,7 +9824,7 @@ function OTDashboard({
                         <td>
                           {rec.status === "Absent" ? (() => {
                             const lt = leaveMap.get(rec.empId) ?? "ขาดงาน";
-                            const lc = ({ "ลาป่วย": "leave-sick", "ลากิจ": "leave-personal", "ลาพักร้อน": "leave-vacation", "ลาตรวจครรภ์": "leave-prenatal", "ลาคลอด": "leave-maternity", "ลาคลอดคู่สมรส": "leave-maternity", "ลาอุบัติเหตุจากการปฏิบัติงาน": "leave-accident", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "leave-ordain", "ลาทหาร": "leave-military", "ลาพิเศษไม่จ่าย": "leave-unpaid" } as Record<string, string>)[lt] ?? "leave-absent";
+                            const lc = getLeaveTypeClass(lt);
                             return <span className={`leave-select ${lc}`} style={{ cursor: "default" }}>{lt}</span>;
                           })() : (
                             <span className={`ot-status-badge ot-status-${rec.status.toLowerCase()}`}>

@@ -6,6 +6,7 @@ import { Check, ChevronDown, Download, FileSpreadsheet, KeyRound, Plus, RotateCw
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 import { canManageSettingUsers, isAllMenuAccess, parseMenuNumbers, type LoginSession } from "@/lib/auth";
+import { loadActiveMasterPositions } from "@/lib/masterPositions";
 import LoginGate from "./LoginGate";
 
 type ParsedUser = {
@@ -300,6 +301,9 @@ export default function UserAccessSettings({
   const [newUserPassword, setNewUserPassword] = useState("");
   const [addUserError, setAddUserError] = useState("");
   const [isAddingUser, setIsAddingUser] = useState(false);
+  const [positionOptions, setPositionOptions] = useState<string[]>([]);
+  const [positionsLoading, setPositionsLoading] = useState(false);
+  const [positionsError, setPositionsError] = useState("");
   const addGrid = useMenuAccessGrid(currentMenus);
 
   const [pendingRequests, setPendingRequests] = useState<RegistrationRequestRow[]>([]);
@@ -387,6 +391,28 @@ export default function UserAccessSettings({
   useEffect(() => {
     void loadCurrent();
   }, []);
+
+  useEffect(() => {
+    if (!canEdit || !showAddUser) return;
+    let cancelled = false;
+    setPositionsLoading(true);
+    setPositionsError("");
+    void loadActiveMasterPositions()
+      .then((options) => {
+        if (!cancelled) setPositionOptions(options);
+      })
+      .catch((positionError) => {
+        if (!cancelled) {
+          setPositionsError(positionError instanceof Error ? positionError.message : "โหลดตำแหน่งไม่สำเร็จ");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPositionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canEdit, showAddUser]);
 
   function downloadUserTemplate() {
     const headers = ["ตำแหน่ง", "User", "Password", "Menu"];
@@ -542,6 +568,10 @@ export default function UserAccessSettings({
 
   async function handleAddUser(e: FormEvent) {
     e.preventDefault();
+    if (!newPosition) {
+      setAddUserError("กรุณาเลือกตำแหน่ง");
+      return;
+    }
     if (!newUsername.trim() || !newUserPassword) {
       setAddUserError("กรุณากรอก User และ Password");
       return;
@@ -604,7 +634,16 @@ export default function UserAccessSettings({
                 <UserPlus size={16} />
                 เพิ่มผู้ใช้ใหม่
               </h4>
-              <button className="secondary-button small" type="button" onClick={() => setShowAddUser((v) => !v)}>
+              <button
+                className="secondary-button small"
+                type="button"
+                onClick={() => {
+                  if (!showAddUser && positionOptions.length === 0) {
+                    setPositionsError("");
+                  }
+                  setShowAddUser((v) => !v);
+                }}
+              >
                 <Plus size={14} />
                 {showAddUser ? "ยกเลิก" : "เพิ่มผู้ใช้"}
               </button>
@@ -615,7 +654,19 @@ export default function UserAccessSettings({
                 <div className="login-gate-field-row">
                   <label className="login-gate-field">
                     <span>ตำแหน่ง</span>
-                    <input type="text" value={newPosition} onChange={(e) => setNewPosition(e.target.value)} />
+                    <select
+                      value={newPosition}
+                      onChange={(e) => setNewPosition(e.target.value)}
+                      disabled={positionsLoading || positionOptions.length === 0}
+                      required
+                    >
+                      <option value="">
+                        {positionsLoading ? "กำลังโหลดตำแหน่ง..." : "— เลือกตำแหน่ง —"}
+                      </option>
+                      {positionOptions.map((position) => (
+                        <option key={position} value={position}>{position}</option>
+                      ))}
+                    </select>
                   </label>
                   <label className="login-gate-field">
                     <span>User</span>
@@ -631,6 +682,7 @@ export default function UserAccessSettings({
                     />
                   </label>
                 </div>
+                {positionsError ? <p className="login-gate-error">{positionsError}</p> : null}
                 {showAddGrid ? (
                   <MenuAccessGrid menus={currentMenus} grid={addGrid} />
                 ) : (

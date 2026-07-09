@@ -7606,12 +7606,14 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   flex-direction: column;
   gap: 16px;
 }
-.login-form-page .login-gate-field input {
+.login-form-page .login-gate-field input,
+.login-form-page .login-gate-field select {
   height: 44px;
   border-radius: 9px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.login-form-page .login-gate-field input:focus {
+.login-form-page .login-gate-field input:focus,
+.login-form-page .login-gate-field select:focus {
   outline: none;
   border-color: #10b981;
   box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
@@ -7705,13 +7707,15 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   font-size: 12px;
   color: var(--muted);
 }
-.login-gate-field input {
+.login-gate-field input,
+.login-gate-field select {
   height: 38px;
   padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 7px;
   font-size: 14px;
   color: var(--text);
+  background: #fff;
 }
 .login-gate-error { margin: 0; font-size: 13px; color: #dc2626; }
 
