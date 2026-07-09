@@ -9797,6 +9797,7 @@ type HelpSection = {
   points: string[];
   caveats?: string[];
   image?: string;
+  imageMaxHeight?: number;
   openTab?: TabId;
   openMasterSubTab?: MasterSubTab;
   openOtSubTab?: OtSubTab;
@@ -10064,6 +10065,7 @@ const helpSections: HelpSection[] = [
     openTab: "report",
     summary: "ใช้เจาะดูภาพรวมการเข้างานรายหน่วยงาน ติดตามการเตือนคนมาสาย และสถานะการระบุลา",
     image: "/help/report-dashboard.png",
+    imageMaxHeight: 1050,
     points: [
       "1) เลือกวันที่และหน่วยงานที่ต้องการดู แล้วกด โหลดข้อมูล",
       "2) ถ้าจะเจาะเฉพาะแผนก ให้กดแท่งกราฟของแผนกนั้นที่กล่องการเข้างานรายแผนก ระบบจะกรองทั้งหน้าให้",
@@ -10272,9 +10274,9 @@ const helpImageMarkerPositionsBySection: Record<string, HelpMarkerRect[]> = {
   ],
   "report-dashboard": [
     { top: "10.3%", left: "34.7%", width: "17.1%", height: "3.1%" },
-    { top: "30.0%", left: "18.6%", width: "10.7%", height: "2.3%" },
-    { top: "30.2%", left: "52.2%", width: "8.0%", height: "1.9%" },
-    { top: "30.2%", left: "76.5%", width: "7.7%", height: "1.9%" },
+    { top: "30.0%", left: "16.6%", width: "12.7%", height: "2.3%" },
+    { top: "30.2%", left: "50.2%", width: "10.0%", height: "1.9%" },
+    { top: "30.2%", left: "74.5%", width: "9.7%", height: "1.9%" },
     { top: "82.8%", left: "18.6%", width: "78.7%", height: "2.3%" },
     { top: "90.1%", left: "18.6%", width: "78.7%", height: "2.3%" },
     { top: "96.7%", left: "18.6%", width: "78.7%", height: "2.3%" },
@@ -10455,7 +10457,13 @@ function HelpGuidePage({
                                 rel="noopener noreferrer"
                                 title="คลิกเพื่อดูภาพขนาดเต็ม"
                               >
-                                <img className="help-section-image" src={s.image} alt={`ตัวอย่างหน้าจอ: ${s.title}`} loading="eager" />
+                                <img
+                                  className="help-section-image"
+                                  src={s.image}
+                                  alt={`ตัวอย่างหน้าจอ: ${s.title}`}
+                                  loading="eager"
+                                  style={s.imageMaxHeight ? { maxHeight: s.imageMaxHeight } : undefined}
+                                />
                                 {steps.map((p, i) => {
                                   const markerStyle = helpImageMarkerStyle(s.id, i);
                                   if (!markerStyle) return null;
