@@ -4713,6 +4713,7 @@ function LeavePlanningPage({
       .from("leave_records")
       .select("id, emp_id, leave_date, leave_type, recorded_by")
       .gte("leave_date", minLeaveDate)
+      .neq("leave_type", "ขาดงาน")
       .order("leave_date", { ascending: true });
     if (loadError) throw new Error(loadError.message);
     setLeaves((data ?? []) as LeaveRow[]);
@@ -4723,7 +4724,7 @@ function LeavePlanningPage({
     setLoading(true);
     Promise.all([
       employeeMasterFile ? downloadSheetRows(employeeMasterFile.file_path) : Promise.resolve([]),
-      supabase.from("leave_records").select("id, emp_id, leave_date, leave_type, recorded_by").gte("leave_date", minLeaveDate).order("leave_date", { ascending: true }),
+      supabase.from("leave_records").select("id, emp_id, leave_date, leave_type, recorded_by").gte("leave_date", minLeaveDate).neq("leave_type", "ขาดงาน").order("leave_date", { ascending: true }),
     ]).then(([employeeRows, leaveResult]) => {
       if (cancelled) return;
       if (leaveResult.error) throw new Error(leaveResult.error.message);
