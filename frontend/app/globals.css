@@ -7631,8 +7631,8 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 }
 .login-form-page-note {
   margin: 4px 0 0;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 15px;
+  line-height: 1.7;
   color: var(--muted);
 }
 
