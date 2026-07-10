@@ -1664,6 +1664,10 @@ button {
   color: #b91c1c;
 }
 
+.late-count-clickable {
+  cursor: pointer;
+}
+
 .warn-count-badge {
   display: inline-flex;
   align-items: center;

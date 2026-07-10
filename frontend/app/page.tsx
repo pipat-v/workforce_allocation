@@ -3614,6 +3614,19 @@ function DashboardPanels({
     }
     return counts;
   }, [isoTargetDate, monthlyLateDates, warnDates, warnedIds]);
+  const lateAfterLastWarnDates = useMemo(() => {
+    const datesByEmployee: Record<string, string[]> = {};
+    for (const [empId, lateDates] of Object.entries(monthlyLateDates)) {
+      const effectiveWarnDates = warnedIds.has(empId) && isoTargetDate
+        ? Array.from(new Set([...(warnDates[empId] ?? []), isoTargetDate])).sort()
+        : (warnDates[empId] ?? []);
+      const latestWarnDate = effectiveWarnDates.at(-1);
+      datesByEmployee[empId] = latestWarnDate
+        ? lateDates.filter((date) => date > latestWarnDate)
+        : lateDates;
+    }
+    return datesByEmployee;
+  }, [isoTargetDate, monthlyLateDates, warnDates, warnedIds]);
   const previousAttendanceCompareDates = useMemo(() => getPreviousDateKeys(isoTargetDate, 3), [isoTargetDate]);
   const dashboardLateRows = lateSort
     ? lateSort.key === "scanIn"
@@ -3749,6 +3762,7 @@ function DashboardPanels({
                   const warned = warnedIds.has(row.empId);
                   const pending = warnPending.has(row.empId);
                   const monthlyLate = lateAfterLastWarnCounts[row.empId] ?? 0;
+                  const monthlyLateDateList = lateAfterLastWarnDates[row.empId] ?? [];
                   const warnCount = warnCountMap[row.empId] ?? 0;
                   const warningDates = warnDates[row.empId] ?? [];
                   const riskLevel = monthlyLate >= 5 ? "fire" : monthlyLate >= 3 ? "warn" : "";
@@ -3760,10 +3774,19 @@ function DashboardPanels({
                     <td className="scan-cell">{scanDateBadge(row.scanInDate || isoTargetDate)}{row.scanIn}</td>
                     <td><span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span></td>
                     <td>
-                      <span className={`monthly-count-badge${riskLevel ? ` ${riskLevel}` : ""}`}>
-                        {monthlyLate} ครั้ง
-                        {riskLevel === "fire" ? " 🔴" : riskLevel === "warn" ? " 🟡" : ""}
-                      </span>
+                      {monthlyLate > 0 ? (
+                        <details className="warn-history-details">
+                          <summary className={`monthly-count-badge late-count-clickable${riskLevel ? ` ${riskLevel}` : ""}`}>
+                            {monthlyLate} ครั้ง
+                            {riskLevel === "fire" ? " 🔴" : riskLevel === "warn" ? " 🟡" : ""}
+                          </summary>
+                          <div className="warn-history-dates">
+                            {monthlyLateDateList.map((date) => (
+                              <span key={date} className="warn-date-chip late-date-chip">{formatDateTH(date)}</span>
+                            ))}
+                          </div>
+                        </details>
+                      ) : <span className="no-warn">-</span>}
                     </td>
                     <td>
                       {warnCount > 0 ? (
