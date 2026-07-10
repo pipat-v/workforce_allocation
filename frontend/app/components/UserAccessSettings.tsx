@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { canManageSettingUsers, isAllMenuAccess, parseMenuNumbers, type LoginSession } from "@/lib/auth";
 import LoginGate from "./LoginGate";
 
-const USER_POSITION_OPTIONS = ["หมวกส้ม", "เจ้าหน้าที่ฝ่าย(Staff)", "ผู้บริหาร"];
+const USER_POSITION_OPTIONS = ["หมวกส้ม", "เจ้าหน้าที่ฝ่าย(Staff)", "ผู้บริหาร", "HR", "เถ้าแก่"];
 
 function getDefaultAccessForPosition(position: string | null): { menu_access: string; menu_view_access: string } {
   return position?.trim() === "หมวกส้ม"
@@ -598,14 +598,14 @@ export default function UserAccessSettings({
             </button>
           ) : null}
         </div>
-        <p>ดูรายชื่อผู้ใช้และแก้ไข/เพิ่ม/ลบผู้ใช้ได้เฉพาะบัญชีตำแหน่ง &quot;HR&quot;, &quot;เถ้าแก่&quot; หรือ &quot;ผู้จัดการ&quot; เท่านั้น</p>
+        <p>ดูรายชื่อผู้ใช้และแก้ไข/เพิ่ม/ลบผู้ใช้ได้เฉพาะบัญชีตำแหน่ง &quot;HR&quot;, &quot;เถ้าแก่&quot;, &quot;ผู้จัดการ&quot; หรือ &quot;ผู้บริหาร&quot; เท่านั้น</p>
       </div>
 
       {loadError ? <p className="login-gate-error">โหลดข้อมูลไม่สำเร็จ: {loadError}</p> : null}
 
       {!canEdit ? (
         session ? (
-          <p className="login-gate-error">บัญชี {session.username} ไม่มีสิทธิ์เข้าถึงส่วนนี้ (เฉพาะ HR, เถ้าแก่ หรือ ผู้จัดการ เท่านั้น)</p>
+          <p className="login-gate-error">บัญชี {session.username} ไม่มีสิทธิ์เข้าถึงส่วนนี้ (เฉพาะ HR, เถ้าแก่, ผู้จัดการ หรือ ผู้บริหาร เท่านั้น)</p>
         ) : (
           <LoginGate menuLabel="จัดการผู้ใช้ระบบ" onSuccess={onLoginSuccess} />
         )

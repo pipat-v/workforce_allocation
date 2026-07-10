@@ -6,7 +6,7 @@ import { Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { saveSession, type LoginSession } from "@/lib/auth";
 
-const REGISTER_POSITION_OPTIONS = ["หมวกส้ม", "เจ้าหน้าที่ฝ่าย(Staff)", "ผู้บริหาร"];
+const REGISTER_POSITION_OPTIONS = ["หมวกส้ม", "เจ้าหน้าที่ฝ่าย(Staff)", "ผู้บริหาร", "HR", "เถ้าแก่"];
 
 export default function LoginGate({
   menuLabel,
@@ -74,7 +74,7 @@ export default function LoginGate({
         },
       ]);
       if (insErr) throw new Error(insErr.message);
-      setRegMessage("ส่งคำขอลงทะเบียนแล้ว รอการอนุมัติจาก HR, เถ้าแก่ หรือ ผู้จัดการ");
+      setRegMessage("ส่งคำขอลงทะเบียนแล้ว รอการอนุมัติจาก HR, เถ้าแก่, ผู้จัดการ หรือ ผู้บริหาร");
       setRegPosition("");
       setRegUsername("");
       setRegPassword("");
@@ -215,7 +215,7 @@ export default function LoginGate({
             ลงทะเบียน
           </button>
           <p className="login-form-page-note">
-            *คำขอลงทะเบียน ต้องรอการอนุมัติจาก HR, เถ้าแก่ หรือ ผู้จัดการ
+            *คำขอลงทะเบียน ต้องรอการอนุมัติจาก HR, เถ้าแก่, ผู้จัดการ หรือ ผู้บริหาร
             <br />
             **หากลืมรหัสผ่าน ให้ลงทะเบียนใหม่ และแจ้งลบ Account เก่าออก
           </p>

@@ -3323,6 +3323,7 @@ button.stacked-row {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .late-preview-table::-webkit-scrollbar {
@@ -3397,12 +3398,36 @@ button.stacked-row {
 
 .compact-table {
   min-width: 0;
+  width: 100%;
+  table-layout: fixed;
   font-size: 12px;
 }
 
 .compact-table th,
 .compact-table td {
-  padding: 9px 8px;
+  padding: 9px 6px;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.compact-table td {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.compact-table .warn-btn {
+  white-space: normal;
+  padding: 3px 6px;
+  width: 100%;
+  text-align: center;
+}
+
+.compact-table .dept-chip,
+.compact-table .monthly-count-badge {
+  white-space: normal;
+  max-width: 100%;
 }
 
 .report-donut {

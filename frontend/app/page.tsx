@@ -3745,6 +3745,15 @@ function DashboardPanels({
           </div>
           <div className="late-preview-table">
             <table className="table compact-table">
+              <colgroup>
+                <col style={{ width: "17%" }} />
+                <col style={{ width: "15%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "15%" }} />
+                <col style={{ width: "19%" }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th><SortButton columnKey="name" setSort={setLateSort} sort={lateSort} defaultDirection="desc">ชื่อ</SortButton></th>

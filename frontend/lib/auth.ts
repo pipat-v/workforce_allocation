@@ -89,7 +89,7 @@ export function hasMenuViewAccess(session: LoginSession | null, menuNo: number):
 
 // The Setting page (managing users/passwords) is restricted to these
 // positions specifically, not to whoever's menu_access happens to cover it.
-const SETTING_ADMIN_POSITIONS = ["hr", "เถ้าแก่", "ผู้จัดการ"];
+const SETTING_ADMIN_POSITIONS = ["hr", "เถ้าแก่", "ผู้จัดการ", "ผู้บริหาร"];
 
 export function canManageSettingUsers(session: LoginSession | null): boolean {
   if (!session) return false;
