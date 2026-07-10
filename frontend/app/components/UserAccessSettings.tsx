@@ -6,8 +6,15 @@ import { Check, ChevronDown, Download, FileSpreadsheet, KeyRound, Plus, RotateCw
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 import { canManageSettingUsers, isAllMenuAccess, parseMenuNumbers, type LoginSession } from "@/lib/auth";
-import { loadActiveMasterPositions } from "@/lib/masterPositions";
 import LoginGate from "./LoginGate";
+
+const USER_POSITION_OPTIONS = ["หมวกส้ม", "เจ้าหน้าที่ฝ่าย(Staff)", "ผู้บริหาร"];
+
+function getDefaultAccessForPosition(position: string | null): { menu_access: string; menu_view_access: string } {
+  return position?.trim() === "หมวกส้ม"
+    ? { menu_access: "4", menu_view_access: "0,4" }
+    : { menu_access: "All", menu_view_access: "All" };
+}
 
 type ParsedUser = {
   position: string;
@@ -301,9 +308,6 @@ export default function UserAccessSettings({
   const [newUserPassword, setNewUserPassword] = useState("");
   const [addUserError, setAddUserError] = useState("");
   const [isAddingUser, setIsAddingUser] = useState(false);
-  const [positionOptions, setPositionOptions] = useState<string[]>([]);
-  const [positionsLoading, setPositionsLoading] = useState(false);
-  const [positionsError, setPositionsError] = useState("");
   const addGrid = useMenuAccessGrid(currentMenus);
 
   const [pendingRequests, setPendingRequests] = useState<RegistrationRequestRow[]>([]);
@@ -345,13 +349,13 @@ export default function UserAccessSettings({
   async function handleApproveRequest(request: RegistrationRequestRow) {
     setProcessingRequestId(request.id);
     setRequestsError("");
+    const defaultAccess = getDefaultAccessForPosition(request.position);
     const { error: insErr } = await supabase.from("login_users").insert([
       {
         position: request.position,
         username: request.username,
         password: request.password,
-        menu_access: "All",
-        menu_view_access: "All",
+        ...defaultAccess,
       },
     ]);
     if (insErr) {
@@ -391,28 +395,6 @@ export default function UserAccessSettings({
   useEffect(() => {
     void loadCurrent();
   }, []);
-
-  useEffect(() => {
-    if (!canEdit || !showAddUser) return;
-    let cancelled = false;
-    setPositionsLoading(true);
-    setPositionsError("");
-    void loadActiveMasterPositions()
-      .then((options) => {
-        if (!cancelled) setPositionOptions(options);
-      })
-      .catch((positionError) => {
-        if (!cancelled) {
-          setPositionsError(positionError instanceof Error ? positionError.message : "โหลดตำแหน่งไม่สำเร็จ");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setPositionsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [canEdit, showAddUser]);
 
   function downloadUserTemplate() {
     const headers = ["ตำแหน่ง", "User", "Password", "Menu"];
@@ -578,7 +560,8 @@ export default function UserAccessSettings({
     }
     setIsAddingUser(true);
     setAddUserError("");
-    const { menu_access, menu_view_access } = addGrid.toStrings();
+    const { menu_access, menu_view_access } =
+      newPosition.trim() === "หมวกส้ม" ? getDefaultAccessForPosition(newPosition) : addGrid.toStrings();
     const { error: insErr } = await supabase.from("login_users").insert([
       {
         position: newPosition.trim() || null,
@@ -637,12 +620,7 @@ export default function UserAccessSettings({
               <button
                 className="secondary-button small"
                 type="button"
-                onClick={() => {
-                  if (!showAddUser && positionOptions.length === 0) {
-                    setPositionsError("");
-                  }
-                  setShowAddUser((v) => !v);
-                }}
+                onClick={() => setShowAddUser((v) => !v)}
               >
                 <Plus size={14} />
                 {showAddUser ? "ยกเลิก" : "เพิ่มผู้ใช้"}
@@ -657,13 +635,12 @@ export default function UserAccessSettings({
                     <select
                       value={newPosition}
                       onChange={(e) => setNewPosition(e.target.value)}
-                      disabled={positionsLoading || positionOptions.length === 0}
                       required
                     >
                       <option value="">
-                        {positionsLoading ? "กำลังโหลดตำแหน่ง..." : "— เลือกตำแหน่ง —"}
+                        — เลือกตำแหน่ง —
                       </option>
-                      {positionOptions.map((position) => (
+                      {USER_POSITION_OPTIONS.map((position) => (
                         <option key={position} value={position}>{position}</option>
                       ))}
                     </select>
@@ -682,8 +659,11 @@ export default function UserAccessSettings({
                     />
                   </label>
                 </div>
-                {positionsError ? <p className="login-gate-error">{positionsError}</p> : null}
-                {showAddGrid ? (
+                {newPosition.trim() === "หมวกส้ม" ? (
+                  <p className="login-form-page-note">
+                    หมวกส้มจะดูได้เฉพาะ Dashboard และแก้ไขได้เฉพาะ Master Data → ลาล่วงหน้า
+                  </p>
+                ) : showAddGrid ? (
                   <MenuAccessGrid menus={currentMenus} grid={addGrid} />
                 ) : (
                   <MenuAccessSummary grid={addGrid} menus={currentMenus} onExpand={() => setShowAddGrid(true)} />

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import { Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { saveSession, type LoginSession } from "@/lib/auth";
-import { loadActiveMasterPositions } from "@/lib/masterPositions";
+
+const REGISTER_POSITION_OPTIONS = ["หมวกส้ม", "เจ้าหน้าที่ฝ่าย(Staff)", "ผู้บริหาร"];
 
 export default function LoginGate({
   menuLabel,
@@ -29,39 +30,11 @@ export default function LoginGate({
   const [regError, setRegError] = useState("");
   const [regMessage, setRegMessage] = useState("");
   const [regLoading, setRegLoading] = useState(false);
-  const [positionOptions, setPositionOptions] = useState<string[]>([]);
-  const [positionsLoading, setPositionsLoading] = useState(false);
-  const [positionsError, setPositionsError] = useState("");
-
-  useEffect(() => {
-    if (!showRegister) return;
-    let cancelled = false;
-    setPositionsLoading(true);
-    setPositionsError("");
-
-    void (async () => {
-      try {
-        const options = await loadActiveMasterPositions();
-        if (!cancelled) setPositionOptions(options);
-      } catch (loadError) {
-        if (!cancelled) {
-          setPositionsError(loadError instanceof Error ? loadError.message : "โหลดตำแหน่งไม่สำเร็จ");
-        }
-      } finally {
-        if (!cancelled) setPositionsLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [showRegister]);
 
   function openRegister() {
     setShowRegister(true);
     setRegError("");
     setRegMessage("");
-    setPositionsError("");
     setRegPosition("");
     setRegUsername("");
     setRegPassword("");
@@ -181,19 +154,17 @@ export default function LoginGate({
               <select
                 value={regPosition}
                 onChange={(e) => setRegPosition(e.target.value)}
-                disabled={positionsLoading || positionOptions.length === 0}
                 autoFocus
                 required
               >
                 <option value="">
-                  {positionsLoading ? "กำลังโหลดตำแหน่ง..." : "— เลือกตำแหน่ง —"}
+                  — เลือกตำแหน่ง —
                 </option>
-                {positionOptions.map((position) => (
+                {REGISTER_POSITION_OPTIONS.map((position) => (
                   <option key={position} value={position}>{position}</option>
                 ))}
               </select>
             </label>
-            {positionsError ? <p className="login-gate-error">{positionsError}</p> : null}
             <label className="login-gate-field">
               <span>Username</span>
               <input

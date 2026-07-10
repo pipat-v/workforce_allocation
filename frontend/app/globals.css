@@ -3726,6 +3726,11 @@ button.stacked-row {
   color: #475569;
   border-color: #cbd5e1;
 }
+.leave-select.leave-face-scan {
+  background: #ecfeff;
+  color: #0e7490;
+  border-color: #67e8f9;
+}
 .leave-select option[value="ขาดงาน"] { color: #b91c1c; background: #fff1f2; }
 .leave-select option[value="ลาป่วย"] { color: #1d4ed8; background: #eff6ff; }
 .leave-select option[value="ลากิจ"] { color: #b45309; background: #fffbeb; }
@@ -3736,6 +3741,7 @@ button.stacked-row {
 .leave-select option[value="ลาบวช/ลาพิธีสำคัญทางศาสนา"] { color: #7e22ce; background: #faf5ff; }
 .leave-select option[value="ลาทหาร"] { color: #3730a3; background: #eef2ff; }
 .leave-select option[value="ลาพิเศษไม่จ่าย"] { color: #475569; background: #f1f5f9; }
+.leave-select option[value="สแกนหน้าไม่ติด"] { color: #0e7490; background: #ecfeff; }
 
 .pagination {
   display: flex;
@@ -4604,6 +4610,7 @@ button.stacked-row {
 .csb-leave.purple { background: #faf5ff; color: #7e22ce; }
 .csb-leave.indigo { background: #eef2ff; color: #3730a3; }
 .csb-leave.gray   { background: #f1f5f9; color: #475569; }
+.csb-leave.cyan   { background: #ecfeff; color: #0e7490; }
 .confirm-card-action { flex-shrink: 0; }
 .confirm-loading { color: #94a3b8; font-size: 13px; }
 .confirm-done-row {
@@ -6624,6 +6631,14 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   background: rgba(16, 185, 129, 0.14);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
   pointer-events: none;
+}
+
+.help-image-box.point-only {
+  width: 0 !important;
+  height: 0 !important;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .help-image-box-label {

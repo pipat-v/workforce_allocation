@@ -19,15 +19,18 @@ import {
   Download,
   FileSpreadsheet,
   Home as HomeIcon,
+  KeyRound,
   LayoutGrid,
   LogOut,
   Menu,
   RotateCw,
   Search,
   Settings,
+  ShieldCheck,
   Trash2,
   TrendingUp,
   UploadCloud,
+  UserPlus,
   UserX,
   UsersRound,
   X,
@@ -223,6 +226,8 @@ const leaveTypeOptions = [
   "ลาพิเศษไม่จ่าย",
 ] as const;
 
+const dashboardStatusTypeOptions = [...leaveTypeOptions, "สแกนหน้าไม่ติด"] as const;
+
 const leaveTypeClass: Record<string, string> = {
   "ลาป่วย": "leave-sick",
   "ลากิจ": "leave-personal",
@@ -234,6 +239,7 @@ const leaveTypeClass: Record<string, string> = {
   "ลาบวช/ลาพิธีสำคัญทางศาสนา": "leave-ordain",
   "ลาทหาร": "leave-military",
   "ลาพิเศษไม่จ่าย": "leave-unpaid",
+  "สแกนหน้าไม่ติด": "leave-face-scan",
 };
 
 function getLeaveTypeClass(leaveType: string): string {
@@ -252,6 +258,15 @@ const navItems = [
   { id: "setting", label: "Setting", icon: Settings },
   { id: "help", label: "คู่มือการใช้งาน", icon: BookOpen },
 ];
+
+function isOrangeHatSession(session: LoginSession | null): boolean {
+  return (session?.position ?? "").trim() === "หมวกส้ม";
+}
+
+function canViewTabForSession(session: LoginSession | null, tabId: TabId): boolean {
+  if (!isOrangeHatSession(session)) return true;
+  return tabId === "dashboard" || tabId === "master";
+}
 
 type MasterFileKey = (typeof masterFileTypes)[number]["key"];
 type MasterUploadState = Record<MasterFileKey, File | null>;
@@ -459,12 +474,18 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
+  const visibleNavItems = useMemo(
+    () => navItems.filter((item) => canViewTabForSession(session, item.id as TabId)),
+    [session],
+  );
   const activeNav = navItems.find((item) => item.id === activeTab);
+  const effectiveMasterSubTab: MasterSubTab = isOrangeHatSession(session) ? "leave" : masterSubTab;
   const [loginPrompt, setLoginPrompt] = useState<{
     menuLabel: string;
     menuNo: number;
     onSuccess: () => void;
     onCancel?: () => void;
+    allowOrangeHat?: boolean;
   } | null>(null);
 
   // Viewing any page requires login (see the `if (!session)` wall below the
@@ -479,12 +500,30 @@ export default function Home() {
       setLoginPrompt({ menuNo, menuLabel, onSuccess: action, onCancel });
       return;
     }
+    if (isOrangeHatSession(current)) {
+      alert(`บัญชี ${current.username} แก้ไขได้เฉพาะ Master Data → ลาล่วงหน้าเท่านั้น`);
+      onCancel?.();
+      return;
+    }
     if (!hasMenuAccess(current, menuNo)) {
       alert(`บัญชี ${current.username} ไม่มีสิทธิ์แก้ไขเมนู "${menuLabel}"`);
       onCancel?.();
       return;
     }
     action();
+  }
+
+  function guardLeavePlanningAction(action: () => void, onCancel?: () => void) {
+    const current = getSession();
+    if (!current) {
+      setLoginPrompt({ menuNo: 4, menuLabel: "Master Data", onSuccess: action, onCancel, allowOrangeHat: true });
+      return;
+    }
+    if (isOrangeHatSession(current)) {
+      action();
+      return;
+    }
+    guardAction(4, "Master Data", action, onCancel);
   }
 
   // Wraps a prop function that returns Promise<void> (upload/save handlers awaited
@@ -512,6 +551,17 @@ export default function Home() {
   useEffect(() => {
     setSession(getSession());
   }, []);
+
+  useEffect(() => {
+    if (!isOrangeHatSession(session)) return;
+    if (!canViewTabForSession(session, activeTab)) {
+      setActiveTab("dashboard");
+      return;
+    }
+    if (activeTab === "master" && masterSubTab !== "leave") {
+      setMasterSubTab("leave");
+    }
+  }, [session, activeTab, masterSubTab]);
 
   useEffect(() => {
     if (!canManageSettingUsers(session)) {
@@ -1654,7 +1704,7 @@ export default function Home() {
         </button>
 
         <nav className="nav-list" aria-label="Main navigation">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
@@ -1687,12 +1737,12 @@ export default function Home() {
                       { id: "public_holidays", icon: CalendarDays, label: "วันหยุดประจำปี" },
                       { id: "dayoff_shift", icon: CalendarClock, label: "Shift & Dayoff" },
                       { id: "leave", icon: CalendarOff, label: "ลาล่วงหน้า" },
-                    ] as const).map((sub) => {
+                    ] as const).filter((sub) => !isOrangeHatSession(session) || sub.id === "leave").map((sub) => {
                       const SubIcon = sub.icon;
                       return (
                         <button
                           key={sub.id}
-                          className={`nav-sub-item${masterSubTab === sub.id ? " active" : ""}${sub.id === "dayoff_shift" ? " primary" : ""}`}
+                          className={`nav-sub-item${effectiveMasterSubTab === sub.id ? " active" : ""}${sub.id === "dayoff_shift" ? " primary" : ""}`}
                           onClick={() => { setMasterSubTab(sub.id); setMobileMenuOpen(false); }}
                           type="button"
                         >
@@ -1820,12 +1870,16 @@ export default function Home() {
             </div>
             {activeTab === "master" ? (
               <div className="master-sub-tabs">
-                <button className={`master-sub-tab${masterSubTab === "files" ? " active" : ""}`} onClick={() => setMasterSubTab("files")}><FileSpreadsheet size={15} />Master Files</button>
-                <button className={`master-sub-tab${masterSubTab === "manpower" ? " active" : ""}`} onClick={() => setMasterSubTab("manpower")}><BarChart3 size={15} />Manpower</button>
-                <button className={`master-sub-tab${masterSubTab === "holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("holidays")}><CalendarDays size={15} />วันพระ</button>
-                <button className={`master-sub-tab${masterSubTab === "public_holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("public_holidays")}><CalendarDays size={15} />วันหยุดประจำปี</button>
-                <button className={`master-sub-tab master-sub-tab-primary${masterSubTab === "dayoff_shift" ? " active" : ""}`} onClick={() => setMasterSubTab("dayoff_shift")}><CalendarClock size={15} />Shift & Dayoff</button>
-                <button className={`master-sub-tab${masterSubTab === "leave" ? " active" : ""}`} onClick={() => setMasterSubTab("leave")}><CalendarOff size={15} />ลาล่วงหน้า</button>
+                {!isOrangeHatSession(session) ? (
+                  <>
+                    <button className={`master-sub-tab${effectiveMasterSubTab === "files" ? " active" : ""}`} onClick={() => setMasterSubTab("files")}><FileSpreadsheet size={15} />Master Files</button>
+                    <button className={`master-sub-tab${effectiveMasterSubTab === "manpower" ? " active" : ""}`} onClick={() => setMasterSubTab("manpower")}><BarChart3 size={15} />Manpower</button>
+                    <button className={`master-sub-tab${effectiveMasterSubTab === "holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("holidays")}><CalendarDays size={15} />วันพระ</button>
+                    <button className={`master-sub-tab${effectiveMasterSubTab === "public_holidays" ? " active" : ""}`} onClick={() => setMasterSubTab("public_holidays")}><CalendarDays size={15} />วันหยุดประจำปี</button>
+                    <button className={`master-sub-tab master-sub-tab-primary${effectiveMasterSubTab === "dayoff_shift" ? " active" : ""}`} onClick={() => setMasterSubTab("dayoff_shift")}><CalendarClock size={15} />Shift & Dayoff</button>
+                  </>
+                ) : null}
+                <button className={`master-sub-tab${effectiveMasterSubTab === "leave" ? " active" : ""}`} onClick={() => setMasterSubTab("leave")}><CalendarOff size={15} />ลาล่วงหน้า</button>
               </div>
             ) : activeTab === "ot" ? (
               <div className="master-sub-tabs">
@@ -1983,9 +2037,10 @@ export default function Home() {
           <MasterDataPage
             activeMasterMap={activeMasterMap}
             guardAction={guardAction}
+            guardLeavePlanningAction={guardLeavePlanningAction}
             isSavingMasters={isSavingMasters}
             masterFileHistory={masterFileHistory}
-            masterSubTab={masterSubTab}
+            masterSubTab={effectiveMasterSubTab}
             masterUploads={masterUploads}
             onDeleteMasterFile={guardedProp(4, "Master Data", deleteMasterFile)}
             onHolidaysChanged={(dates) => setHolidayDates(dates)}
@@ -2108,10 +2163,15 @@ export default function Home() {
               onSuccess={(newSession) => {
                 setSession(newSession);
                 setLoginPrompt(null);
-                if (hasMenuAccess(newSession, loginPrompt.menuNo)) {
+                if (loginPrompt.allowOrangeHat && isOrangeHatSession(newSession)) {
+                  loginPrompt.onSuccess();
+                } else if (!isOrangeHatSession(newSession) && hasMenuAccess(newSession, loginPrompt.menuNo)) {
                   loginPrompt.onSuccess();
                 } else {
-                  alert(`บัญชี ${newSession.username} ไม่มีสิทธิ์แก้ไขเมนู "${loginPrompt.menuLabel}"`);
+                  const message = isOrangeHatSession(newSession)
+                    ? `บัญชี ${newSession.username} แก้ไขได้เฉพาะ Master Data → ลาล่วงหน้าเท่านั้น`
+                    : `บัญชี ${newSession.username} ไม่มีสิทธิ์แก้ไขเมนู "${loginPrompt.menuLabel}"`;
+                  alert(message);
                   loginPrompt.onCancel?.();
                 }
               }}
@@ -3358,6 +3418,7 @@ function DashboardPanels({
   const saveLeave = async (empId: string, leaveType: string) => {
     if (!isoTargetDate || !leaveType) return;
     const prev = leaveMap.get(empId);
+    setLeaveError("");
     setLeaveMap(m => new Map(m).set(empId, leaveType));
     const { error } = await supabase.from("leave_records").upsert(
       { emp_id: empId, leave_date: isoTargetDate, leave_type: leaveType },
@@ -3365,6 +3426,8 @@ function DashboardPanels({
     );
     if (error) {
       setLeaveMap(m => { const n = new Map(m); prev === undefined ? n.delete(empId) : n.set(empId, prev); return n; });
+      setLeaveError(`บันทึกสถานะไม่สำเร็จ: ${error.message}`);
+      setTimeout(() => setLeaveError(""), 5000);
     }
   };
 
@@ -3502,8 +3565,8 @@ function DashboardPanels({
                 <span className="csb absent">ขาด/ลา {absent}</span>
                 {absent > 0 && (() => {
                   const deptAbsentIds = new Set(allRecords.filter(r => r.status === "Absent").map(r => r.empId));
-                  const leaveColor: Record<string, string> = { "ลาป่วย": "blue", "ลากิจ": "amber", "ลาพักร้อน": "green", "ขาดงาน": "red", "ลาตรวจครรภ์": "pink", "ลาคลอด": "rose", "ลาคลอดคู่สมรส": "rose", "ลาอุบัติเหตุจากการปฏิบัติงาน": "orange", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "purple", "ลาทหาร": "indigo", "ลาพิเศษไม่จ่าย": "gray" };
-                  const subBadges = (["ลาป่วย", "ลากิจ", "ลาพักร้อน", "ลาตรวจครรภ์", "ลาคลอด", "ลาคลอดคู่สมรส", "ลาอุบัติเหตุจากการปฏิบัติงาน", "ลาบวช/ลาพิธีสำคัญทางศาสนา", "ลาทหาร", "ลาพิเศษไม่จ่าย", "ขาดงาน"] as const).map(type => {
+                  const leaveColor: Record<string, string> = { "ลาป่วย": "blue", "ลากิจ": "amber", "ลาพักร้อน": "green", "ขาดงาน": "red", "ลาตรวจครรภ์": "pink", "ลาคลอด": "rose", "ลาคลอดคู่สมรส": "rose", "ลาอุบัติเหตุจากการปฏิบัติงาน": "orange", "ลาบวช/ลาพิธีสำคัญทางศาสนา": "purple", "ลาทหาร": "indigo", "ลาพิเศษไม่จ่าย": "gray", "สแกนหน้าไม่ติด": "cyan" };
+                  const subBadges = ([...dashboardStatusTypeOptions, "ขาดงาน"] as const).map(type => {
                     const cnt = [...leaveMap.entries()].filter(([eid, lt]) => deptAbsentIds.has(eid) && lt === type).length;
                     return cnt ? <span key={type} className={`csb-leave ${leaveColor[type] ?? "blue"}`}>{type} {cnt}</span> : null;
                   }).filter(Boolean);
@@ -3839,7 +3902,7 @@ function DashboardPanels({
                             onChange={(e) => guardAction(0, "Dashboard", () => saveLeave(row.empId, e.target.value))}
                           >
                             <option value="ขาดงาน">ขาดงาน</option>
-                            {leaveTypeOptions.map((option) => (
+                            {dashboardStatusTypeOptions.map((option) => (
                               <option key={option} value={option}>{option}</option>
                             ))}
                           </select>
@@ -4119,6 +4182,7 @@ function DiffPreviewModal({
 function MasterDataPage({
   activeMasterMap,
   guardAction,
+  guardLeavePlanningAction,
   isSavingMasters,
   masterFileHistory,
   masterSubTab,
@@ -4135,6 +4199,7 @@ function MasterDataPage({
 }: {
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   guardAction: (menuNo: number, menuLabel: string, action: () => void, onCancel?: () => void) => void;
+  guardLeavePlanningAction: (action: () => void, onCancel?: () => void) => void;
   isSavingMasters: boolean;
   masterFileHistory: MasterFile[];
   masterSubTab: MasterSubTab;
@@ -4660,7 +4725,7 @@ function MasterDataPage({
       ) : null}
 
       {masterSubTab === "leave" ? (
-        <LeavePlanningPage guardAction={guardAction} employeeMasterFile={activeMasterMap.employee_master} />
+        <LeavePlanningPage guardAction={guardLeavePlanningAction} employeeMasterFile={activeMasterMap.employee_master} />
       ) : null}
     </section>
   );
@@ -4672,7 +4737,7 @@ function LeavePlanningPage({
   guardAction,
 }: {
   employeeMasterFile?: MasterFile;
-  guardAction: (menuNo: number, menuLabel: string, action: () => void, onCancel?: () => void) => void;
+  guardAction: (action: () => void, onCancel?: () => void) => void;
 }) {
   type LeaveRow = { id: string; emp_id: string; leave_date: string; leave_type: string; recorded_by: string | null };
   type EmployeeOption = { empId: string; name: string; dept: string };
@@ -4760,6 +4825,7 @@ function LeavePlanningPage({
       .select("id, emp_id, leave_date, leave_type, recorded_by")
       .gte("leave_date", minLeaveDate)
       .neq("leave_type", "ขาดงาน")
+      .neq("leave_type", "สแกนหน้าไม่ติด")
       .order("leave_date", { ascending: true });
     if (loadError) throw new Error(loadError.message);
     setLeaves((data ?? []) as LeaveRow[]);
@@ -4770,7 +4836,7 @@ function LeavePlanningPage({
     setLoading(true);
     Promise.all([
       employeeMasterFile ? downloadSheetRows(employeeMasterFile.file_path) : Promise.resolve([]),
-      supabase.from("leave_records").select("id, emp_id, leave_date, leave_type, recorded_by").gte("leave_date", minLeaveDate).neq("leave_type", "ขาดงาน").order("leave_date", { ascending: true }),
+      supabase.from("leave_records").select("id, emp_id, leave_date, leave_type, recorded_by").gte("leave_date", minLeaveDate).neq("leave_type", "ขาดงาน").neq("leave_type", "สแกนหน้าไม่ติด").order("leave_date", { ascending: true }),
     ]).then(([employeeRows, leaveResult]) => {
       if (cancelled) return;
       if (leaveResult.error) throw new Error(leaveResult.error.message);
@@ -4883,7 +4949,7 @@ function LeavePlanningPage({
           </select></label>
           <label><span>ผู้บันทึก<span className="required-mark">*</span></span><input value={recordedBy} onChange={(event) => setRecordedBy(event.target.value)} placeholder="ชื่อผู้บันทึก" /></label>
         </div>
-        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId || !leaveDate || isPastLeaveDate || !leaveType || !recordedBy.trim()} onClick={() => guardAction(4, "Master Data", () => void saveLeavePlan())}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
+        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId || !leaveDate || isPastLeaveDate || !leaveType || !recordedBy.trim()} onClick={() => guardAction(() => void saveLeavePlan())}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
       </section>
 
       <section className="panel leave-planning-list">
@@ -4892,7 +4958,7 @@ function LeavePlanningPage({
           <label className="search-box"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อ รหัส หรือหน่วยงาน" /></label>
         </div>
         <div className="table-wrap"><table className="table data-table"><thead><tr><th>วันที่</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>หน่วยงาน</th><th>ประเภทลา</th><th>ผู้บันทึก</th><th></th></tr></thead>
-          <tbody>{visibleLeaves.map((leave) => { const employee = employeeById.get(leave.emp_id); return <tr key={leave.id}><td>{new Date(leave.leave_date + "T00:00:00").toLocaleDateString("th-TH")}</td><td>{leave.emp_id}</td><td>{employee?.name ?? "-"}</td><td>{employee?.dept ?? "-"}</td><td><span className={`leave-select ${getLeaveTypeClass(leave.leave_type)}`} style={{ cursor: "default" }}>{leave.leave_type}</span></td><td>{leave.recorded_by ?? "-"}</td><td><button className="icon-button danger" type="button" title="ลบรายการลา" onClick={() => guardAction(4, "Master Data", () => void deleteLeave(leave.id))}><Trash2 size={15} /></button></td></tr>; })}
+          <tbody>{visibleLeaves.map((leave) => { const employee = employeeById.get(leave.emp_id); return <tr key={leave.id}><td>{new Date(leave.leave_date + "T00:00:00").toLocaleDateString("th-TH")}</td><td>{leave.emp_id}</td><td>{employee?.name ?? "-"}</td><td>{employee?.dept ?? "-"}</td><td><span className={`leave-select ${getLeaveTypeClass(leave.leave_type)}`} style={{ cursor: "default" }}>{leave.leave_type}</span></td><td>{leave.recorded_by ?? "-"}</td><td><button className="icon-button danger" type="button" title="ลบรายการลา" onClick={() => guardAction(() => void deleteLeave(leave.id))}><Trash2 size={15} /></button></td></tr>; })}
           {visibleLeaves.length === 0 ? <tr><td colSpan={7}>{loading ? "กำลังโหลด..." : "ยังไม่มีรายการลาล่วงหน้า"}</td></tr> : null}</tbody>
         </table></div>
       </section>
@@ -8663,12 +8729,12 @@ function ReportDashboard({
                     <td>
                       {row.status === "Absent" ? (
                         <select
-                          className={`leave-select${leaveMap.has(row.empId) ? " saved" : ""}`}
+                          className={`leave-select ${getLeaveTypeClass(leaveMap.get(row.empId) ?? "")}${leaveMap.has(row.empId) ? " saved" : ""}`}
                           value={leaveMap.get(row.empId) ?? ""}
                           onChange={(e) => guardAction(6, "Report & Dashboard", () => saveLeave(row.empId, e.target.value))}
                         >
                           <option value="">— เลือกประเภท —</option>
-                          {leaveTypeOptions.map((option) => (
+                          {dashboardStatusTypeOptions.map((option) => (
                             <option key={option} value={option}>{option}</option>
                           ))}
                           <option value="ขาดงาน">ขาดงาน</option>
@@ -10080,18 +10146,45 @@ const helpSections: HelpSection[] = [
     openMasterSubTab: "dayoff_shift",
     summary: "ใช้เปลี่ยนว่าพนักงานคนไหนอยู่กะไหน หยุดวันไหน หรือย้ายหลายคนพร้อมกัน",
     image: "/help/dayoff-shift.png",
+    imageMaxHeight: 900,
     points: [
-      "1) ใช้ช่องค้นหาหรือดรอปดาวน์กรองหน่วยงาน/หน่วยงานย่อย/วันหยุด/กะ ให้เหลือกลุ่มที่ต้องแก้",
-      "2) ถ้าแก้หลายคน ให้ติ๊กเลือกแถวพนักงาน แล้วใช้กล่อง bulk edit ที่ปรากฏด้านบนเลือก Dayoff/หน่วยงานย่อย/Shift แล้วกด Apply",
-      "3) ถ้าแก้ทีละคน ให้เลือกหน่วยงานย่อย, วันหยุด หรือกะ จากดรอปดาวน์ในแถวของคนนั้นได้โดยตรง",
-      "4) ถ้าหน่วยงานย่อยไม่ตรง Manpower ให้กด แนะนำหน่วยงานย่อยจาก Manpower เพื่อให้ระบบช่วยเติม",
-      "5) กด Save เพื่อบันทึกและ sync ตาราง employee_work_schedules สำหรับ production_user",
-      "หมายเหตุ: ถ้าต้องสลับกะทั้งกลุ่ม ให้กรองหน่วยงานและหน่วยงานย่อยก่อน แล้วกด ⇄ สลับกะ 1 ↔ 2",
-      "สำคัญ: เวลาเข้า-ออกแก้ตรงนี้ได้เลย ทั้งรายคน (ช่องในแถว) และกล่องแก้หลายคนพร้อมกัน — ถ้าเวลาที่ตั้งไม่ตรงกับกะที่มีอยู่ใน Manpower ระบบจะสร้างกะใหม่ให้ใน Manpower อัตโนมัติตอนกด Save ไม่ต้องไปตั้งที่ Manpower ก่อน",
+      "1) ใช้ช่องค้นหาหรือดรอปดาวน์กรองหน่วยงาน/หน่วยงานย่อย/Dayoff/Shift ให้เหลือพนักงานที่ต้องการแก้",
+      "2) แก้หน่วยงานย่อยรายคน: กดดรอปดาวน์คอลัมน์ “หน่วยงานย่อย/Skill” แล้วเลือกรายการที่ต้องการ",
+      "3) แก้ Dayoff รายคน: กดดรอปดาวน์คอลัมน์ Dayoff แล้วเลือกวันหยุด เช่น อ — อังคาร, อา — อาทิตย์ หรือรูปแบบหยุดสองวัน",
+      "4) แก้กะรายคน: กดดรอปดาวน์คอลัมน์ Shift แล้วเลือกกะ ระบบจะเติมเวลาเข้า–ออกจาก Manpower ให้อัตโนมัติเมื่อพบกะที่ตรงกัน",
+      "5) แก้เวลาเข้า: กดช่องเวลาในคอลัมน์ “เวลาเข้า” แล้วเลือกชั่วโมงและนาที",
+      "6) แก้เวลาออก: กดช่องเวลาในคอลัมน์ “เวลาออก” แล้วเลือกชั่วโมงและนาที เวลาออกของกะข้ามคืนสามารถเป็นเวลาของวันถัดไปได้",
+      "7) ถ้าหน่วยงานย่อยในข้อมูลไม่ตรงกับ Manpower ให้กด “แนะนำหน่วยงานย่อยจาก Manpower” แล้วตรวจค่าที่ระบบเสนอ",
+      "8) ตรวจแถวที่แก้แล้วกด Save เพื่อบันทึก Master ชุดใหม่และ sync ตาราง employee_work_schedules",
     ],
     caveats: [
       "ต้องกด Save เพื่อให้ข้อมูล sync ลง employee_work_schedules — production_user ใช้ตารางนี้ ไม่ใช่ค่าที่เห็นบนจอโดยตรง",
-      "ถ้าติ๊กเลือกหลายแถวแล้วลืมกด Apply หรือกด ยกเลิก การเปลี่ยนแปลงในกล่อง bulk edit จะไม่ถูกนำไปใช้",
+      "ถ้าเวลาเข้า–ออกที่ตั้งไม่ตรงกับกะเดิมใน Manpower ระบบจะเตรียมสร้างกะ/เวลาใหม่ใน Manpower ตอนกด Save",
+      "Dayoff ปัจจุบันแก้ได้จากดรอปดาวน์รายคน ส่วนการแก้หลายคนรองรับหน่วยงานย่อย Shift และเวลาเข้า–ออก",
+    ],
+  },
+  {
+    id: "dayoff-shift-bulk",
+    title: "Shift & Dayoff: แก้หลายคน",
+    group: "Master Data",
+    icon: UsersRound,
+    openTab: "master",
+    openMasterSubTab: "dayoff_shift",
+    summary: "เลือกพนักงานหลายคนแล้วเปลี่ยนหน่วยงานย่อย กะ หรือเวลาเข้า–ออกพร้อมกัน",
+    image: "/help/dayoff-shift-bulk.png",
+    imageMaxHeight: 900,
+    points: [
+      "1) ติ๊ก checkbox หน้าแถวพนักงานที่ต้องการแก้ เลือกได้หลายแถวหรือใช้ checkbox ที่หัวตารางเพื่อเลือกทั้งหมดในมุมมอง",
+      "2) หากต้องการย้ายหน่วยงานย่อย ให้เลือกค่าจากช่อง “เปลี่ยนหน่วยงานย่อย...” ในแถบ Bulk Edit",
+      "3) หากต้องการเปลี่ยนกะ ให้เลือกค่าจากช่อง “เปลี่ยน Shift...”",
+      "4) หากต้องการกำหนดเวลาใหม่ ให้เลือกเวลาเข้าในช่องเวลาแรก",
+      "5) เลือกเวลาออกในช่องเวลาที่สอง ต้องกรอกทั้งเวลาเข้าและเวลาออก ระบบจึงจะนำเวลาไปใช้",
+      "6) กด Apply เพื่อใส่ค่าจาก Bulk Edit ลงในทุกแถวที่เลือก แล้วตรวจผลในตาราง",
+      "7) กด Save ด้านบนเพื่อบันทึกจริง หากกดเปลี่ยนหน้าก่อน Save การเปลี่ยนแปลงจะหาย",
+    ],
+    caveats: [
+      "Bulk Edit ไม่มีช่อง Dayoff ในปัจจุบัน หากต้องเปลี่ยนวันหยุดให้แก้จากดรอปดาวน์ Dayoff ของแต่ละแถว",
+      "ถ้าติ๊กหลายแถวแล้วไม่กด Apply หรือกด “ยกเลิก” ค่าในแถบ Bulk Edit จะไม่ถูกนำไปใส่ในตาราง",
     ],
   },
   {
@@ -10102,18 +10195,43 @@ const helpSections: HelpSection[] = [
     openTab: "skill",
     summary: "ใช้จัดการ skill ของพนักงาน ทั้งแก้รายคน เพิ่ม skill ใหม่ ลบแถว Import ไฟล์ และ Export ไฟล์รวม",
     image: "/help/skill-matrix.png",
+    imageMaxHeight: 900,
     points: [
-      "1) ใช้ช่องค้นหาหรือดรอปดาวน์กรองแผนก/Skill/กะ เพื่อหาแถวที่ต้องการแก้",
-      "2) ถ้าจะแก้รายคน ให้เปลี่ยน Level ในแถวของพนักงานคนนั้นได้โดยตรง",
-      "3) ถ้ามีไฟล์ skill ใหม่ ให้กด Import Skill แล้วเลือกไฟล์ ระบบจะนำข้อมูลเข้าตารางให้ตรวจสอบก่อน",
-      "4) ถ้าต้องส่งไฟล์รวม ให้กด Export สรุป เพื่อได้ Excel ทั้งแบบรายแถวและแบบสรุป",
-      "5) ถ้าจะเพิ่ม skill ให้คนใหม่ ให้กด + เพิ่ม Skill ให้พนักงาน แล้วกรอกรหัสพนักงาน/ชื่อ/skill/level",
-      "6) กด Save ทุกครั้งหลังแก้ เพื่อยืนยันการบันทึก",
-      "หมายเหตุ: ถ้าจะแก้หลายแถวพร้อมกัน ให้ติ๊กเลือกพนักงาน แล้วเลือก Level ในกล่อง bulk edit จากนั้นกด Apply, ถ้าจะลบแถวให้กดไอคอนถังขยะในแถวนั้นแล้วกด Save",
+      "1) ตรวจแถบสถานะใต้หัวข้อก่อน ถ้าเป็นสีเหลืองแปลว่ายังมีรายชื่อจาก Mas Job Assign ที่จับคู่ Employee ID ไม่ได้ ควรตรวจรหัสให้ครบก่อนแก้ Skill",
+      "2) ใช้ช่องค้นหา หรือดรอปดาวน์แผนก/Skill/กะ เพื่อกรองหาแถวของพนักงานที่ต้องการ",
+      "3) เพิ่ม Skill รายคน: กด “+ เพิ่ม Skill ให้พนักงาน” ด้านบน แล้วเลือก Emp ID กรอกชื่อ Skill เลือก Level และกดเพิ่ม",
+      "4) Import หลายรายการ: กด “Import Skill” เลือกไฟล์ .xlsx/.xls/.csv แล้วอ่านข้อความสรุปจำนวนแถวที่เพิ่ม อัปเดต ลบ หรือจับคู่ไม่ได้",
+      "5) แก้รายแถว: กดดรอปดาวน์ Level ในแถวพนักงาน แล้วเลือก 1 — น้อย, 2 — ปานกลาง หรือ 3 — ถนัด",
+      "6) แก้หลายแถว: ติ๊ก checkbox หน้าแถวที่ต้องการ เลือก Level ในแถบ Bulk Edit ที่ปรากฏ แล้วกด Apply",
+      "7) ลบ Skill: กดไอคอนถังขยะท้ายแถว ตรวจชื่อพนักงานและ Skill ในข้อความยืนยัน แล้วกดยืนยัน",
+      "8) Export: กด “Export รวม” เพื่อดาวน์โหลด Excel ที่มีทั้งชีท Skill Matrix รายแถวและ Skill Summary",
+      "9) หลังเพิ่ม แก้ Import หรือลบเสร็จ ให้กด “Save” ทุกครั้งเพื่อบันทึกและ sync ลง employee_skills",
     ],
     caveats: [
       "ต้องกด Save ทุกครั้งหลังแก้ เพื่อ sync ลงตารางกลาง employee_skills — production_user ใช้ข้อมูลจากตารางนี้ตอนจัดสรรตำแหน่งงาน",
-      "แถบสีเหลืองใต้หัวข้อจะแจ้งรายชื่อพนักงานที่นำเข้าจากไฟล์ Job Assign แต่หา Emp ID ไม่เจอในระบบ ควรตรวจสอบและแก้ไขให้ครบ",
+      "ไฟล์ Import ควรมี Employee ID เพื่อจับคู่พนักงานอย่างแม่นยำ ระบบจะใช้ชื่อเป็น fallback เฉพาะไฟล์เก่าที่ไม่มีรหัส",
+      "Import จะทำให้ตารางบนหน้าจอเปลี่ยนก่อน แต่ยังไม่บันทึกจริงจนกว่าจะกด Save ควรตรวจข้อความสรุปและข้อมูลในตารางก่อนบันทึก",
+    ],
+  },
+  {
+    id: "skill-matrix-add",
+    title: "Skill Matrix: เพิ่ม Skill รายคน",
+    group: "หน้าหลัก",
+    icon: UserPlus,
+    openTab: "skill",
+    summary: "รายละเอียดแถบเพิ่ม Skill ที่เปิดขึ้นหลังจากกดปุ่ม “+ เพิ่ม Skill ให้พนักงาน”",
+    image: "/help/skill-matrix-add.png",
+    imageMaxHeight: 900,
+    points: [
+      "1) ช่อง Emp ID: พิมพ์รหัสหรือชื่อ แล้วเลือกพนักงานจากรายการแนะนำ ระบบจะใช้ Employee ID เป็นตัวผูกข้อมูล",
+      "2) ช่องชื่อ Skill: พิมพ์ชื่อทักษะใหม่ หรือเลือกชื่อ Skill เดิมจากรายการแนะนำเพื่อให้สะกดตรงกัน",
+      "3) ช่อง Level: เลือกระดับ 1 — น้อย, 2 — ปานกลาง หรือ 3 — ถนัด",
+      "4) กด “เพิ่ม” เพื่อเพิ่มรายการเข้าในตาราง จากนั้นตรวจแถวที่เพิ่มและกด Save ด้านบนเพื่อบันทึกจริง",
+      "5) หากไม่ต้องการเพิ่ม ให้กด “ยกเลิก” เพื่อปิดแถบเพิ่ม Skill โดยไม่เพิ่มแถว",
+    ],
+    caveats: [
+      "ถ้าพนักงานมี Skill ชื่อนั้นอยู่แล้ว การกดเพิ่มจะเปลี่ยน Level ของแถวเดิมแทนการสร้างแถวซ้ำ",
+      "ปุ่มเพิ่มจะกดได้เมื่อเลือกพนักงานและกรอกชื่อ Skill ครบแล้ว การเพิ่มลงตารางยังไม่บันทึกจริงจนกว่าจะกด Save",
     ],
   },
   {
@@ -10201,23 +10319,91 @@ const helpSections: HelpSection[] = [
     ],
   },
   {
-    id: "setting",
-    title: "Setting",
+    id: "setting-add-user",
+    title: "Setting: เพิ่มผู้ใช้งาน",
+    group: "หน้าหลัก",
+    icon: UserPlus,
+    openTab: "setting",
+    summary: "ขั้นตอนเพิ่มบัญชีใหม่ทีละคน พร้อมเลือกตำแหน่งและกำหนดสิทธิ์เริ่มต้น",
+    image: "/help/setting-add-user.png",
+    points: [
+      "1) เข้าเมนู Setting ด้วยบัญชี HR, เถ้าแก่ หรือผู้จัดการ แล้วกดปุ่ม “เพิ่มผู้ใช้” ด้านขวาของหัวข้อเพิ่มผู้ใช้ใหม่",
+      "2) กดช่องตำแหน่ง แล้วเลือกตำแหน่งของผู้ใช้จาก Employee Master ที่ Active",
+      "3) กรอกชื่อสำหรับเข้าสู่ระบบในช่อง User และกรอกรหัสผ่านเริ่มต้นในช่อง Password",
+      "4) ตรวจสิทธิ์ Edit/View หากต้องการเลือกเป็นรายเมนูให้กด “ปรับแต่งรายเมนู”",
+      "5) ตรวจข้อมูลทั้งหมด แล้วกดปุ่มสีเขียว “เพิ่มผู้ใช้” บัญชีจะปรากฏในตารางผู้ใช้ที่ใช้งานอยู่",
+    ],
+    caveats: [
+      "หากดรอปดาวน์ตำแหน่งไม่แสดงรายการ ให้ตรวจว่า Master Data → Master Files มี Employee Master ที่ Active และมีคอลัมน์ Title (Position), Position หรือตำแหน่ง",
+      "Username ห้ามซ้ำกับบัญชีที่มีอยู่ หากระบบแจ้งว่าชื่อผู้ใช้นี้มีอยู่แล้ว ให้เปลี่ยน Username",
+    ],
+  },
+  {
+    id: "setting-password",
+    title: "Setting: เปลี่ยนรหัสผ่าน",
+    group: "หน้าหลัก",
+    icon: KeyRound,
+    openTab: "setting",
+    summary: "เปลี่ยนรหัสผ่านให้ผู้ใช้เดิมจากตารางผู้ใช้ที่ใช้งานอยู่",
+    image: "/help/setting-password.png",
+    points: [
+      "1) เปิดหัวข้อ “ผู้ใช้ที่ใช้งานอยู่ในระบบ” แล้วหาแถวของ Username ที่ต้องการเปลี่ยนรหัส",
+      "2) กดไอคอนรูปกุญแจทางขวาของแถวนั้น ระบบจะเปิดหน้าต่างเปลี่ยนรหัสผ่าน",
+      "3) กรอกรหัสใหม่ในช่อง “รหัสผ่านใหม่” แล้วกรอกซ้ำในช่อง “ยืนยันรหัสผ่านใหม่”",
+      "4) กด “บันทึกรหัสผ่านใหม่” ผู้ใช้ต้องใช้รหัสใหม่นี้ในการเข้าสู่ระบบครั้งถัดไป",
+    ],
+    caveats: [
+      "รหัสผ่านทั้งสองช่องต้องตรงกัน และควรแจ้งรหัสใหม่ให้เจ้าของบัญชีผ่านช่องทางที่เหมาะสม",
+      "รหัสผ่านเก็บเป็นตัวอักษรธรรมดา (ไม่ได้เข้ารหัส) ควรตั้งรหัสผ่านที่ไม่ซ้ำกับบัญชีสำคัญอื่นของพนักงาน",
+    ],
+  },
+  {
+    id: "setting-permissions-open",
+    title: "Setting: เปิดหน้าต่างสิทธิ์",
+    group: "หน้าหลัก",
+    icon: ShieldCheck,
+    openTab: "setting",
+    summary: "เปิดหน้าต่างสิทธิ์ของผู้ใช้เดิมก่อนเลือกสิทธิ์รายเมนู",
+    image: "/help/setting-permissions-summary.png",
+    points: [
+      "1) หา Username ในตารางผู้ใช้ แล้วกดไอคอนรูปโล่ทางขวาของแถว",
+      "2) ในหน้าต่างสิทธิ์ Edit/View กด “ปรับแต่งรายเมนู” เพื่อเปิดตารางเมนูทั้งหมด",
+    ],
+  },
+  {
+    id: "setting-permissions",
+    title: "Setting: กำหนดสิทธิ์เมนู",
+    group: "หน้าหลัก",
+    icon: ShieldCheck,
+    openTab: "setting",
+    summary: "เลือกสิทธิ์ Edit และ View แยกรายเมนูสำหรับผู้ใช้แต่ละคน",
+    image: "/help/setting-permissions.png",
+    points: [
+      "1) ติ๊กคอลัมน์ Edit เมื่อต้องการให้ผู้ใช้เพิ่ม แก้ไข บันทึก หรือลบข้อมูลในเมนูนั้น",
+      "2) ติ๊กคอลัมน์ View เพื่อบันทึกสิทธิ์ดูของเมนูนั้น หรือใช้ช่อง “ทั้งหมด” เพื่อเลือก/ล้างทั้งคอลัมน์",
+      "3) ตรวจรายการที่เลือกแล้วกด “บันทึกสิทธิ์”",
+    ],
+    caveats: [
+      "Edit ถูกใช้ควบคุมการกระทำที่เปลี่ยนข้อมูลแล้ว ส่วน View ถูกบันทึกแยกไว้แต่ระบบยังไม่บังคับใช้เพื่อซ่อนเมนูในปัจจุบัน",
+      "หลังแก้สิทธิ์ ผู้ใช้ที่กำลังเปิดระบบอยู่อาจต้องออกจากระบบแล้วเข้าสู่ระบบใหม่เพื่อรับค่า Session ล่าสุด",
+    ],
+  },
+  {
+    id: "setting-other-cases",
+    title: "Setting: เพิ่มด้วย Excel และลบผู้ใช้",
     group: "หน้าหลัก",
     icon: Settings,
     openTab: "setting",
-    summary: "จัดการผู้ใช้ระบบและกำหนดสิทธิ์ Edit/View รายเมนูต่อคน เฉพาะบัญชี HR หรือ เถ้าแก่",
-    image: "/help/setting.png",
+    summary: "เพิ่มผู้ใช้หลายคนพร้อมกันจาก Template และลบบัญชีที่ไม่ใช้งาน",
+    image: "/help/setting-overview.png",
     points: [
-      "1) หน้านี้ต้องเข้าสู่ระบบด้วยบัญชีตำแหน่ง HR หรือ เถ้าแก่ ถึงจะเห็นรายชื่อและจัดการผู้ใช้ได้ บัญชีอื่นจะเห็นแค่กล่องเข้าสู่ระบบ",
-      "2) กด + เพิ่มผู้ใช้ เพื่อเพิ่มทีละคน กรอกตำแหน่ง/User/Password แล้วกำหนดสิทธิ์ Edit-View รายเมนู (ค่าเริ่มต้นคือทั้งหมด)",
-      "3) หรืออัปโหลดไฟล์ Excel เพื่อเพิ่มหลายคนพร้อมกัน กด ดาวน์โหลด Template เพื่อเอาไฟล์ต้นแบบที่มีรายชื่อเมนูจริงในระบบ",
-      "4) ในตารางผู้ใช้ที่ใช้งานอยู่ กดไอคอนโล่เพื่อแก้สิทธิ์ Edit/View, ไอคอนกุญแจเพื่อเปลี่ยนรหัสผ่าน, ไอคอนถังขยะเพื่อลบผู้ใช้",
-      "หมายเหตุ: อัปโหลดไฟล์ Excel ซ้ำจะแทนที่ผู้ใช้ทั้งหมด แต่จะคงสิทธิ์ View ที่เคยปรับแต่งไว้ของผู้ใช้เดิมไม่ให้ถูกทับ",
+      "1) เพิ่มหลายคน: กด “ดาวน์โหลด Template” แล้วเปิดไฟล์ Excel ที่ดาวน์โหลดมา",
+      "2) กรอกชีท Main ตามหัวคอลัมน์ ตำแหน่ง/User/Password/Menu แล้วบันทึกไฟล์",
+      "3) ลากไฟล์ Excel มาวางในกรอบอัปโหลดหรือคลิกเลือกไฟล์ ตรวจตัวอย่างข้อมูล แล้วกดบันทึก",
+      "4) ลบผู้ใช้: หา Username ในตาราง กดไอคอนถังขยะทางขวา ตรวจชื่อในข้อความยืนยัน แล้วกดยืนยันลบ",
     ],
     caveats: [
-      "สิทธิ์ View แยกจาก Edit เก็บไว้สำหรับใช้งานในอนาคต — ปัจจุบันต้อง login ก่อนถึงจะเข้าดูเมนูไหนก็ได้ ไม่มีเมนูไหนเปิดดูสาธารณะแล้ว การตั้งสิทธิ์ View จึงยังไม่มีผลต่อการเข้าดูจริง",
-      "รหัสผ่านเก็บเป็นตัวอักษรธรรมดา (ไม่ได้เข้ารหัส) ควรตั้งรหัสผ่านที่ไม่ซ้ำกับบัญชีสำคัญอื่นของพนักงาน",
+      "การอัปโหลด Excel เป็นการแทนที่รายชื่อผู้ใช้ทั้งหมด ควรสำรองไฟล์เดิมก่อน ระบบจะคงสิทธิ์ View ที่เคยปรับแต่งไว้ของ Username เดิม",
       "การจำกัดสิทธิ์ทำที่ฝั่งหน้าเว็บเท่านั้น เป็นการป้องกันการใช้งานผิดพลาดโดยไม่ตั้งใจ ไม่ใช่การป้องกันความปลอดภัยระดับฐานข้อมูล",
     ],
   },
@@ -10310,19 +10496,41 @@ const helpImageMarkerPositionsBySection: Record<string, HelpMarkerRect[]> = {
     { top: "26.9%", left: "88.2%", width: "8.0%", height: "4.6%" },
   ],
   "dayoff-shift": [
-    { top: "28.2%", left: "18.3%", width: "23.5%", height: "5.2%" },
-    { top: "37.2%", left: "72.2%", width: "4.5%", height: "4.6%" },
-    { top: "49.4%", left: "50.9%", width: "13.1%", height: "5.0%" },
-    { top: "21.6%", left: "74.6%", width: "17.1%", height: "4.7%" },
-    { top: "21.6%", left: "91.5%", width: "6.1%", height: "4.7%" },
+    { top: "14.0%", left: "1.7%", width: "2.0%", height: "3.5%" },
+    { top: "33.2%", left: "41.2%", width: "2.0%", height: "3.5%" },
+    { top: "33.2%", left: "58.5%", width: "2.0%", height: "3.5%" },
+    { top: "33.2%", left: "72.7%", width: "2.0%", height: "3.5%" },
+    { top: "57.7%", left: "82.2%", width: "2.0%", height: "3.5%" },
+    { top: "57.7%", left: "90.6%", width: "2.0%", height: "3.5%" },
+    { top: "5.4%", left: "71.3%", width: "2.0%", height: "3.5%" },
+    { top: "5.4%", left: "91.8%", width: "2.0%", height: "3.5%" },
+  ],
+  "dayoff-shift-bulk": [
+    { top: "41.7%", left: "3.0%", width: "2.0%", height: "3.5%" },
+    { top: "26.6%", left: "22.9%", width: "2.0%", height: "3.5%" },
+    { top: "26.6%", left: "42.4%", width: "2.0%", height: "3.5%" },
+    { top: "26.6%", left: "52.3%", width: "2.0%", height: "3.5%" },
+    { top: "26.6%", left: "61.9%", width: "2.0%", height: "3.5%" },
+    { top: "26.6%", left: "69.4%", width: "2.0%", height: "3.5%" },
+    { top: "7.5%", left: "95.1%", width: "2.0%", height: "3.5%" },
   ],
   "skill-matrix": [
-    { top: "35.1%", left: "18.3%", width: "41.0%", height: "5.2%" },
-    { top: "46.8%", left: "84.1%", width: "9.8%", height: "5.0%" },
-    { top: "21.9%", left: "76.5%", width: "7.8%", height: "4.2%" },
-    { top: "21.9%", left: "84.2%", width: "7.4%", height: "4.2%" },
-    { top: "94.8%", left: "18.3%", width: "11.1%", height: "4.7%" },
-    { top: "21.6%", left: "91.6%", width: "6.0%", height: "4.8%" },
+    { top: "14.2%", left: "1.7%", width: "2.0%", height: "3.5%" },
+    { top: "21.0%", left: "1.7%", width: "2.0%", height: "3.5%" },
+    { top: "5.8%", left: "61.8%", width: "2.0%", height: "3.5%" },
+    { top: "5.8%", left: "73.6%", width: "2.0%", height: "3.5%" },
+    { top: "36.2%", left: "82.7%", width: "2.0%", height: "3.5%" },
+    { top: "37.5%", left: "3.0%", width: "2.0%", height: "3.5%" },
+    { top: "37.5%", left: "96.5%", width: "2.0%", height: "3.5%" },
+    { top: "5.8%", left: "83.0%", width: "2.0%", height: "3.5%" },
+    { top: "5.8%", left: "92.2%", width: "2.0%", height: "3.5%" },
+  ],
+  "skill-matrix-add": [
+    { top: "19.0%", left: "1.6%", width: "2.0%", height: "3.5%" },
+    { top: "19.0%", left: "16.6%", width: "2.0%", height: "3.5%" },
+    { top: "19.0%", left: "33.2%", width: "2.0%", height: "3.5%" },
+    { top: "19.0%", left: "44.4%", width: "2.0%", height: "3.5%" },
+    { top: "19.0%", left: "49.3%", width: "2.0%", height: "3.5%" },
   ],
   "leave-planning": [
     { top: "29.5%", left: "18.6%", width: "19.5%", height: "5.4%" },
@@ -10356,11 +10564,33 @@ const helpImageMarkerPositionsBySection: Record<string, HelpMarkerRect[]> = {
     { top: "23.9%", left: "67.7%", width: "23.1%", height: "4.9%" },
     { top: "23.8%", left: "90.6%", width: "6.9%", height: "5.2%" },
   ],
-  setting: [
-    { top: "15.8%", left: "13.6%", width: "31.0%", height: "7.0%" },
-    { top: "27.5%", left: "92.8%", width: "4.8%", height: "4.2%" },
-    { top: "36.0%", left: "13.6%", width: "84.2%", height: "19.8%" },
-    { top: "74.0%", left: "72.8%", width: "5.1%", height: "19.4%" },
+  "setting-add-user": [
+    { top: "12.0%", left: "90.2%", width: "6.5%", height: "3.9%" },
+    { top: "20.2%", left: "3.3%", width: "30.5%", height: "4.2%" },
+    { top: "20.2%", left: "34.8%", width: "61.8%", height: "4.2%" },
+    { top: "25.8%", left: "3.3%", width: "93.4%", height: "5.4%" },
+    { top: "32.5%", left: "3.3%", width: "93.4%", height: "3.9%" },
+  ],
+  "setting-password": [
+    { top: "49.4%", left: "19.8%", width: "66.5%", height: "5.6%" },
+    { top: "50.8%", left: "82.4%", width: "2.7%", height: "4.2%" },
+    { top: "48.2%", left: "43.8%", width: "12.5%", height: "11.6%" },
+    { top: "61.0%", left: "43.8%", width: "12.5%", height: "3.8%" },
+  ],
+  "setting-permissions-open": [
+    { top: "49.5%", left: "80.4%", width: "4.8%", height: "6.0%" },
+    { top: "48.8%", left: "52.5%", width: "8.0%", height: "5.8%" },
+  ],
+  "setting-permissions": [
+    { top: "38.0%", left: "46.0%", width: "8.5%", height: "30.0%" },
+    { top: "38.0%", left: "56.2%", width: "7.2%", height: "30.0%" },
+    { top: "70.9%", left: "47.0%", width: "6.0%", height: "3.7%" },
+  ],
+  "setting-other-cases": [
+    { top: "21.2%", left: "84.5%", width: "12.2%", height: "3.5%" },
+    { top: "25.7%", left: "3.3%", width: "93.4%", height: "4.0%" },
+    { top: "33.0%", left: "5.0%", width: "90.0%", height: "4.0%" },
+    { top: "56.0%", left: "80.5%", width: "3.8%", height: "39.0%" },
   ],
 };
 
@@ -10468,7 +10698,22 @@ function HelpGuidePage({
             {groups.map(({ group, sections }) => (
               <div key={group} className="help-sidebar-group">
                 <span className="help-sidebar-group-label">{group}</span>
-                {sections.map((s) => {
+                {sections.map((s, index) => {
+                  const isSettingCase = s.id.startsWith("setting-");
+                  const isSkillMatrixCase = s.id.startsWith("skill-matrix");
+                  const isDayoffShiftCase = s.id.startsWith("dayoff-shift");
+                  if (
+                    (isSettingCase || isSkillMatrixCase || isDayoffShiftCase)
+                    && sections.slice(0, index).some((section) =>
+                      isSettingCase
+                        ? section.id.startsWith("setting-")
+                        : isSkillMatrixCase
+                          ? section.id.startsWith("skill-matrix")
+                          : section.id.startsWith("dayoff-shift"),
+                    )
+                  ) {
+                    return null;
+                  }
                   const SectionIcon = s.icon;
                   return (
                     <a
@@ -10478,7 +10723,7 @@ function HelpGuidePage({
                       onClick={() => setActiveId(s.id)}
                     >
                       <SectionIcon size={15} />
-                      <span>{highlightMatches(s.title, q)}</span>
+                      <span>{highlightMatches(isSettingCase ? "Setting" : isSkillMatrixCase ? "Skill Matrix" : isDayoffShiftCase ? "Shift & Dayoff" : s.title, q)}</span>
                     </a>
                   );
                 })}
@@ -10494,6 +10739,7 @@ function HelpGuidePage({
                   {sections.map((s) => {
                     const SectionIcon = s.icon;
                     const { steps, notes } = splitPointsAndNotes(s.points);
+                    const hasImageMarkers = (helpImageMarkerPositionsBySection[s.id]?.length ?? 0) > 0;
                     return (
                       <article key={s.id} id={`help-${s.id}`} className={`help-section-card${s.openTab ? "" : " help-section-overview"}`}>
                         <div className="help-section-hdr">
@@ -10523,23 +10769,27 @@ function HelpGuidePage({
                                   loading="eager"
                                   style={s.imageMaxHeight ? { maxHeight: s.imageMaxHeight } : undefined}
                                 />
-                                {steps.map((p, i) => {
+                                {hasImageMarkers ? steps.map((p, i) => {
                                   const markerStyle = helpImageMarkerStyle(s.id, i);
                                   if (!markerStyle) return null;
                                   const step = formatHelpStep(p, i);
                                   return (
                                     <span
                                       key={`${s.id}-marker-${i}`}
-                                      className="help-image-box"
+                                      className={`help-image-box${s.id.startsWith("setting-") || s.id.startsWith("skill-matrix") || s.id.startsWith("dayoff-shift") ? " point-only" : ""}`}
                                       style={markerStyle}
                                       aria-hidden="true"
                                     >
                                       <span className="help-image-box-label">{step.marker}</span>
                                     </span>
                                   );
-                                })}
+                                }) : null}
                               </a>
-                              <figcaption>เลขบนภาพตรงกับเลขของคำอธิบายด้านล่าง คลิกภาพเพื่อดูขนาดเต็ม</figcaption>
+                              <figcaption>
+                                {hasImageMarkers
+                                  ? "เลขบนภาพตรงกับเลขของคำอธิบายด้านล่าง คลิกภาพเพื่อดูขนาดเต็ม"
+                                  : "ภาพประกอบของเคสนี้ คลิกภาพเพื่อดูขนาดเต็ม"}
+                              </figcaption>
                             </figure>
                           ) : null}
                           <ol className="help-section-points">
