@@ -2631,6 +2631,13 @@ button {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
+.late-preview-table .warn-history-dates {
+  position: static;
+  margin-top: 6px;
+  min-width: 0;
+  box-shadow: none;
+}
+
 .warn-date-chip {
   font-size: 11px;
   background: #fef3c7;

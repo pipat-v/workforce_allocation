@@ -177,6 +177,7 @@ type ReportData = {
   records: AttendanceRecord[];
   timestampRows: AttendanceRecord[];
   monthlyLateCounts: Record<string, number>;
+  monthlyLateDates: Record<string, string[]>;
   unmatchedScanIds: Array<{ empId: string; name: string; scanIn: string }>;
 };
 
@@ -1350,6 +1351,7 @@ export default function Home() {
         ),
       );
       const monthlyLateCounts: Record<string, number> = {};
+      const monthlyLateDates: Record<string, string[]> = {};
       const lateMinutesAcc: Record<string, number> = {};
       const prevMonthLateAcc: Record<string, number> = {};
       const [tY, tM] = latestReport.targetMonthKey.split("-").map(Number);
@@ -1393,8 +1395,10 @@ export default function Home() {
         const dayReport = buildReportData(runEmpRows, rows, runManpowerRows, runDayoffRows, holidayDates, prevRows, nextRows, run.target_date ?? run.created_at.slice(0, 10));
 
         if (dayReport.targetMonthKey === latestReport.targetMonthKey) {
+          const runDate = dayReport.isoTargetDate;
           for (const lateRow of dayReport.lateRows) {
             monthlyLateCounts[lateRow.empId] = (monthlyLateCounts[lateRow.empId] ?? 0) + 1;
+            monthlyLateDates[lateRow.empId] = [...(monthlyLateDates[lateRow.empId] ?? []), runDate].sort();
             lateMinutesAcc[lateRow.empId] = (lateMinutesAcc[lateRow.empId] ?? 0) + lateRow.minutesLate;
           }
         } else if (dayReport.targetMonthKey === prevMonthKey) {
@@ -1409,6 +1413,7 @@ export default function Home() {
       setReportData({
         ...latestReport,
         monthlyLateCounts,
+        monthlyLateDates,
       });
       setLoadedReportKey([
         latestRun.id,
@@ -1468,6 +1473,20 @@ export default function Home() {
         return;
       }
       setWarnedIds((s) => { const n = new Set(s); n.delete(empId); return n; });
+      setWarnCountMap((current) => {
+        const next = { ...current };
+        const count = (next[empId] ?? 0) - 1;
+        if (count > 0) next[empId] = count;
+        else delete next[empId];
+        return next;
+      });
+      setWarnDates((current) => {
+        const next = { ...current };
+        const dates = (next[empId] ?? []).filter((date) => date !== isoTargetDate);
+        if (dates.length > 0) next[empId] = dates;
+        else delete next[empId];
+        return next;
+      });
     } else {
       const { error: upsertError } = await supabase
         .from("employee_warnings")
@@ -1478,6 +1497,14 @@ export default function Home() {
         return;
       }
       setWarnedIds((s) => new Set(s).add(empId));
+      setWarnCountMap((current) => ({
+        ...current,
+        [empId]: (current[empId] ?? 0) + 1,
+      }));
+      setWarnDates((current) => ({
+        ...current,
+        [empId]: Array.from(new Set([...(current[empId] ?? []), isoTargetDate])).sort(),
+      }));
     }
     setWarnPending((s) => { const n = new Set(s); n.delete(empId); return n; });
     void loadWarnCountMap();
@@ -2026,6 +2053,7 @@ export default function Home() {
               toggleWarning={guardedProp(0, "Dashboard", toggleWarning)}
               totalActivePeople={totalActivePeople}
               warnCountMap={warnCountMap}
+              warnDates={warnDates}
               warnedIds={warnedIds}
               warnPending={warnPending}
             />
@@ -2512,6 +2540,7 @@ function buildReportData(
     records,
     timestampRows: records,
     monthlyLateCounts: {},
+    monthlyLateDates: {},
     unmatchedScanIds,
   };
 }
@@ -3369,6 +3398,7 @@ function DashboardPanels({
   toggleWarning,
   totalActivePeople,
   warnCountMap,
+  warnDates,
   warnedIds,
   warnPending,
 }: {
@@ -3384,6 +3414,7 @@ function DashboardPanels({
   toggleWarning: (empId: string) => Promise<void>;
   totalActivePeople: number;
   warnCountMap: Record<string, number>;
+  warnDates: Record<string, string[]>;
   warnedIds: Set<string>;
   warnPending: Set<string>;
 }) {
@@ -3498,6 +3529,20 @@ function DashboardPanels({
   const topDeptRows = reportData?.deptRows ?? [];
   const maxDeptTotal = Math.max(...topDeptRows.map((row) => row.total), 1);
   const monthlyLateCounts = reportData?.monthlyLateCounts ?? {};
+  const monthlyLateDates = reportData?.monthlyLateDates ?? {};
+  const lateAfterLastWarnCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const [empId, lateDates] of Object.entries(monthlyLateDates)) {
+      const effectiveWarnDates = warnedIds.has(empId) && isoTargetDate
+        ? Array.from(new Set([...(warnDates[empId] ?? []), isoTargetDate])).sort()
+        : (warnDates[empId] ?? []);
+      const latestWarnDate = effectiveWarnDates.at(-1);
+      counts[empId] = latestWarnDate
+        ? lateDates.filter((date) => date > latestWarnDate).length
+        : lateDates.length;
+    }
+    return counts;
+  }, [isoTargetDate, monthlyLateDates, warnDates, warnedIds]);
   const dashboardLateRows = lateSort
     ? lateSort.key === "scanIn"
       ? [...(reportData?.lateRows ?? [])].sort((a, b) => {
@@ -3505,7 +3550,7 @@ function DashboardPanels({
           const bKey = `${b.scanInDate || isoTargetDate}T${b.scanIn}`;
           return lateSort.direction === "asc" ? aKey.localeCompare(bKey) : bKey.localeCompare(aKey);
         })
-      : sortAttendanceRows(reportData?.lateRows ?? [], lateSort, monthlyLateCounts, warnCountMap, warnedIds)
+      : sortAttendanceRows(reportData?.lateRows ?? [], lateSort, lateAfterLastWarnCounts, warnCountMap, warnedIds)
     : [...(reportData?.lateRows ?? [])].sort((a, b) => {
         const aDate = a.scanInDate || isoTargetDate;
         const bDate = b.scanInDate || isoTargetDate;
@@ -3622,6 +3667,7 @@ function DashboardPanels({
                   <th><SortButton columnKey="shiftStart" setSort={setLateSort} sort={lateSort} defaultDirection="desc">เริ่มกะ</SortButton></th>
                   <th><SortButton columnKey="scanIn" setSort={setLateSort} sort={lateSort} defaultDirection="desc">เข้างาน</SortButton></th>
                   <th><SortButton columnKey="minutesLate" setSort={setLateSort} sort={lateSort} defaultDirection="desc">สาย</SortButton></th>
+                  <th><SortButton columnKey="monthlyLate" setSort={setLateSort} sort={lateSort} defaultDirection="desc">สายสะสม</SortButton></th>
                   <th><SortButton columnKey="warnCount" setSort={setLateSort} sort={lateSort} defaultDirection="desc">เตือนสะสม</SortButton></th>
                   <th><SortButton columnKey="warned" setSort={setLateSort} sort={lateSort} defaultDirection="desc">เตือน</SortButton></th>
                 </tr>
@@ -3630,8 +3676,10 @@ function DashboardPanels({
                 {dashboardLateRows.map((row) => {
                   const warned = warnedIds.has(row.empId);
                   const pending = warnPending.has(row.empId);
+                  const monthlyLate = lateAfterLastWarnCounts[row.empId] ?? 0;
                   const warnCount = warnCountMap[row.empId] ?? 0;
-                  const riskLevel = warnCount >= 5 ? "fire" : warnCount >= 3 ? "warn" : "";
+                  const warningDates = warnDates[row.empId] ?? [];
+                  const riskLevel = monthlyLate >= 5 ? "fire" : monthlyLate >= 3 ? "warn" : "";
                   return (
                   <tr key={`dashboard-late-${row.empId}-${row.scanIn}`} className={warned ? "row-warned" : ""}>
                     <td>{row.name}</td>
@@ -3641,9 +3689,23 @@ function DashboardPanels({
                     <td><span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span></td>
                     <td>
                       <span className={`monthly-count-badge${riskLevel ? ` ${riskLevel}` : ""}`}>
-                        {warnCount} ครั้ง
+                        {monthlyLate} ครั้ง
                         {riskLevel === "fire" ? " 🔴" : riskLevel === "warn" ? " 🟡" : ""}
                       </span>
+                    </td>
+                    <td>
+                      {warnCount > 0 ? (
+                        <details className="warn-history-details">
+                          <summary className="warn-count-badge">✓ {warnCount} ครั้ง</summary>
+                          <div className="warn-history-dates">
+                            {warningDates.length > 0
+                              ? warningDates.map((d) => (
+                                  <span key={d} className="warn-date-chip">{formatDateTH(d)}</span>
+                                ))
+                              : <span className="no-warn">ยังไม่มีวันที่เตือน</span>}
+                          </div>
+                        </details>
+                      ) : <span className="no-warn">-</span>}
                     </td>
                     <td>
                       <button
@@ -3660,7 +3722,7 @@ function DashboardPanels({
                   );
                 })}
                 {dashboardLateRows.length === 0 ? (
-                  <tr><td colSpan={7}>ยังไม่มีข้อมูลคนมาสาย</td></tr>
+                  <tr><td colSpan={8}>ยังไม่มีข้อมูลคนมาสาย</td></tr>
                 ) : null}
               </tbody>
             </table>
@@ -8291,6 +8353,7 @@ function ReportDashboard({
     records: [],
     timestampRows: [],
     monthlyLateCounts: {},
+    monthlyLateDates: {},
     unmatchedScanIds: [],
     isoTargetDate: "",
     targetMonthKey: "",
