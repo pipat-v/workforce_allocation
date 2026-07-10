@@ -2649,6 +2649,25 @@ button {
 }
 
 /* ── Report topstrip: date + dept filter + refresh button ── */
+.absent-count-badge {
+  background: #fee2e2;
+  color: #b91c1c;
+  cursor: pointer;
+}
+
+.absent-history-dates {
+  position: static;
+  margin-top: 6px;
+  min-width: 0;
+  box-shadow: none;
+}
+
+.absent-date-chip {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
 .report-topstrip {
   display: flex;
   align-items: center;
@@ -3318,6 +3337,58 @@ button.stacked-row {
 
 .late-preview-table::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+.attendance-status-compare {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attendance-status-compare.leave-absent {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.attendance-status-compare.leave-sick {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.attendance-status-compare.leave-face-scan {
+  background: #ecfeff;
+  color: #0e7490;
+}
+
+.attendance-status-compare.present {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.attendance-status-compare.late,
+.attendance-status-compare.pending {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.attendance-status-compare.neutral {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.attendance-status-compare.empty {
+  color: #94a3b8;
+  background: transparent;
 }
 
 .compact-table {
@@ -5008,6 +5079,7 @@ button.stacked-row {
 }
 .holiday-badge-buddhist  { background: #fef3c7; color: #92400e; }
 .holiday-badge-public    { background: #dcfce7; color: #15803d; }
+.holiday-badge-national  { background: #e0f2fe; color: #0369a1; }
 .holiday-badge-company   { background: #ede9fe; color: #6d28d9; }
 
 .holiday-delete-btn {
@@ -7091,6 +7163,59 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   gap: 7px;
   color: var(--muted);
   font-size: 12px;
+  font-weight: 700;
+}
+
+.leave-date-field {
+  display: grid;
+  grid-column: span 2;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.leave-date-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 22px;
+}
+
+.leave-date-mode label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.leave-form-grid .leave-date-mode input {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.leave-date-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.date-range-separator {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.field-error {
+  color: #dc2626;
+  font-size: 11px;
   font-weight: 700;
 }
 

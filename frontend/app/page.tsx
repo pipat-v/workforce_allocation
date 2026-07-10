@@ -101,7 +101,7 @@ type HolidayRow = {
   id: string;
   date: string;
   name: string;
-  type: "buddhist_holy_day" | "public_holiday" | "company_holiday";
+  type: "buddhist_holy_day" | "public_holiday" | "national_holiday" | "company_holiday";
 };
 
 type SkillFlatRow = {
@@ -178,6 +178,8 @@ type ReportData = {
   timestampRows: AttendanceRecord[];
   monthlyLateCounts: Record<string, number>;
   monthlyLateDates: Record<string, string[]>;
+  monthlyAbsentDates: Record<string, string[]>;
+  monthlyStatusByDate: Record<string, Record<string, string>>;
   unmatchedScanIds: Array<{ empId: string; name: string; scanIn: string }>;
 };
 
@@ -227,6 +229,7 @@ const leaveTypeOptions = [
 ] as const;
 
 const dashboardStatusTypeOptions = [...leaveTypeOptions, "สแกนหน้าไม่ติด"] as const;
+const pastDashboardStatusTypeOptions = ["ขาดงาน", "ลาป่วย", "สแกนหน้าไม่ติด"] as const;
 
 const leaveTypeClass: Record<string, string> = {
   "ลาป่วย": "leave-sick",
@@ -244,6 +247,29 @@ const leaveTypeClass: Record<string, string> = {
 
 function getLeaveTypeClass(leaveType: string): string {
   return leaveTypeClass[leaveType] ?? "leave-absent";
+}
+
+function getDashboardStatusTypeOptions(isoDate: string) {
+  return isoDate && isoDate < getLocalIsoDate()
+    ? pastDashboardStatusTypeOptions
+    : dashboardStatusTypeOptions;
+}
+
+function getPreviousDateKeys(isoDate: string, days: number): string[] {
+  if (!isoDate) return [];
+  const base = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return [];
+  return Array.from({ length: days }, (_, index) => {
+    const date = new Date(base);
+    date.setDate(base.getDate() - (index + 1));
+    return getLocalIsoDate(date);
+  });
+}
+
+function formatShortDate(isoDate: string) {
+  const parts = isoDate?.split("-");
+  if (!parts || parts.length < 3) return isoDate || "-";
+  return `${Number(parts[2])}/${Number(parts[1])}`;
 }
 
 const navItems = [
@@ -1352,12 +1378,27 @@ export default function Home() {
       );
       const monthlyLateCounts: Record<string, number> = {};
       const monthlyLateDates: Record<string, string[]> = {};
+      const monthlyAbsentDates: Record<string, string[]> = {};
+      const monthlyStatusByDate: Record<string, Record<string, string>> = {};
       const lateMinutesAcc: Record<string, number> = {};
       const prevMonthLateAcc: Record<string, number> = {};
       const [tY, tM] = latestReport.targetMonthKey.split("-").map(Number);
       const prevMonthKey = tM === 1
         ? `${tY - 1}-12`
         : `${tY}-${String(tM - 1).padStart(2, "0")}`;
+      const monthStartDate = `${latestReport.targetMonthKey}-01`;
+      const monthEndDate = `${latestReport.targetMonthKey}-${String(new Date(tY, tM, 0).getDate()).padStart(2, "0")}`;
+      const leaveStatusByDate = new Map<string, Map<string, string>>();
+      const { data: monthlyLeaveRows, error: monthlyLeaveError } = await supabase
+        .from("leave_records")
+        .select("emp_id, leave_date, leave_type")
+        .gte("leave_date", monthStartDate)
+        .lte("leave_date", monthEndDate);
+      if (monthlyLeaveError) setError(`โหลดสถานะที่ปรับไว้ไม่สำเร็จ: ${monthlyLeaveError.message}`);
+      for (const row of (monthlyLeaveRows ?? []) as Array<{ emp_id: string; leave_date: string; leave_type: string }>) {
+        if (!leaveStatusByDate.has(row.leave_date)) leaveStatusByDate.set(row.leave_date, new Map());
+        leaveStatusByDate.get(row.leave_date)!.set(row.emp_id, row.leave_type);
+      }
 
       // Pre-fetch all unique master snapshots used across the monthly runs.
       // Runs that pre-date snapshot storage will have null paths and fall back to
@@ -1396,10 +1437,28 @@ export default function Home() {
 
         if (dayReport.targetMonthKey === latestReport.targetMonthKey) {
           const runDate = dayReport.isoTargetDate;
+          const adjustedStatuses = leaveStatusByDate.get(runDate);
+          for (const record of dayReport.records) {
+            const defaultStatus = record.status === "Absent" || record.status === "Pending"
+              ? "ขาดงาน"
+              : STATUS_TH[record.status] ?? record.status;
+            const statusText = adjustedStatuses?.get(record.empId) ?? defaultStatus;
+            monthlyStatusByDate[record.empId] = {
+              ...(monthlyStatusByDate[record.empId] ?? {}),
+              [runDate]: statusText,
+            };
+          }
           for (const lateRow of dayReport.lateRows) {
             monthlyLateCounts[lateRow.empId] = (monthlyLateCounts[lateRow.empId] ?? 0) + 1;
             monthlyLateDates[lateRow.empId] = [...(monthlyLateDates[lateRow.empId] ?? []), runDate].sort();
             lateMinutesAcc[lateRow.empId] = (lateMinutesAcc[lateRow.empId] ?? 0) + lateRow.minutesLate;
+          }
+          for (const record of dayReport.records) {
+            const defaultStatus = record.status === "Absent" || record.status === "Pending" ? "ขาดงาน" : STATUS_TH[record.status] ?? record.status;
+            const statusText = adjustedStatuses?.get(record.empId) ?? defaultStatus;
+            if (statusText === "ขาดงาน") {
+              monthlyAbsentDates[record.empId] = [...(monthlyAbsentDates[record.empId] ?? []), runDate].sort();
+            }
           }
         } else if (dayReport.targetMonthKey === prevMonthKey) {
           for (const lateRow of dayReport.lateRows) {
@@ -1414,6 +1473,8 @@ export default function Home() {
         ...latestReport,
         monthlyLateCounts,
         monthlyLateDates,
+        monthlyAbsentDates,
+        monthlyStatusByDate,
       });
       setLoadedReportKey([
         latestRun.id,
@@ -2541,6 +2602,8 @@ function buildReportData(
     timestampRows: records,
     monthlyLateCounts: {},
     monthlyLateDates: {},
+    monthlyAbsentDates: {},
+    monthlyStatusByDate: {},
     unmatchedScanIds,
   };
 }
@@ -3530,6 +3593,14 @@ function DashboardPanels({
   const maxDeptTotal = Math.max(...topDeptRows.map((row) => row.total), 1);
   const monthlyLateCounts = reportData?.monthlyLateCounts ?? {};
   const monthlyLateDates = reportData?.monthlyLateDates ?? {};
+  const monthlyAbsentDates = reportData?.monthlyAbsentDates ?? {};
+  const monthlyAbsentCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const [empId, absentDates] of Object.entries(monthlyAbsentDates)) {
+      counts[empId] = absentDates.length;
+    }
+    return counts;
+  }, [monthlyAbsentDates]);
   const lateAfterLastWarnCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const [empId, lateDates] of Object.entries(monthlyLateDates)) {
@@ -3543,6 +3614,7 @@ function DashboardPanels({
     }
     return counts;
   }, [isoTargetDate, monthlyLateDates, warnDates, warnedIds]);
+  const previousAttendanceCompareDates = useMemo(() => getPreviousDateKeys(isoTargetDate, 3), [isoTargetDate]);
   const dashboardLateRows = lateSort
     ? lateSort.key === "scanIn"
       ? [...(reportData?.lateRows ?? [])].sort((a, b) => {
@@ -3935,15 +4007,20 @@ function DashboardPanels({
                 <th><SortButton columnKey="shiftStart" setSort={setDetailSort} sort={detailSort}>เวลาเข้างาน</SortButton></th>
                 <th><SortButton columnKey="scanIn" setSort={setDetailSort} sort={detailSort}>Scan In</SortButton></th>
                 <th><SortButton columnKey="status" setSort={setDetailSort} sort={detailSort}>สถานะ</SortButton></th>
-                <th><SortButton columnKey="minutesLate" setSort={setDetailSort} sort={detailSort}>สาย</SortButton></th>
-                <th><SortButton columnKey="monthlyLate" setSort={setDetailSort} sort={detailSort}>สายเดือนนี้</SortButton></th>
+                {previousAttendanceCompareDates.map((date) => (
+                  <th key={`prev-absent-${date}`}>{formatShortDate(date)}</th>
+                ))}
+                <th>ขาดสะสม</th>
                 <th>เสี่ยง</th>
               </tr>
             </thead>
             <tbody key={detailStatusFilter}>
               {detailRows.map((row, index) => {
                 const monthlyLate = monthlyLateCounts[row.empId] ?? 0;
+                const monthlyAbsentDateList = monthlyAbsentDates[row.empId] ?? [];
+                const monthlyAbsent = monthlyAbsentCounts[row.empId] ?? 0;
                 const isRisk = monthlyLate >= 3;
+                const previousStatuses = reportData?.monthlyStatusByDate?.[row.empId] ?? {};
                 return (
                   <tr key={`${row.empId}-${row.scanIn}-detail`} className={isRisk ? "row-risk" : ""}>
                     <td>{index + 1}</td>
@@ -3956,14 +4033,18 @@ function DashboardPanels({
                       {row.status === "Absent" ? (() => {
                         const lt = leaveMap.get(row.empId) ?? "ขาดงาน";
                         const lc = getLeaveTypeClass(lt);
+                        const statusOptions = getDashboardStatusTypeOptions(isoTargetDate);
+                        const statusOptionValues = Array.from(statusOptions) as string[];
+                        const showCurrentOnly = lt && !statusOptionValues.includes(lt);
                         return (
                           <select
                             className={`leave-select ${lc}`}
                             value={lt}
                             onChange={(e) => guardAction(0, "Dashboard", () => saveLeave(row.empId, e.target.value))}
                           >
-                            <option value="ขาดงาน">ขาดงาน</option>
-                            {dashboardStatusTypeOptions.map((option) => (
+                            {showCurrentOnly ? <option value={lt} disabled>{lt}</option> : null}
+                            {isoTargetDate >= getLocalIsoDate() ? <option value="ขาดงาน">ขาดงาน</option> : null}
+                            {statusOptions.map((option) => (
                               <option key={option} value={option}>{option}</option>
                             ))}
                           </select>
@@ -3972,18 +4053,33 @@ function DashboardPanels({
                         <span className={`status-pill ${row.status.toLowerCase()}`}>{STATUS_TH[row.status] ?? row.status}</span>
                       )}
                     </td>
-                    <td>{row.status !== "Absent" && row.status !== "DayOff" ? formatLateTime(row.minutesLate) : "-"}</td>
+                    {previousAttendanceCompareDates.map((date) => (
+                      <td key={`${row.empId}-${date}-status`}>
+                        {row.status === "Absent" || row.status === "Pending" ? (
+                          <StatusCompareBadge status={previousStatuses[date]} date={date} />
+                        ) : "-"}
+                      </td>
+                    ))}
                     <td>
-                      <span className={monthlyLate >= 3 ? "monthly-late-high" : ""}>
-                        {monthlyLate > 0 ? monthlyLate : "-"}
-                      </span>
+                      {monthlyAbsent > 0 ? (
+                        <details className="warn-history-details absent-history-details">
+                          <summary className={`monthly-count-badge absent-count-badge${monthlyAbsent >= 3 ? " fire" : ""}`}>
+                            {monthlyAbsent} ครั้ง
+                          </summary>
+                          <div className="warn-history-dates absent-history-dates">
+                            {monthlyAbsentDateList.map((date) => (
+                              <span key={date} className="warn-date-chip absent-date-chip">{formatDateTH(date)}</span>
+                            ))}
+                          </div>
+                        </details>
+                      ) : <span className="no-warn">-</span>}
                     </td>
                     <td>{isRisk ? <span className="risk-badge">เสี่ยง</span> : null}</td>
                   </tr>
                 );
               })}
               {detailRows.length === 0 ? (
-                <tr><td colSpan={10}>ยังไม่มีข้อมูล</td></tr>
+                <tr><td colSpan={12}>ยังไม่มีข้อมูล</td></tr>
               ) : null}
             </tbody>
           </table>
@@ -4778,7 +4874,9 @@ function LeavePlanningPage({
   const [empId, setEmpId] = useState("");
   const [empQuery, setEmpQuery] = useState("");
   const [showEmpSuggestions, setShowEmpSuggestions] = useState(false);
+  const [leaveDateMode, setLeaveDateMode] = useState<"single" | "range">("single");
   const [leaveDate, setLeaveDate] = useState(localToday);
+  const [leaveEndDate, setLeaveEndDate] = useState(localToday);
   const [leaveType, setLeaveType] = useState<string>(leaveTypeOptions[0]);
   const [recordedBy, setRecordedBy] = useState("");
   const [query, setQuery] = useState("");
@@ -4788,6 +4886,8 @@ function LeavePlanningPage({
   const [message, setMessage] = useState("");
   const minLeaveDate = localToday();
   const isPastLeaveDate = Boolean(leaveDate && leaveDate < minLeaveDate);
+  const isPastLeaveEndDate = Boolean(leaveDateMode === "range" && leaveEndDate && leaveEndDate < minLeaveDate);
+  const isInvalidLeaveRange = Boolean(leaveDateMode === "range" && leaveDate && leaveEndDate && leaveEndDate < leaveDate);
 
   const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.empId, employee])), [employees]);
   const empSuggestions = useMemo(() => {
@@ -4831,11 +4931,37 @@ function LeavePlanningPage({
     setMessage("");
     if (nextDate && nextDate < minLeaveDate) {
       setLeaveDate(minLeaveDate);
+      if (leaveEndDate < minLeaveDate) setLeaveEndDate(minLeaveDate);
       setError("เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต");
       return;
     }
     setLeaveDate(nextDate);
+    if (leaveDateMode === "range" && leaveEndDate && nextDate && leaveEndDate < nextDate) setLeaveEndDate(nextDate);
     if (error === "เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต") setError("");
+  }
+
+  function updateLeaveEndDate(nextDate: string) {
+    setMessage("");
+    if (nextDate && nextDate < minLeaveDate) {
+      setLeaveEndDate(minLeaveDate);
+      setError("เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต");
+      return;
+    }
+    setLeaveEndDate(nextDate);
+    if (error === "เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต") setError("");
+  }
+
+  function getLeavePlanDates() {
+    if (!leaveDate) return [];
+    if (leaveDateMode === "single") return [leaveDate];
+    if (!leaveEndDate || leaveEndDate < leaveDate) return [];
+    const dates: string[] = [];
+    const start = new Date(`${leaveDate}T00:00:00`);
+    const end = new Date(`${leaveEndDate}T00:00:00`);
+    for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+      dates.push(getLocalIsoDate(cursor));
+    }
+    return dates;
   }
   const visibleLeaves = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("th-TH");
@@ -4896,19 +5022,27 @@ function LeavePlanningPage({
       setMessage("");
       return;
     }
+    if (leaveDateMode === "range" && (!leaveEndDate || leaveEndDate < leaveDate)) {
+      setError("วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น");
+      setMessage("");
+      return;
+    }
+    const leaveDates = getLeavePlanDates();
+    if (leaveDates.length === 0) return;
     setSaving(true);
     setError("");
     setMessage("");
-    const { error: saveError } = await supabase.from("leave_records").upsert({
+    const now = new Date().toISOString();
+    const { error: saveError } = await supabase.from("leave_records").upsert(leaveDates.map((date) => ({
       emp_id: empId,
-      leave_date: leaveDate,
+      leave_date: date,
       leave_type: leaveType,
       recorded_by: recordedBy.trim() || null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "emp_id,leave_date" });
+      updated_at: now,
+    })), { onConflict: "emp_id,leave_date" });
     if (saveError) setError(saveError.message);
     else {
-      setMessage("บันทึกการลาล่วงหน้าแล้ว");
+      setMessage(leaveDates.length > 1 ? `บันทึกการลาล่วงหน้าแล้ว ${leaveDates.length} วัน` : "บันทึกการลาล่วงหน้าแล้ว");
       try { await loadLeaves(); } catch (reason) { setError(reason instanceof Error ? reason.message : "โหลดข้อมูลไม่สำเร็จ"); }
     }
     setSaving(false);
@@ -4961,23 +5095,43 @@ function LeavePlanningPage({
               </div>
             ) : null}
           </label>
-          <label>
+          <div className="leave-date-field">
             <span>วันที่ลา<span className="required-mark">*</span></span>
-            <input
-              type="date"
-              min={minLeaveDate}
-              value={leaveDate}
-              onInput={(event) => updateLeaveDate(event.currentTarget.value)}
-              onChange={(event) => updateLeaveDate(event.target.value)}
-              onBlur={(event) => updateLeaveDate(event.target.value)}
-            />
-          </label>
+            <div className="leave-date-mode">
+              <label><input type="radio" checked={leaveDateMode === "single"} onChange={() => setLeaveDateMode("single")} /> วันเดียว</label>
+              <label><input type="radio" checked={leaveDateMode === "range"} onChange={() => { setLeaveDateMode("range"); if (leaveEndDate < leaveDate) setLeaveEndDate(leaveDate); }} /> ช่วงวันที่</label>
+            </div>
+            <div className="leave-date-inputs">
+              <input
+                type="date"
+                min={minLeaveDate}
+                value={leaveDate}
+                onInput={(event) => updateLeaveDate(event.currentTarget.value)}
+                onChange={(event) => updateLeaveDate(event.target.value)}
+                onBlur={(event) => updateLeaveDate(event.target.value)}
+              />
+              {leaveDateMode === "range" ? (
+                <>
+                  <span className="date-range-separator">ถึง</span>
+                  <input
+                    type="date"
+                    min={leaveDate || minLeaveDate}
+                    value={leaveEndDate}
+                    onInput={(event) => updateLeaveEndDate(event.currentTarget.value)}
+                    onChange={(event) => updateLeaveEndDate(event.target.value)}
+                    onBlur={(event) => updateLeaveEndDate(event.target.value)}
+                  />
+                </>
+              ) : null}
+            </div>
+            {isInvalidLeaveRange ? <small className="field-error">วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น</small> : null}
+          </div>
           <label><span>ประเภทลา<span className="required-mark">*</span></span><select value={leaveType} onChange={(event) => setLeaveType(event.target.value)}>
             {leaveTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select></label>
           <label><span>ผู้บันทึก<span className="required-mark">*</span></span><input value={recordedBy} onChange={(event) => setRecordedBy(event.target.value)} placeholder="ชื่อผู้บันทึก" /></label>
         </div>
-        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId || !leaveDate || isPastLeaveDate || !leaveType || !recordedBy.trim()} onClick={() => guardAction(() => void saveLeavePlan())}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
+        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId || !leaveDate || (leaveDateMode === "range" && !leaveEndDate) || isPastLeaveDate || isPastLeaveEndDate || isInvalidLeaveRange || !leaveType || !recordedBy.trim()} onClick={() => guardAction(() => void saveLeavePlan())}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
       </section>
 
       <section className="panel leave-planning-list">
@@ -5121,11 +5275,13 @@ function HolidayMasterPage({
   const typeLabel: Record<HolidayRow["type"], string> = {
     buddhist_holy_day: "วันพระ",
     public_holiday: "วันหยุดราชการ",
+    national_holiday: "วันหยุดนักขัตฤกษ์",
     company_holiday: "วันหยุดบริษัท",
   };
   const typeBadgeClass: Record<HolidayRow["type"], string> = {
     buddhist_holy_day: "holiday-badge-buddhist",
     public_holiday: "holiday-badge-public",
+    national_holiday: "holiday-badge-national",
     company_holiday: "holiday-badge-company",
   };
 
@@ -5165,6 +5321,7 @@ function HolidayMasterPage({
           >
             <option value="buddhist_holy_day">วันพระ</option>
             <option value="public_holiday">วันหยุดราชการ</option>
+            <option value="national_holiday">วันหยุดนักขัตฤกษ์</option>
             <option value="company_holiday">วันหยุดบริษัท</option>
           </select>
           <button
@@ -5262,7 +5419,7 @@ function PublicHolidayPage({
   const [saving, setSaving] = useState(false);
   const [newDate, setNewDate] = useState("");
   const [newName, setNewName] = useState("");
-  const [newType, setNewType] = useState<"public_holiday" | "company_holiday">("public_holiday");
+  const [newType, setNewType] = useState<"public_holiday" | "national_holiday" | "company_holiday">("national_holiday");
   const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
   const seededRef = useRef(false);
 
@@ -5282,7 +5439,7 @@ function PublicHolidayPage({
       const toInsert = Object.values(cpfPublicHolidaysByYear)
         .flat()
         .filter((e) => !allExistingDates.has(e.date))
-        .map((e) => ({ date: e.date, name: e.name, type: "public_holiday" as const }));
+        .map((e) => ({ date: e.date, name: e.name, type: "national_holiday" as const }));
 
       if (toInsert.length > 0) {
         const { error: insertError } = await supabase.from("holidays").insert(toInsert);
@@ -5290,12 +5447,12 @@ function PublicHolidayPage({
       }
     }
 
-    // fetch public/company holidays + Buddhist holy days that overlap with CPF dates
+    // fetch annual/public/company holidays + Buddhist holy days that overlap with CPF dates
     const cpfDatesList = Object.values(cpfPublicHolidaysByYear).flat().map((e) => e.date);
     const { data } = await supabase
       .from("holidays")
       .select("*")
-      .or(`type.in.(public_holiday,company_holiday),date.in.(${cpfDatesList.join(",")})`)
+      .or(`type.in.(public_holiday,national_holiday,company_holiday),date.in.(${cpfDatesList.join(",")})`)
       .order("date");
 
     if (data) {
@@ -5346,11 +5503,13 @@ function PublicHolidayPage({
 
   const typeLabel: Record<string, string> = {
     public_holiday: "วันหยุดราชการ",
+    national_holiday: "วันหยุดนักขัตฤกษ์",
     company_holiday: "วันหยุดบริษัท",
     buddhist_holy_day: "วันหยุดราชการ",
   };
   const typeBadgeClass: Record<string, string> = {
     public_holiday: "holiday-badge-public",
+    national_holiday: "holiday-badge-national",
     company_holiday: "holiday-badge-company",
     buddhist_holy_day: "holiday-badge-public",
   };
@@ -5384,8 +5543,9 @@ function PublicHolidayPage({
           <select
             className="holiday-type-select"
             value={newType}
-            onChange={(e) => setNewType(e.target.value as "public_holiday" | "company_holiday")}
+            onChange={(e) => setNewType(e.target.value as "public_holiday" | "national_holiday" | "company_holiday")}
           >
+            <option value="national_holiday">วันหยุดนักขัตฤกษ์</option>
             <option value="public_holiday">วันหยุดราชการ</option>
             <option value="company_holiday">วันหยุดบริษัท</option>
           </select>
@@ -8354,6 +8514,8 @@ function ReportDashboard({
     timestampRows: [],
     monthlyLateCounts: {},
     monthlyLateDates: {},
+    monthlyAbsentDates: {},
+    monthlyStatusByDate: {},
     unmatchedScanIds: [],
     isoTargetDate: "",
     targetMonthKey: "",
@@ -8756,19 +8918,26 @@ function ReportDashboard({
                     <td>{row.shiftStart}</td>
                     <td>{row.scanIn ?? "-"}</td>
                     <td>
-                      {row.status === "Absent" ? (
-                        <select
-                          className={`leave-select ${getLeaveTypeClass(leaveMap.get(row.empId) ?? "")}${leaveMap.has(row.empId) ? " saved" : ""}`}
-                          value={leaveMap.get(row.empId) ?? ""}
-                          onChange={(e) => guardAction(6, "Report & Dashboard", () => saveLeave(row.empId, e.target.value))}
-                        >
-                          <option value="">— เลือกประเภท —</option>
-                          {dashboardStatusTypeOptions.map((option) => (
-                            <option key={option} value={option}>{option}</option>
-                          ))}
-                          <option value="ขาดงาน">ขาดงาน</option>
-                        </select>
-                      ) : (
+                      {row.status === "Absent" ? (() => {
+                        const currentLeaveType = leaveMap.get(row.empId) ?? "";
+                        const statusOptions = getDashboardStatusTypeOptions(data.isoTargetDate);
+                        const statusOptionValues = Array.from(statusOptions) as string[];
+                        const showCurrentOnly = currentLeaveType && !statusOptionValues.includes(currentLeaveType);
+                        return (
+                          <select
+                            className={`leave-select ${getLeaveTypeClass(currentLeaveType)}${leaveMap.has(row.empId) ? " saved" : ""}`}
+                            value={currentLeaveType}
+                            onChange={(e) => guardAction(6, "Report & Dashboard", () => saveLeave(row.empId, e.target.value))}
+                          >
+                            <option value="">— เลือกประเภท —</option>
+                            {showCurrentOnly ? <option value={currentLeaveType} disabled>{currentLeaveType}</option> : null}
+                            {data.isoTargetDate >= getLocalIsoDate() ? <option value="ขาดงาน">ขาดงาน</option> : null}
+                            {statusOptions.map((option) => (
+                              <option key={option} value={option}>{option}</option>
+                            ))}
+                          </select>
+                        );
+                      })() : (
                         <span className={`status-pill ${row.status.toLowerCase()}`}>{STATUS_TH[row.status] ?? row.status}</span>
                       )}
                     </td>
@@ -9046,6 +9215,27 @@ function scanDateBadge(date: string) {
   return (
     <span className="scan-date-badge" title={date}>
       {Number(parts[2])}/{Number(parts[1])}
+    </span>
+  );
+}
+
+function StatusCompareBadge({ status, date }: { status?: string; date: string }) {
+  if (!status) {
+    return <span className="attendance-status-compare empty" title={`${formatDateTH(date)}: ไม่มีข้อมูล`}>-</span>;
+  }
+  const statusClass =
+    status === "ขาดงาน" || leaveTypeClass[status]
+      ? getLeaveTypeClass(status)
+      : status === "ตรงเวลา" || status === "Present"
+        ? "present"
+      : status === "มาสาย"
+        ? "late"
+        : status === "รอเข้างาน"
+          ? "pending"
+          : "neutral";
+  return (
+    <span className={`attendance-status-compare ${statusClass}`} title={`${formatDateTH(date)}: ${status}`}>
+      {status}
     </span>
   );
 }
