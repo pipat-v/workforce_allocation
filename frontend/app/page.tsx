@@ -129,7 +129,6 @@ type CombinedEmployeeRow = {
   shiftStart: string;
   shiftEnd: string;
   dayoff: string;
-  skills: Record<string, number>;
 };
 
 type EmployeeDiff = {
@@ -848,7 +847,7 @@ export default function Home() {
       raw = setRowCol(raw, row.shift, "อยู่กะไหน", "shift", "กะ", "Shift");
       raw = setRowCol(raw, row.shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
       raw = setRowCol(raw, row.shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
-      raw = setRowCol(raw, row.jobSite, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
+      raw = setRowCol(raw, row.jobSite, "หน่วยงานย่อย", "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
       return raw;
     });
     const worksheet = XLSX.utils.json_to_sheet(workbookRows);
@@ -2632,7 +2631,7 @@ function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
       shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
       shiftStart: normalizeTimeText(findRowCol(row, "เวลาเข้างาน", "เวลาเข้า", "shift_start")),
       shiftEnd: normalizeTimeText(findRowCol(row, "เวลาออก", "เวลาออกงาน", "shift_end")),
-      section: findRowCol(row, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"),
+      section: findRowCol(row, "หน่วยงานย่อย", "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"),
     });
   }
   return map;
@@ -2651,7 +2650,7 @@ function toDayoffShiftEditorRow(row: Record<string, unknown>, index: number): Da
     empId,
     name: `${firstName} ${lastName}`.trim() || fallbackName || empId,
     dept: findRowCol(row, "หน่วยงาน", "Org. Unit Description", "Name (Section)", "แผนก", "Department"),
-    jobSite: findRowCol(row, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"),
+    jobSite: findRowCol(row, "หน่วยงานย่อย", "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"),
     dayoff: findRowCol(row, "วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"),
     shift: findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift"),
     shiftStart,
@@ -3940,37 +3939,30 @@ function DashboardPanels({
 function buildCombinedExcelWorkbook(
   empRows: Record<string, unknown>[],
   dayoffMap: Map<string, { dayoff: string; shift: string; shiftStart: string; shiftEnd: string; section: string }>,
-  skillFlatRows: SkillFlatRow[],
   manpowerRows: Record<string, unknown>[],
-  skillNames: string[],
   skillCFMap: Map<string, string>,
 ): ReturnType<typeof XLSX.utils.book_new> {
   const sheet1Rows = empRows.map((row) => {
     const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
     if (!empId) return null;
     const ds = dayoffMap.get(empId);
-    const empSkills = skillFlatRows.filter((s) => s.empId === empId);
-    const skillCols: Record<string, number> = {};
-    for (const name of skillNames) skillCols[name] = empSkills.find((s) => s.skill === name)?.level ?? 0;
     return {
       "Employee ID": empId,
       "First Name (Local)": String(row["First Name (Local)"] ?? "").trim(),
       "Last Name (Local)": String(row["Last Name (Local)"] ?? "").trim(),
       "หน่วยงาน": String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim(),
       "Title (Position)": String(row["Title (Position)"] ?? row["position"] ?? "").trim(),
-      "หน่วยงานย่อย/Skill": resolveCombinedJobSite(ds?.section, skillCFMap.get(empId)),
+      "หน่วยงานย่อย": resolveCombinedJobSite(ds?.section, skillCFMap.get(empId)),
       "กะ": ds?.shift ?? "",
       "เวลาเข้างาน": ds?.shiftStart ?? "",
       "เวลาออก": ds?.shiftEnd ?? "",
       "วันหยุดประจำสัปดาห์": ds?.dayoff ?? "",
-      ...skillCols,
     };
   }).filter(Boolean);
   const ws1 = XLSX.utils.json_to_sheet(sheet1Rows as object[]);
   ws1["!cols"] = [
     { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 16 },
     { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 24 },
-    ...skillNames.map(() => ({ wch: 14 })),
   ];
   const ws2 = XLSX.utils.json_to_sheet(
     manpowerRows.length ? manpowerRows : [{ "หน่วยงาน": "", "กะ": "", "เวลาเข้า": "" }],
@@ -3981,11 +3973,34 @@ function buildCombinedExcelWorkbook(
   return wb;
 }
 
+function buildLeanCombinedWorkbook(rows: CombinedEmployeeRow[], manpowerRows: Record<string, unknown>[]) {
+  const employeeRows = rows.map((row) => ({
+    "Employee ID": row.empId,
+    "First Name (Local)": row.firstName,
+    "Last Name (Local)": row.lastName,
+    "หน่วยงาน": row.dept,
+    "Title (Position)": row.position,
+    "หน่วยงานย่อย": row.jobSite,
+    "กะ": row.shift,
+    "เวลาเข้างาน": row.shiftStart,
+    "เวลาออก": row.shiftEnd,
+    "วันหยุดประจำสัปดาห์": row.dayoff,
+  }));
+  const ws1 = XLSX.utils.json_to_sheet(employeeRows);
+  ws1["!cols"] = [
+    { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 16 },
+    { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 24 },
+  ];
+  const ws2 = XLSX.utils.json_to_sheet(
+    manpowerRows.length ? manpowerRows : [{ "หน่วยงาน": "", "กะ": "", "เวลาเข้า": "", "เวลาออก": "" }],
+  );
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws1, "พนักงาน");
+  XLSX.utils.book_append_sheet(wb, ws2, "Manpower Plan");
+  return wb;
+}
+
 function parseCombinedSheet1(rows: Record<string, unknown>[]): CombinedEmployeeRow[] {
-  const FIXED = new Set([
-    "employee id", "first name (local)", "last name (local)",
-    "หน่วยงาน", "title (position)", "หน่วยงานย่อย/skill", "หน้างาน", "กะ", "เวลาเข้างาน", "เวลาออก", "วันหยุดประจำสัปดาห์",
-  ]);
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   if (rows.length > 0) {
     const hasEmpIdCol = Object.keys(rows[0]).some((k) => norm(k) === "employee id");
@@ -3994,25 +4009,17 @@ function parseCombinedSheet1(rows: Record<string, unknown>[]): CombinedEmployeeR
   return rows.map((row) => {
     const empId = cleanEmpId(row["Employee ID"] ?? "");
     if (!empId) return null;
-    const skills: Record<string, number> = {};
-    for (const [key, val] of Object.entries(row)) {
-      if (!FIXED.has(norm(key)) && key.trim()) {
-        const level = Number(val);
-        if (!isNaN(level)) skills[key.trim()] = level;
-      }
-    }
     return {
       empId,
       firstName: String(row["First Name (Local)"] ?? "").trim(),
       lastName: String(row["Last Name (Local)"] ?? "").trim(),
       dept: String(row["หน่วยงาน"] ?? "").trim(),
       position: String(row["Title (Position)"] ?? "").trim(),
-      jobSite: String(row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim(),
+      jobSite: String(row["หน่วยงานย่อย"] ?? row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim(),
       shift: String(row["กะ"] ?? "").trim(),
       shiftStart: normalizeTimeText(row["เวลาเข้างาน"]),
       shiftEnd: normalizeTimeText(row["เวลาออก"]),
       dayoff: String(row["วันหยุดประจำสัปดาห์"] ?? "").trim(),
-      skills,
     };
   }).filter(Boolean) as CombinedEmployeeRow[];
 }
@@ -4038,18 +4045,11 @@ function computeEmployeeDiff(
     chk("ชื่อ", `${cur.firstName} ${cur.lastName}`.trim(), `${nr.firstName} ${nr.lastName}`.trim());
     chk("หน่วยงาน", cur.dept, nr.dept);
     chk("ตำแหน่ง", cur.position, nr.position);
-    chk("หน่วยงานย่อย/Skill", cur.jobSite, nr.jobSite);
+    chk("หน่วยงานย่อย", cur.jobSite, nr.jobSite);
     chk("กะ", cur.shift, nr.shift);
     chk("เวลาเข้างาน", cur.shiftStart, nr.shiftStart);
     chk("เวลาออก", cur.shiftEnd, nr.shiftEnd);
     chk("วันหยุด", cur.dayoff, nr.dayoff);
-    const allSkills = new Set([...Object.keys(cur.skills), ...Object.keys(nr.skills)]);
-    for (const s of allSkills) {
-      if (!s.trim()) continue;
-      const fl = cur.skills[s] ?? 0;
-      const tl = nr.skills[s] ?? 0;
-      if (fl !== tl) chk(`ทักษะ: ${s}`, String(fl), String(tl));
-    }
     if (fields.length) changed.push({ empId: nr.empId, name: `${nr.firstName} ${nr.lastName}`.trim(), dept: nr.dept, fields });
     else unchangedCount++;
   }
@@ -4223,7 +4223,7 @@ function MasterDataPage({
   function downloadCombinedTemplate() {
     const headers = [
       "Employee ID", "First Name (Local)", "Last Name (Local)",
-      "หน่วยงาน", "Title (Position)", "หน่วยงานย่อย/Skill", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
+      "หน่วยงาน", "Title (Position)", "หน่วยงานย่อย", "กะ", "เวลาเข้างาน", "วันหยุดประจำสัปดาห์",
     ];
     const examples = [
       ["EMP001", "สมชาย", "ใจดี", "งานเครื่องใน", "พนักงานผลิต", "ตะกร้า", "กะ 1", "07:00", "อาทิตย์"],
@@ -4264,27 +4264,17 @@ function MasterDataPage({
           return map;
         } catch { return new Map<string, string>(); }
       })();
-      const [empRows, dayoffRows, skillRawRows, manpowerRows, skillCFMap] = await Promise.all([
+      const [empRows, dayoffRows, manpowerRows, skillCFMap] = await Promise.all([
         activeMasterMap.employee_master ? downloadSheetRows(activeMasterMap.employee_master.file_path) : Promise.resolve([]),
         activeMasterMap.dayoff_shift ? downloadSheetRows(activeMasterMap.dayoff_shift.file_path) : Promise.resolve([]),
-        activeMasterMap.skill_matrix ? downloadSheetRows(activeMasterMap.skill_matrix.file_path) : Promise.resolve([]),
         activeMasterMap.manpower_plan ? downloadSheetRows(activeMasterMap.manpower_plan.file_path) : Promise.resolve([]),
         skillCFPromise,
       ]);
-      const skillFlatRows: SkillFlatRow[] = skillRawRows
-        .map((row, i) => {
-          const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? "");
-          const skill = String(row["Skill"] ?? row["skill"] ?? "").trim();
-          const level = Number(row["Level"] ?? row["level"]) || 0;
-          return { id: `${i}-${empId}-${skill}`, empId, name: "", dept: "", jobSite: "", shift: "", shiftStart: "", dayoff: "", skill, level, origLevel: level };
-        })
-        .filter((r) => r.empId && r.skill);
-      const skillNames = Array.from(new Set(skillFlatRows.map((r) => r.skill))).sort();
       const dayoffMap = buildDayoffShiftMap(dayoffRows);
       const skippedCount = empRows.filter(
         (row) => !cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]),
       ).length;
-      const wb = buildCombinedExcelWorkbook(empRows, dayoffMap, skillFlatRows, manpowerRows, skillNames, skillCFMap);
+      const wb = buildCombinedExcelWorkbook(empRows, dayoffMap, manpowerRows, skillCFMap);
       const now = new Date().toLocaleDateString("th-TH").replace(/\//g, "-");
       XLSX.writeFile(wb, `master-พนักงาน-${now}.xlsx`);
       if (skippedCount > 0) setMessage(`Export สำเร็จ — พนักงาน ${skippedCount} คนถูกข้ามเพราะไม่มี Employee ID`);
@@ -4357,27 +4347,16 @@ function MasterDataPage({
           return map;
         } catch { return new Map<string, string>(); }
       };
-      const [curEmpRows, curDayoffRows, curSkillRows, curSkillCFMap] = await Promise.all([
+      const [curEmpRows, curDayoffRows, curSkillCFMap] = await Promise.all([
         activeMasterMap.employee_master ? downloadSheetRows(activeMasterMap.employee_master.file_path) : Promise.resolve([]),
         activeMasterMap.dayoff_shift ? downloadSheetRows(activeMasterMap.dayoff_shift.file_path) : Promise.resolve([]),
-        activeMasterMap.skill_matrix ? downloadSheetRows(activeMasterMap.skill_matrix.file_path) : Promise.resolve([]),
         loadSkillCFMap(),
       ]);
       const curDayoffMap = buildDayoffShiftMap(curDayoffRows);
-      const curSkillFlat: SkillFlatRow[] = curSkillRows
-        .map((row, i) => {
-          const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? "");
-          const skill = String(row["Skill"] ?? "").trim();
-          const level = Number(row["Level"] ?? row["level"]) || 0;
-          return { id: `${i}-${empId}-${skill}`, empId, name: "", dept: "", jobSite: "", shift: "", shiftStart: "", dayoff: "", skill, level, origLevel: level };
-        })
-        .filter((r) => r.empId && r.skill);
       const currentCombined: CombinedEmployeeRow[] = curEmpRows.map((row) => {
         const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
         if (!empId) return null;
         const ds = curDayoffMap.get(empId);
-        const empSkills: Record<string, number> = {};
-        for (const s of curSkillFlat.filter((r) => r.empId === empId)) empSkills[s.skill] = s.level;
         return {
           empId,
           firstName: String(row["First Name (Local)"] ?? "").trim(),
@@ -4389,7 +4368,6 @@ function MasterDataPage({
           shiftStart: ds?.shiftStart ?? "",
           shiftEnd: ds?.shiftEnd ?? "",
           dayoff: ds?.dayoff ?? "",
-          skills: empSkills,
         };
       }).filter(Boolean) as CombinedEmployeeRow[];
 
@@ -4408,35 +4386,23 @@ function MasterDataPage({
     setIsSavingCombined(true);
     setError("");
     try {
+      const cleanWorkbook = buildLeanCombinedWorkbook(diffResult.newRows, diffResult.newManpowerRows);
+      const cleanBlob = new Blob(
+        [XLSX.write(cleanWorkbook, { bookType: "xlsx", type: "array" })],
+        { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      );
       for (const fileType of ["employee_master", "dayoff_shift"] as const) {
         const fileId = crypto.randomUUID();
-        const ext = getSafeFileExtension(combinedFile.name);
-        const path = `${publicWorkspace}/masters/${fileType}/${fileId}${ext}`;
-        const { error: uploadError } = await supabase.storage.from("workforce-inputs").upload(path, combinedFile, { upsert: true });
+        const path = `${publicWorkspace}/masters/${fileType}/${fileId}.xlsx`;
+        const { error: uploadError } = await supabase.storage.from("workforce-inputs").upload(path, cleanBlob, { upsert: true });
         if (uploadError) { setError(uploadError.message); return; }
         const { error: deactivateError } = await supabase.from("master_data_files").update({ is_active: false }).is("owner_id", null).eq("file_type", fileType);
         if (deactivateError) { setError(deactivateError.message); return; }
         const { error: insertError } = await supabase.from("master_data_files").insert({
-          owner_id: null, file_type: fileType, file_path: path, original_filename: combinedFile.name, file_size_bytes: combinedFile.size, is_active: true,
+          owner_id: null, file_type: fileType, file_path: path, original_filename: combinedFile.name, file_size_bytes: cleanBlob.size, is_active: true,
         });
         if (insertError) { setError(insertError.message); return; }
       }
-      const skillRows = diffResult.newRows.flatMap((r) =>
-        Object.entries(r.skills)
-          .filter(([, level]) => level > 0)
-          .map(([skill, level]) => ({ "Employee ID": r.empId, Skill: skill, Level: level, "Can Do": 1 })),
-      );
-      const wsSkill = XLSX.utils.json_to_sheet(skillRows.length ? skillRows : [{ "Employee ID": "", Skill: "", Level: 0, "Can Do": 0 }]);
-      const wbSkill = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wbSkill, wsSkill, "SkillMatrix");
-      const skillBlob = new Blob([XLSX.write(wbSkill, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const skillPath = `${publicWorkspace}/masters/skill_matrix/${crypto.randomUUID()}.xlsx`;
-      const { error: skillUpErr } = await supabase.storage.from("workforce-inputs").upload(skillPath, skillBlob, { upsert: true });
-      if (skillUpErr) { setError(skillUpErr.message); return; }
-      const { error: skillDeactErr } = await supabase.from("master_data_files").update({ is_active: false }).is("owner_id", null).eq("file_type", "skill_matrix");
-      if (skillDeactErr) { setError(skillDeactErr.message); return; }
-      const { error: skillInsErr } = await supabase.from("master_data_files").insert({ owner_id: null, file_type: "skill_matrix", file_path: skillPath, original_filename: "skill_matrix-from-combined.xlsx", file_size_bytes: skillBlob.size, is_active: true });
-      if (skillInsErr) { setError(skillInsErr.message); return; }
 
       if (diffResult.newManpowerRows.length > 0) {
         const wsMp = XLSX.utils.json_to_sheet(diffResult.newManpowerRows);
@@ -6046,7 +6012,7 @@ function DayoffShiftEditor({
       current.map((row) => {
         const suggested = suggestionMap.get(row.id);
         if (!suggested) return row;
-        const raw = setRowCol(row.raw, suggested, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
+        const raw = setRowCol(row.raw, suggested, "หน่วยงานย่อย", "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
         return { ...row, jobSite: suggested, raw };
       }),
     );
@@ -6206,7 +6172,7 @@ function DayoffShiftEditor({
             row["หน่วยงาน"] ?? row["Name (Section)"] ?? row["Department"] ?? "",
           ).trim();
           if (empId && dept) deptMap.set(empId, dept);
-          const jobSite = String(row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim();
+          const jobSite = String(row["หน่วยงานย่อย"] ?? row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim();
           if (empId && jobSite) {
             skillCFMap.set(empId, jobSite);
             allJobSites.add(jobSite);
@@ -6272,7 +6238,7 @@ function DayoffShiftEditor({
         ? ["วันหยุดประจำสัปดาห์", "วันหยุด", "dayoff", "Dayoff", "Day Off"]
         : field === "shift"
         ? ["อยู่กะไหน", "shift", "กะ", "Shift"]
-        : ["หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"];
+        : ["หน่วยงานย่อย", "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"];
     setRows((current) =>
       current.map((row) => {
         if (row.id !== id) return row;
@@ -6313,7 +6279,7 @@ function DayoffShiftEditor({
     setRows((current) =>
       current.map((r) => {
         if (r.id !== row.id) return r;
-        let raw = setRowCol(r.raw, finalJobSite, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
+        let raw = setRowCol(r.raw, finalJobSite, "หน่วยงานย่อย", "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
         raw = setRowCol(raw, finalShift, "อยู่กะไหน", "shift", "กะ", "Shift");
         raw = setRowCol(raw, newStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
         raw = setRowCol(raw, newEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
@@ -6389,7 +6355,7 @@ function DayoffShiftEditor({
         }
 
         if (shift !== row.shift) raw = setRowCol(raw, shift, "อยู่กะไหน", "shift", "กะ", "Shift");
-        if (jobSite !== row.jobSite) raw = setRowCol(raw, jobSite, "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
+        if (jobSite !== row.jobSite) raw = setRowCol(raw, jobSite, "หน่วยงานย่อย", "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site");
         if (shiftStart !== row.shiftStart) raw = setRowCol(raw, shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
         if (shiftEnd !== row.shiftEnd) raw = setRowCol(raw, shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
 
@@ -6871,7 +6837,7 @@ function SkillMatrixPage({
             String(row["Employee Name"] ?? "").trim() ||
             empId;
           const dept = String(row["หน่วยงาน"] ?? row["Name (Section)"] ?? "").trim();
-          const jobSite = String(row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim();
+          const jobSite = String(row["หน่วยงานย่อย"] ?? row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim();
           if (empId) {
             empInfo.set(empId, { name, dept, jobSite });
             const englishName = [
@@ -9179,7 +9145,7 @@ function OTDashboard({
         if (cancelled) return;
         const mgrs: Array<{ empId: string; name: string; dept: string }> = [];
         for (const row of rows) {
-          const jobSite = String(row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim();
+          const jobSite = String(row["หน่วยงานย่อย"] ?? row["หน่วยงานย่อย/Skill"] ?? row["หน้างาน"] ?? "").trim();
           const shift = findRowCol(row, "อยู่กะไหน", "shift", "กะ", "Shift");
           if (!jobSite.includes("ผู้จัดการ") && shift !== "ผู้จัดการ") continue;
           const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
