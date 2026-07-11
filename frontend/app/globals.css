@@ -7183,7 +7183,7 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 
 .leave-form-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -7202,6 +7202,12 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.leave-date-label-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .leave-date-mode {
@@ -7233,6 +7239,36 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.date-input-shell {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.date-input-shell input[type="date"] {
+  color: transparent;
+}
+
+.date-input-shell input[type="date"]::-webkit-datetime-edit,
+.date-input-shell input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+.date-input-shell input[type="date"]::-webkit-datetime-edit-text,
+.date-input-shell input[type="date"]::-webkit-datetime-edit-month-field,
+.date-input-shell input[type="date"]::-webkit-datetime-edit-day-field,
+.date-input-shell input[type="date"]::-webkit-datetime-edit-year-field {
+  color: transparent;
+}
+
+.date-input-be {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  font: inherit;
+  color: var(--text);
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .date-range-separator {

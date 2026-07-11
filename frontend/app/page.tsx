@@ -272,6 +272,16 @@ function formatShortDate(isoDate: string) {
   return `${Number(parts[2])}/${Number(parts[1])}`;
 }
 
+// Native <input type="date"> always renders the Gregorian year in its own UI
+// (no way to force the Buddhist calendar there), so we overlay this instead —
+// keeps the picker's Gregorian value but shows the Thai Buddhist year (+543).
+function formatDateBE(isoDate: string) {
+  const parts = isoDate?.split("-");
+  if (!parts || parts.length < 3) return "";
+  const [y, m, d] = parts;
+  return `${Number(d)}/${Number(m)}/${Number(y) + 543}`;
+}
+
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: HomeIcon },
   { id: "timestamp", label: "Upload Timestamp", icon: UploadCloud },
@@ -5128,31 +5138,39 @@ function LeavePlanningPage({
             ) : null}
           </label>
           <div className="leave-date-field">
-            <span>วันที่ลา<span className="required-mark">*</span></span>
-            <div className="leave-date-mode">
-              <label><input type="radio" checked={leaveDateMode === "single"} onChange={() => setLeaveDateMode("single")} /> วันเดียว</label>
-              <label><input type="radio" checked={leaveDateMode === "range"} onChange={() => { setLeaveDateMode("range"); if (leaveEndDate < leaveDate) setLeaveEndDate(leaveDate); }} /> ช่วงวันที่</label>
+            <div className="leave-date-label-row">
+              <span>วันที่ลา<span className="required-mark">*</span></span>
+              <div className="leave-date-mode">
+                <label><input type="radio" checked={leaveDateMode === "single"} onChange={() => setLeaveDateMode("single")} /> วันเดียว</label>
+                <label><input type="radio" checked={leaveDateMode === "range"} onChange={() => { setLeaveDateMode("range"); if (leaveEndDate < leaveDate) setLeaveEndDate(leaveDate); }} /> ช่วงวันที่</label>
+              </div>
             </div>
             <div className="leave-date-inputs">
-              <input
-                type="date"
-                min={minLeaveDate}
-                value={leaveDate}
-                onInput={(event) => updateLeaveDate(event.currentTarget.value)}
-                onChange={(event) => updateLeaveDate(event.target.value)}
-                onBlur={(event) => updateLeaveDate(event.target.value)}
-              />
+              <div className="date-input-shell">
+                <input
+                  type="date"
+                  min={minLeaveDate}
+                  value={leaveDate}
+                  onInput={(event) => updateLeaveDate(event.currentTarget.value)}
+                  onChange={(event) => updateLeaveDate(event.target.value)}
+                  onBlur={(event) => updateLeaveDate(event.target.value)}
+                />
+                <span className="date-input-be">{leaveDate ? formatDateBE(leaveDate) : "วว/ดด/ปปปป"}</span>
+              </div>
               {leaveDateMode === "range" ? (
                 <>
                   <span className="date-range-separator">ถึง</span>
-                  <input
-                    type="date"
-                    min={leaveDate || minLeaveDate}
-                    value={leaveEndDate}
-                    onInput={(event) => updateLeaveEndDate(event.currentTarget.value)}
-                    onChange={(event) => updateLeaveEndDate(event.target.value)}
-                    onBlur={(event) => updateLeaveEndDate(event.target.value)}
-                  />
+                  <div className="date-input-shell">
+                    <input
+                      type="date"
+                      min={leaveDate || minLeaveDate}
+                      value={leaveEndDate}
+                      onInput={(event) => updateLeaveEndDate(event.currentTarget.value)}
+                      onChange={(event) => updateLeaveEndDate(event.target.value)}
+                      onBlur={(event) => updateLeaveEndDate(event.target.value)}
+                    />
+                    <span className="date-input-be">{leaveEndDate ? formatDateBE(leaveEndDate) : "วว/ดด/ปปปป"}</span>
+                  </div>
                 </>
               ) : null}
             </div>
