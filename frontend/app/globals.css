@@ -7183,7 +7183,7 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 
 .leave-form-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
   gap: 14px;
 }
 
@@ -7338,8 +7338,13 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 
 .leave-form-actions {
   display: flex;
+  align-self: end;
   justify-content: flex-end;
-  margin-top: 16px;
+}
+
+.leave-form-actions .primary-button {
+  height: 42px;
+  white-space: nowrap;
 }
 
 .leave-planning-page .error-banner,

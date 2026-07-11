@@ -5180,8 +5180,8 @@ function LeavePlanningPage({
             {leaveTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select></label>
           <label><span>ผู้บันทึก<span className="required-mark">*</span></span><input value={recordedBy} onChange={(event) => setRecordedBy(event.target.value)} placeholder="ชื่อผู้บันทึก" /></label>
+          <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId || !leaveDate || (leaveDateMode === "range" && !leaveEndDate) || isPastLeaveDate || isPastLeaveEndDate || isInvalidLeaveRange || !leaveType || !recordedBy.trim()} onClick={() => guardAction(() => void saveLeavePlan())}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
         </div>
-        <div className="leave-form-actions"><button className="primary-button" type="button" disabled={saving || !empId || !leaveDate || (leaveDateMode === "range" && !leaveEndDate) || isPastLeaveDate || isPastLeaveEndDate || isInvalidLeaveRange || !leaveType || !recordedBy.trim()} onClick={() => guardAction(() => void saveLeavePlan())}><ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "บันทึกการลา"}</button></div>
       </section>
 
       <section className="panel leave-planning-list">
