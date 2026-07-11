@@ -67,6 +67,7 @@ type MasterFile = {
   effective_from?: string | null;
   effective_until?: string | null;
   is_active: boolean;
+  recorded_by?: string | null;
 };
 
 type DayoffShiftEditorRow = {
@@ -731,18 +732,33 @@ export default function Home() {
   async function loadActiveMasters() {
     let { data, error: loadError } = await supabase
       .from("master_data_files")
-      .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at,effective_from,effective_until")
+      .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at,effective_from,effective_until,recorded_by")
       .order("created_at", { ascending: false });
+
+    if (loadError && loadError.message.toLowerCase().includes("recorded_by")) {
+      const fallback = await supabase
+        .from("master_data_files")
+        .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at,effective_from,effective_until")
+        .order("created_at", { ascending: false });
+      data = fallback.data?.map((file: Omit<MasterFile, "recorded_by">) => ({
+        ...file,
+        effective_from: file.effective_from ?? null,
+        effective_until: file.effective_until ?? null,
+        recorded_by: null,
+      })) ?? null;
+      loadError = fallback.error;
+    }
 
     if (loadError && loadError.message.toLowerCase().includes("effective_until")) {
       const fallback = await supabase
         .from("master_data_files")
         .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at,effective_from")
         .order("created_at", { ascending: false });
-      data = fallback.data?.map((file: Omit<MasterFile, "effective_until">) => ({
+      data = fallback.data?.map((file: Omit<MasterFile, "effective_until" | "recorded_by">) => ({
         ...file,
         effective_from: file.effective_from ?? null,
         effective_until: null,
+        recorded_by: null,
       })) ?? null;
       loadError = fallback.error;
     }
@@ -752,10 +768,11 @@ export default function Home() {
         .from("master_data_files")
         .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at")
         .order("created_at", { ascending: false });
-      data = fallback.data?.map((file: Omit<MasterFile, "effective_from" | "effective_until">) => ({
+      data = fallback.data?.map((file: Omit<MasterFile, "effective_from" | "effective_until" | "recorded_by">) => ({
         ...file,
         effective_from: file.created_at.slice(0, 10),
         effective_until: null,
+        recorded_by: null,
       })) ?? null;
       loadError = fallback.error;
     }
@@ -970,6 +987,17 @@ export default function Home() {
   // พอพ้นวันนี้ไป isMasterFileEffectiveOn จะข้ามเวอร์ชันนี้เอง แล้วย้อนกลับไปใช้เวอร์ชันก่อนหน้าโดยอัตโนมัติ
   // replaceFileId: id ของเวอร์ชัน "ตั้งกะล่วงหน้า" เดิมที่กำลังแก้ไขอยู่ (ถ้ามี) — ลบทิ้งก่อน insert ใหม่
   // กันไม่ให้มีหลายเวอร์ชันซ้อนกันที่ effective_from เดียวกันจากการกด Save ซ้ำ
+  // แทรก recorded_by (username คนที่กำลัง login) เข้าไปด้วยเสมอ แต่ถ้า DB ยังไม่ได้รัน migration เพิ่มคอลัมน์
+  // นี้ (error พูดถึง "recorded_by") ให้ insert ซ้ำแบบไม่มีคอลัมน์นั้นแทน กันไม่ให้การบันทึกกะพังทั้งหมด
+  async function insertDayoffShiftMasterFile(payload: Record<string, unknown>) {
+    const withRecordedBy = { ...payload, recorded_by: session?.username ?? null };
+    const result = await supabase.from("master_data_files").insert(withRecordedBy);
+    if (result.error && result.error.message.toLowerCase().includes("recorded_by")) {
+      return supabase.from("master_data_files").insert(payload);
+    }
+    return result;
+  }
+
   async function saveDayoffShiftRows(
     rows: DayoffShiftEditorRow[],
     effectiveFrom?: string,
@@ -1028,17 +1056,15 @@ export default function Home() {
       // getMasterForDate/loadActiveMasters เป็นคนเลือกใช้เองอัตโนมัติเมื่อถึงวันที่ effective_from จริง
       // insert เวอร์ชันใหม่ก่อนเสมอ แล้วค่อยลบเวอร์ชัน pending เดิมทีหลัง (ไม่ใช่ลบก่อน insert) — ถ้า insert
       // ล้มเหลว (เช่น เน็ตหลุดกลางทาง) เวอร์ชันเดิมที่ผู้ใช้เคยตั้งไว้จะยังอยู่ครบ ไม่หายไปเฉยๆ โดยไม่มีอะไรมาแทน
-      const { error: insertError } = await supabase
-        .from("master_data_files")
-        .insert({
-          owner_id: null,
-          file_type: "dayoff_shift",
-          file_path: path,
-          original_filename: "Dayoffandshift-edited.xlsx",
-          is_active: false,
-          effective_from: targetEffectiveFrom,
-          effective_until: targetEffectiveUntil,
-        });
+      const { error: insertError } = await insertDayoffShiftMasterFile({
+        owner_id: null,
+        file_type: "dayoff_shift",
+        file_path: path,
+        original_filename: "Dayoffandshift-edited.xlsx",
+        is_active: false,
+        effective_from: targetEffectiveFrom,
+        effective_until: targetEffectiveUntil,
+      });
 
       if (insertError) {
         setError(insertError.message);
@@ -1097,17 +1123,15 @@ export default function Home() {
       throw new Error(deactivateError.message);
     }
 
-    const { error: insertError } = await supabase
-      .from("master_data_files")
-      .insert({
-        owner_id: null,
-        file_type: "dayoff_shift",
-        file_path: path,
-        original_filename: "Dayoffandshift-edited.xlsx",
-        is_active: true,
-        effective_from: targetEffectiveFrom,
-        effective_until: targetEffectiveUntil,
-      });
+    const { error: insertError } = await insertDayoffShiftMasterFile({
+      owner_id: null,
+      file_type: "dayoff_shift",
+      file_path: path,
+      original_filename: "Dayoffandshift-edited.xlsx",
+      is_active: true,
+      effective_from: targetEffectiveFrom,
+      effective_until: targetEffectiveUntil,
+    });
 
     if (insertError) {
       if (prevActiveId) {
@@ -6257,20 +6281,17 @@ function ShiftDayScheduleForm({
                       {loaded.empIds.map((empId) => {
                         const employee = employeeById.get(empId);
                         const detail = loaded.details.get(empId);
-                        const jobSiteChanged = loaded.jobSiteChangedIds.includes(empId);
-                        const dayoffChanged = loaded.dayoffChangedIds.includes(empId);
-                        const shiftChanged = loaded.shiftChangedIds.includes(empId);
                         return (
                           <tr className="dayoff-summary-org-row" key={`org-${f.id}-${empId}`}>
                             <td>{dateText}</td>
-                            <td>{empId}</td>
+                            <td>{empId} <span className="dayoff-summary-type-badge">ทั้งหน่วยงาน</span></td>
                             <td>{employee?.name ?? "-"}</td>
                             <td>{employee?.dept ?? detail?.dept ?? "-"}</td>
-                            <td>{jobSiteChanged ? (detail?.jobSite || "-") : "-"}</td>
-                            <td>{dayoffChanged ? (detail?.dayoff || "-") : "-"}</td>
-                            <td>{shiftChanged ? (detail?.shift || "-") : "-"}</td>
-                            <td>{shiftChanged ? `${detail?.shiftStart || "-"}${detail?.shiftEnd ? ` - ${detail.shiftEnd}` : ""}` : "-"}</td>
-                            <td><span className="dayoff-summary-type-badge">ทั้งหน่วยงาน</span></td>
+                            <td>{detail?.jobSite || "-"}</td>
+                            <td>{detail?.dayoff || "-"}</td>
+                            <td>{detail?.shift || "-"}</td>
+                            <td>{detail?.shiftStart || "-"}{detail?.shiftEnd ? ` - ${detail.shiftEnd}` : ""}</td>
+                            <td>{f.recorded_by || "-"}</td>
                             <td><button className="icon-button danger" type="button" title="ยกเลิกกะที่ตั้งล่วงหน้านี้ (ทั้งไฟล์)" onClick={() => guardAction(() => void onDeleteMasterFile(f))}><Trash2 size={15} /></button></td>
                           </tr>
                         );
@@ -6295,7 +6316,7 @@ function ShiftDayScheduleForm({
                     <td>{loaded && loaded.dayoffChangedIds.length > 0 ? `${loaded.dayoffChangedIds.length} คน` : "-"}</td>
                     <td>{loaded && loaded.shiftChangedIds.length > 0 ? `${loaded.shiftChangedIds.length} คน` : "-"}</td>
                     <td>-</td>
-                    <td>-</td>
+                    <td>{f.recorded_by || "-"}</td>
                     <td><button className="icon-button danger" type="button" title="ยกเลิกกะที่ตั้งล่วงหน้านี้" onClick={() => guardAction(() => void onDeleteMasterFile(f))}><Trash2 size={15} /></button></td>
                   </tr>
                 );
