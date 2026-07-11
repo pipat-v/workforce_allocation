@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -3010,7 +3010,7 @@ function setRowCol(row: Record<string, unknown>, value: string, ...targets: stri
 }
 
 function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
-  const map = new Map<string, { dayoff: string; shift: string; shiftStart: string; shiftEnd: string; section: string }>();
+  const map = new Map<string, { dayoff: string; shift: string; shiftStart: string; shiftEnd: string; section: string; dept: string }>();
   for (const row of rows) {
     const empId = cleanEmpId(
       row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]
@@ -3022,6 +3022,7 @@ function buildDayoffShiftMap(rows: Record<string, unknown>[]) {
       shiftStart: normalizeTimeText(findRowCol(row, "เวลาเข้างาน", "เวลาเข้า", "shift_start")),
       shiftEnd: normalizeTimeText(findRowCol(row, "เวลาออก", "เวลาออกงาน", "shift_end")),
       section: findRowCol(row, "หน่วยงานย่อย", "หน่วยงานย่อย/Skill", "หน้างาน", "job_site", "Job Site"),
+      dept: findRowCol(row, "หน่วยงาน", "Org. Unit Description", "Name (Section)", "แผนก", "Department"),
     });
   }
   return map;
@@ -5947,7 +5948,8 @@ function ShiftDayScheduleForm({
   // เปลี่ยน Dayoff / หน่วยงานย่อย / กะ-เวลา ฟิลด์ไหนบ้าง เอาไปโชว์แยกคอลัมน์ในตารางสรุป — โหลดแบบ async เพราะ
   // ต้องดาวน์โหลด+parse xlsx มาเทียบกัน ไม่ใช่ข้อมูลที่มีอยู่แล้วในมือ, ดึงแต่ละไฟล์ที่ตั้งล่วงหน้าไว้พร้อมกัน
   // (Promise.all) แทนทีละไฟล์ตามลำดับ เพราะแต่ละไฟล์ไม่ได้ขึ้นกับกัน รอพร้อมกันเร็วกว่ารอทีละไฟล์
-  type OrgDiffResult = { empIds: string[]; dayoffChangedIds: string[]; jobSiteChangedIds: string[]; shiftChangedIds: string[] };
+  type OrgDiffDetail = { dept: string; jobSite: string; dayoff: string; shift: string; shiftStart: string; shiftEnd: string };
+  type OrgDiffResult = { empIds: string[]; dayoffChangedIds: string[]; jobSiteChangedIds: string[]; shiftChangedIds: string[]; details: Map<string, OrgDiffDetail> };
   const [orgDiffCache, setOrgDiffCache] = useState<Map<string, OrgDiffResult | "loading" | "error">>(new Map());
   const orgDiffRequestedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -5986,6 +5988,7 @@ function ShiftDayScheduleForm({
             const dayoffChangedIds: string[] = [];
             const jobSiteChangedIds: string[] = [];
             const shiftChangedIds: string[] = [];
+            const details = new Map<string, OrgDiffDetail>();
             for (const [empId, entry] of pendingMap) {
               const base = baselineMap.get(empId);
               const dayoffChanged = !base || base.dayoff !== entry.dayoff;
@@ -5997,10 +6000,20 @@ function ShiftDayScheduleForm({
               if (dayoffChanged) dayoffChangedIds.push(empId);
               if (jobSiteChanged) jobSiteChangedIds.push(empId);
               if (shiftChanged) shiftChangedIds.push(empId);
-              if (dayoffChanged || jobSiteChanged || shiftChanged) empIds.push(empId);
+              if (dayoffChanged || jobSiteChanged || shiftChanged) {
+                empIds.push(empId);
+                details.set(empId, {
+                  dept: entry.dept,
+                  jobSite: entry.section,
+                  dayoff: entry.dayoff,
+                  shift: entry.shift,
+                  shiftStart: entry.shiftStart,
+                  shiftEnd: entry.shiftEnd,
+                });
+              }
             }
             settledIds.add(f.id);
-            if (!cancelled) setOrgDiffCache((prev) => new Map(prev).set(f.id, { empIds, dayoffChangedIds, jobSiteChangedIds, shiftChangedIds }));
+            if (!cancelled) setOrgDiffCache((prev) => new Map(prev).set(f.id, { empIds, dayoffChangedIds, jobSiteChangedIds, shiftChangedIds, details }));
           } catch (err) {
             console.error("[dayoff-shift] diff failed for pending version", f.id, err);
             settledIds.add(f.id);
@@ -6234,22 +6247,49 @@ function ShiftDayScheduleForm({
                 const f = item.file;
                 const diff = orgDiffCache.get(f.id);
                 const loaded = diff && diff !== "loading" && diff !== "error" ? diff : null;
-                const changedNames = loaded ? loaded.empIds.map((id) => `${employeeById.get(id)?.name ?? id} (${id})`) : [];
+                const dateText = `${formatDateBE(f.effective_from ?? "")}${f.effective_until ? ` - ${formatDateBE(f.effective_until)}` : ""}`;
+
+                // แก้ไม่กี่คน (<=10) โชว์เป็นรายคนพร้อมข้อมูลจริงแทนตัวเลขสรุป จะได้ไม่มีคอลัมน์
+                // ไหนขึ้น "-" ทั้งที่จริงมีข้อมูล — แก้เยอะเกินไปค่อย fallback เป็นแถวสรุปตัวเลขแบบเดิม
+                if (loaded && loaded.empIds.length > 0 && loaded.empIds.length <= 10) {
+                  return (
+                    <Fragment key={`org-${f.id}`}>
+                      {loaded.empIds.map((empId) => {
+                        const employee = employeeById.get(empId);
+                        const detail = loaded.details.get(empId);
+                        const jobSiteChanged = loaded.jobSiteChangedIds.includes(empId);
+                        const dayoffChanged = loaded.dayoffChangedIds.includes(empId);
+                        const shiftChanged = loaded.shiftChangedIds.includes(empId);
+                        return (
+                          <tr className="dayoff-summary-org-row" key={`org-${f.id}-${empId}`}>
+                            <td>{dateText}</td>
+                            <td>{empId}</td>
+                            <td>{employee?.name ?? "-"}</td>
+                            <td>{employee?.dept ?? detail?.dept ?? "-"}</td>
+                            <td>{jobSiteChanged ? (detail?.jobSite || "-") : "-"}</td>
+                            <td>{dayoffChanged ? (detail?.dayoff || "-") : "-"}</td>
+                            <td>{shiftChanged ? (detail?.shift || "-") : "-"}</td>
+                            <td>{shiftChanged ? `${detail?.shiftStart || "-"}${detail?.shiftEnd ? ` - ${detail.shiftEnd}` : ""}` : "-"}</td>
+                            <td><span className="dayoff-summary-type-badge">ทั้งหน่วยงาน</span></td>
+                            <td><button className="icon-button danger" type="button" title="ยกเลิกกะที่ตั้งล่วงหน้านี้ (ทั้งไฟล์)" onClick={() => guardAction(() => void onDeleteMasterFile(f))}><Trash2 size={15} /></button></td>
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
+                  );
+                }
+
+                const changedCount = loaded ? loaded.empIds.length : 0;
                 const summaryText = !diff || diff === "loading"
                   ? "กำลังตรวจสอบว่าแก้ไขใครไปบ้าง..."
                   : diff === "error"
                     ? "ทั้งหน่วยงาน (ตรวจสอบรายชื่อไม่สำเร็จ)"
-                    : changedNames.length === 0
+                    : changedCount === 0
                       ? "ไม่พบความเปลี่ยนแปลงเทียบกับตารางปัจจุบัน"
-                      : changedNames.length > 10
-                        ? `ทั้งหน่วยงาน (แก้ไข ${changedNames.length} คน)`
-                        : changedNames.join(", ");
+                      : `ทั้งหน่วยงาน (แก้ไข ${changedCount} คน)`;
                 return (
                   <tr className="dayoff-summary-org-row" key={`org-${f.id}`}>
-                    <td>
-                      {formatDateBE(f.effective_from ?? "")}
-                      {f.effective_until ? ` - ${formatDateBE(f.effective_until)}` : ""}
-                    </td>
+                    <td>{dateText}</td>
                     <td colSpan={3}><span className="dayoff-summary-type-badge">ทั้งหน่วยงาน</span> {summaryText}</td>
                     <td>{loaded && loaded.jobSiteChangedIds.length > 0 ? `${loaded.jobSiteChangedIds.length} คน` : "-"}</td>
                     <td>{loaded && loaded.dayoffChangedIds.length > 0 ? `${loaded.dayoffChangedIds.length} คน` : "-"}</td>
