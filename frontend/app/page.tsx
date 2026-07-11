@@ -4104,6 +4104,12 @@ function DashboardPanels({
                 <div className="sup-check-header" style={{ marginTop: "12px" }}>
                   <div className="sup-check-title">
                     <p>ตรวจสอบว่าหัวหน้าได้ตักเตือนพนักงานมาสายครบทุกคนแล้วหรือยัง</p>
+                    <div className="sup-progress-wrap">
+                      <div className="sup-progress-bar">
+                        <div className="sup-progress-fill" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="sup-progress-pct">{pct}%</span>
+                    </div>
                   </div>
                   <div className="sup-check-summary">
                     <div className="sup-check-stat">
@@ -4124,12 +4130,6 @@ function DashboardPanels({
                       {allDone ? "✓ ครบแล้ว" : `⚠ ยังค้าง ${totalPending} คน`}
                     </span>
                   </div>
-                </div>
-                <div className="sup-progress-wrap">
-                  <div className="sup-progress-bar">
-                    <div className="sup-progress-fill" style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="sup-progress-pct">{pct}%</span>
                 </div>
                 <div className="sup-check-table-wrap">
                   <table className="table compact-table">

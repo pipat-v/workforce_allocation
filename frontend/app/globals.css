@@ -4522,6 +4522,11 @@ button.stacked-row {
   flex-wrap: wrap;
 }
 
+.sup-check-title {
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+
 .sup-check-title h3 {
   font-size: 15px;
   font-weight: 600;
@@ -4602,6 +4607,14 @@ button.stacked-row {
   display: flex;
   align-items: center;
   gap: 10px;
+  margin-top: 10px;
+}
+
+/* When it's a standalone row after the header (not nested inside
+   .sup-check-title), it still needs breathing room before whatever
+   follows it (e.g. the department table). */
+.sup-check-header + .sup-progress-wrap {
+  margin-top: 0;
   margin-bottom: 16px;
 }
 
