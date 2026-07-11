@@ -63,6 +63,7 @@ type MasterFile = {
   original_filename: string | null;
   file_size_bytes: number | null;
   created_at: string;
+  effective_from?: string | null;
   is_active: boolean;
 };
 
@@ -639,18 +640,8 @@ export default function Home() {
     if (productionSyncKeyRef.current === syncKey) return;
     productionSyncKeyRef.current = syncKey;
 
-    Promise.all([
-      downloadSheetRows(employeePath),
-      downloadSheetRows(dayoffPath),
-      manpowerPath ? downloadSheetRows(manpowerPath) : Promise.resolve([] as Record<string, unknown>[]),
-    ])
-      .then(async ([employeeRows, dayoffRows, manpowerRows]) => {
-        await syncEmployeeWorkSchedules(employeeRows, dayoffRows, manpowerRows);
-        const { error: refreshError } = await supabase.rpc("refresh_production_user", { p_work_date: workDate });
-        if (refreshError) {
-          await syncProductionUsersFromMasters(workDate, employeeRows, dayoffRows, manpowerRows);
-        }
-      })
+    Promise.resolve()
+      .then(() => syncProductionSourcesFromActiveMasters(workDate))
       .catch((syncError) => {
         productionSyncKeyRef.current = "";
         setError(`sync production_user ไม่สำเร็จ: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
@@ -700,10 +691,22 @@ export default function Home() {
   }
 
   async function loadActiveMasters() {
-    const { data, error: loadError } = await supabase
+    let { data, error: loadError } = await supabase
       .from("master_data_files")
-      .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at")
+      .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at,effective_from")
       .order("created_at", { ascending: false });
+
+    if (loadError && loadError.message.toLowerCase().includes("effective_from")) {
+      const fallback = await supabase
+        .from("master_data_files")
+        .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at")
+        .order("created_at", { ascending: false });
+      data = fallback.data?.map((file: Omit<MasterFile, "effective_from">) => ({
+        ...file,
+        effective_from: file.created_at.slice(0, 10),
+      })) ?? null;
+      loadError = fallback.error;
+    }
 
     if (loadError) {
       setError(loadError.message);
@@ -778,6 +781,23 @@ export default function Home() {
     if (idsToUpdate.length === 0) return;
     await supabase.from("allocation_runs").update({ [field]: path }).in("id", idsToUpdate);
     await loadRuns();
+  }
+
+  function getMasterForDate(fileType: MasterFileKey, isoDate: string): MasterFile | null {
+    const candidates = masterFileHistory
+      .filter((file) => file.file_type === fileType)
+      .sort((a, b) => {
+        const effectiveDiff = (b.effective_from ?? b.created_at.slice(0, 10)).localeCompare(a.effective_from ?? a.created_at.slice(0, 10));
+        if (effectiveDiff !== 0) return effectiveDiff;
+        return b.created_at.localeCompare(a.created_at);
+      });
+    return candidates.find((file) => (file.effective_from ?? file.created_at.slice(0, 10)) <= isoDate)
+      ?? candidates.find((file) => file.is_active)
+      ?? null;
+  }
+
+  function getMasterPathForDate(fileType: MasterFileKey, isoDate: string): string | undefined {
+    return getMasterForDate(fileType, isoDate)?.file_path ?? activeMasterMap[fileType]?.file_path;
   }
 
   async function loadRuns() {
@@ -863,6 +883,7 @@ export default function Home() {
       });
       setMessage("บันทึก master files แล้ว");
       await loadActiveMasters();
+      await syncProductionAfterMasterChange();
     } finally {
       setIsSavingMasters(false);
     }
@@ -945,6 +966,7 @@ export default function Home() {
     setMessage("บันทึก Dayoff & Shift master แล้ว");
     await loadActiveMasters();
     await syncActiveRunSnapshots("dayoff_shift_file_path", path);
+    await syncProductionAfterMasterChange();
   }
 
   async function saveManpowerRows(rows: ManpowerEditorRow[]) {
@@ -1021,6 +1043,7 @@ export default function Home() {
     setMessage("บันทึก Manpower Plan แล้ว");
     await loadActiveMasters();
     await syncActiveRunSnapshots("manpower_file_path", path);
+    await syncProductionAfterMasterChange();
   }
 
   async function syncEmployeeSkillsTable(rows: SkillMatrixSaveRow[], sourceFileId: string) {
@@ -1144,6 +1167,7 @@ export default function Home() {
 
     setMessage(`บันทึก Skill Matrix และ sync employee_skills ${rows.length.toLocaleString()} แถวแล้ว`);
     await loadActiveMasters();
+    await syncProductionAfterMasterChange();
   }
 
   async function downloadTimestampFile(run: AllocationRun) {
@@ -1244,10 +1268,10 @@ export default function Home() {
         scan_file_path: scanPath,
         original_filename: timestampFile.name,
         record_count: recordCountsByDate.get(targetDate) ?? null,
-        master_file_path: activeMasterMap.employee_master?.file_path,
-        manpower_file_path: activeMasterMap.manpower_plan?.file_path,
-        skill_file_path: activeMasterMap.skill_matrix?.file_path,
-        dayoff_shift_file_path: activeMasterMap.dayoff_shift?.file_path,
+        master_file_path: getMasterPathForDate("employee_master", targetDate),
+        manpower_file_path: getMasterPathForDate("manpower_plan", targetDate),
+        skill_file_path: getMasterPathForDate("skill_matrix", targetDate),
+        dayoff_shift_file_path: getMasterPathForDate("dayoff_shift", targetDate),
       }));
       const { error: insertError } = await supabase.from("allocation_runs").insert(runRows);
       if (insertError) {
@@ -1283,9 +1307,10 @@ export default function Home() {
 
       // Use the master-file snapshot stored with this run (historical accuracy).
       // Fall back to the current active master only when the run pre-dates snapshot storage.
-      const empPath      = latestRun.master_file_path        ?? employeeMaster.file_path;
-      const manpowerPath = latestRun.manpower_file_path      ?? activeMasterMap.manpower_plan?.file_path;
-      const dayoffPath   = latestRun.dayoff_shift_file_path  ?? activeMasterMap.dayoff_shift?.file_path;
+      const currentDateKey = latestRun.target_date ?? latestRun.created_at.slice(0, 10);
+      const empPath      = latestRun.master_file_path        ?? getMasterPathForDate("employee_master", currentDateKey) ?? employeeMaster.file_path;
+      const manpowerPath = latestRun.manpower_file_path      ?? getMasterPathForDate("manpower_plan", currentDateKey);
+      const dayoffPath   = latestRun.dayoff_shift_file_path  ?? getMasterPathForDate("dayoff_shift", currentDateKey);
 
       const [employeeRows, scanRows, manpowerRows, dayoffShiftRows] = await Promise.all([
         downloadSheetRows(empPath),
@@ -1295,7 +1320,6 @@ export default function Home() {
       ]);
 
       // Find adjacent runs to supply night-shift clock-in/out times
-      const currentDateKey = latestRun.target_date ?? latestRun.created_at.slice(0, 10);
       const prevRun = [...runs]
         .filter(
           (r) =>
@@ -1415,9 +1439,14 @@ export default function Home() {
       // the already-loaded employeeRows/manpowerRows/dayoffShiftRows from above.
       const masterRowsCache = new Map<string, Record<string, unknown>[]>();
       const uniquePaths = new Set(
-        sortedMonthlyRuns.flatMap((r) =>
-          [r.master_file_path, r.manpower_file_path, r.dayoff_shift_file_path].filter(Boolean) as string[]
-        ),
+        sortedMonthlyRuns.flatMap((r) => {
+          const runDate = r.target_date ?? r.created_at.slice(0, 10);
+          return [
+            r.master_file_path ?? getMasterPathForDate("employee_master", runDate),
+            r.manpower_file_path ?? getMasterPathForDate("manpower_plan", runDate),
+            r.dayoff_shift_file_path ?? getMasterPathForDate("dayoff_shift", runDate),
+          ].filter(Boolean) as string[];
+        }),
       );
       await Promise.all(
         [...uniquePaths].map(async (p) => {
@@ -1440,10 +1469,14 @@ export default function Home() {
         const prevRows = monthlyScanRows[mi - 1] ?? [];
         const nextRows = monthlyScanRows[mi + 1] ?? [];
         const run = sortedMonthlyRuns[mi];
-        const runEmpRows      = (run.master_file_path       ? masterRowsCache.get(run.master_file_path)       : null) ?? employeeRows;
-        const runManpowerRows = (run.manpower_file_path     ? masterRowsCache.get(run.manpower_file_path)     : null) ?? manpowerRows;
-        const runDayoffRows   = (run.dayoff_shift_file_path ? masterRowsCache.get(run.dayoff_shift_file_path) : null) ?? dayoffShiftRows;
-        const dayReport = buildReportData(runEmpRows, rows, runManpowerRows, runDayoffRows, holidayDates, prevRows, nextRows, run.target_date ?? run.created_at.slice(0, 10));
+        const runDate = run.target_date ?? run.created_at.slice(0, 10);
+        const runEmpPath = run.master_file_path ?? getMasterPathForDate("employee_master", runDate);
+        const runManpowerPath = run.manpower_file_path ?? getMasterPathForDate("manpower_plan", runDate);
+        const runDayoffPath = run.dayoff_shift_file_path ?? getMasterPathForDate("dayoff_shift", runDate);
+        const runEmpRows      = (runEmpPath      ? masterRowsCache.get(runEmpPath)      : null) ?? employeeRows;
+        const runManpowerRows = (runManpowerPath ? masterRowsCache.get(runManpowerPath) : null) ?? manpowerRows;
+        const runDayoffRows   = (runDayoffPath   ? masterRowsCache.get(runDayoffPath)   : null) ?? dayoffShiftRows;
+        const dayReport = buildReportData(runEmpRows, rows, runManpowerRows, runDayoffRows, holidayDates, prevRows, nextRows, runDate);
 
         if (dayReport.targetMonthKey === latestReport.targetMonthKey) {
           const runDate = dayReport.isoTargetDate;
@@ -1618,6 +1651,45 @@ export default function Home() {
       if (insertError) batchErrors.push(insertError.message);
     }
     if (batchErrors.length > 0) throw new Error(batchErrors.join("; "));
+  }
+
+  async function syncProductionSourcesFromActiveMasters(workDate = getLocalIsoDate()) {
+    const { data: activeFiles, error: activeFilesError } = await supabase
+      .from("master_data_files")
+      .select("file_type,file_path")
+      .is("owner_id", null)
+      .eq("is_active", true);
+    if (activeFilesError) throw new Error(activeFilesError.message);
+
+    const activeMap = new Map((activeFiles ?? []).map((file: { file_type: MasterFileKey; file_path: string }) => [file.file_type, file.file_path]));
+    const employeePath = activeMap.get("employee_master");
+    const dayoffPath = activeMap.get("dayoff_shift");
+    const manpowerPath = activeMap.get("manpower_plan");
+    if (!employeePath || !dayoffPath) {
+      throw new Error("ยังไม่มี Employee Master หรือ Dayoff & Shift active สำหรับ sync production_user");
+    }
+
+    const [employeeRows, dayoffRows, manpowerRows] = await Promise.all([
+      downloadSheetRows(employeePath),
+      downloadSheetRows(dayoffPath),
+      manpowerPath ? downloadSheetRows(manpowerPath) : Promise.resolve([] as Record<string, unknown>[]),
+    ]);
+
+    await syncEmployeeWorkSchedules(employeeRows, dayoffRows, manpowerRows);
+    const { error: refreshError } = await supabase.rpc("refresh_production_user", { p_work_date: workDate });
+    if (refreshError) {
+      await syncProductionUsersFromMasters(workDate, employeeRows, dayoffRows, manpowerRows);
+    }
+  }
+
+  async function syncProductionAfterMasterChange() {
+    try {
+      await syncProductionSourcesFromActiveMasters();
+      setMessage((current) => current ? `${current} และ sync production_user แล้ว` : "sync production_user แล้ว");
+    } catch (syncError) {
+      const syncMessage = syncError instanceof Error ? syncError.message : String(syncError);
+      setError(`บันทึก master แล้ว แต่ sync production_user ไม่สำเร็จ: ${syncMessage}`);
+    }
   }
 
   async function syncProductionUsersFromMasters(
@@ -2142,7 +2214,10 @@ export default function Home() {
             masterUploads={masterUploads}
             onDeleteMasterFile={guardedProp(4, "Master Data", deleteMasterFile)}
             onHolidaysChanged={(dates) => setHolidayDates(dates)}
-            onMastersSaved={loadActiveMasters}
+            onMastersSaved={async () => {
+              await loadActiveMasters();
+              await syncProductionAfterMasterChange();
+            }}
             saveDayoffShiftRows={guardedProp(4, "Master Data", saveDayoffShiftRows)}
             saveManpowerRows={guardedProp(4, "Master Data", saveManpowerRows)}
             saveMasterFiles={guardedProp(4, "Master Data", saveMasterFiles)}
@@ -7032,6 +7107,7 @@ function SkillMatrixPage({
   const [allEmpList, setAllEmpList] = useState<Array<{ empId: string; name: string }>>([]);
   const [query, setQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("all");
+  const [selectedJobSite, setSelectedJobSite] = useState("all");
   const [selectedSkill, setSelectedSkill] = useState("all");
   const [selectedShift, setSelectedShift] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -7226,11 +7302,20 @@ function SkillMatrixPage({
   }, [activeFile?.file_path, employeeMasterFile?.file_path, dayoffShiftFile?.file_path]);
 
   const deptOptions = Array.from(new Set(rows.map((r) => r.dept).filter(Boolean))).sort();
+  const jobSiteOptions = Array.from(
+    new Set(
+      rows
+        .filter((r) => selectedDept === "all" || r.dept === selectedDept)
+        .map((r) => r.jobSite)
+        .filter(Boolean),
+    ),
+  ).sort();
   const skillOptions = Array.from(new Set(rows.map((r) => r.skill).filter(Boolean))).sort();
   const shiftOptions = Array.from(new Set(rows.map((r) => r.shift).filter(Boolean))).sort();
   const normalizedQuery = query.trim().toLowerCase();
   const filteredRows = rows.filter((row) => {
     if (selectedDept !== "all" && row.dept !== selectedDept) return false;
+    if (selectedJobSite !== "all" && row.jobSite !== selectedJobSite) return false;
     if (selectedSkill !== "all" && row.skill !== selectedSkill) return false;
     if (selectedShift !== "all" && row.shift !== selectedShift) return false;
     if (!normalizedQuery) return true;
@@ -7679,9 +7764,13 @@ function SkillMatrixPage({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
+        <select value={selectedDept} onChange={(e) => { setSelectedDept(e.target.value); setSelectedJobSite("all"); }}>
           <option value="all">ทุกแผนก</option>
           {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select value={selectedJobSite} onChange={(e) => setSelectedJobSite(e.target.value)}>
+          <option value="all">ทุกหน่วยงานย่อย</option>
+          {jobSiteOptions.map((jobSite) => <option key={jobSite} value={jobSite}>{jobSite}</option>)}
         </select>
         <select value={selectedSkill} onChange={(e) => setSelectedSkill(e.target.value)}>
           <option value="all">ทุก Skill</option>
