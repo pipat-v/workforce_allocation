@@ -9158,24 +9158,26 @@ function ReportDashboard({
             คนเหล่านี้ scan เข้าออกจริง แต่รหัสพนักงานไม่ตรงกับไฟล์ master ที่ใช้อยู่ —
             ตรวจสอบว่าเป็นรหัสใหม่ที่ยังไม่ sync เข้า master หรือรูปแบบรหัสไม่ตรงกัน
           </p>
-          <table className="table data-table">
-            <thead>
-              <tr>
-                <th>รหัสพนักงาน</th>
-                <th>ชื่อ (จากไฟล์ scan)</th>
-                <th>เวลา scan แรกสุด</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.unmatchedScanIds.map((row) => (
-                <tr key={row.empId}>
-                  <td>{row.empId}</td>
-                  <td>{row.name}</td>
-                  <td>{row.scanIn}</td>
+          <div className="table-scroll">
+            <table className="table data-table">
+              <thead>
+                <tr>
+                  <th>รหัสพนักงาน</th>
+                  <th>ชื่อ (จากไฟล์ scan)</th>
+                  <th>เวลา scan แรกสุด</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.unmatchedScanIds.map((row) => (
+                  <tr key={row.empId}>
+                    <td>{row.empId}</td>
+                    <td>{row.name}</td>
+                    <td>{row.scanIn}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       ) : null}
     </section>

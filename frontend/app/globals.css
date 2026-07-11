@@ -3964,6 +3964,10 @@ button.stacked-row {
     min-width: 0;
   }
 
+  .report-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .kpi-grid,
   .kpi-grid.kpi-grid-5,
   .dashboard-grid,
@@ -3973,7 +3977,7 @@ button.stacked-row {
   .report-grid,
   .report-kpis,
   .table-filters {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .report-table-header {
