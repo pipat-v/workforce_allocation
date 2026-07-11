@@ -592,9 +592,9 @@ export default function UserAccessSettings({
         <div className="settings-current-header">
           <h3>ผู้ใช้ระบบ & สิทธิ์การเข้าเมนู</h3>
           {canEdit ? (
-            <button className="secondary-button small" type="button" onClick={() => void loadCurrent()} disabled={isLoading}>
-              <RotateCw size={14} />
-              รีเฟรช
+            <button className="reload-fab" type="button" onClick={() => window.location.reload()}>
+              <RotateCw size={15} />
+              <span>รีโหลด</span>
             </button>
           ) : null}
         </div>
