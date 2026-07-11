@@ -3831,13 +3831,14 @@ function DashboardPanels({
           <div className="late-preview-table">
             <table className="table compact-table">
               <colgroup>
-                <col style={{ width: "17%" }} />
                 <col style={{ width: "15%" }} />
-                <col style={{ width: "9%" }} />
                 <col style={{ width: "14%" }} />
-                <col style={{ width: "11%" }} />
-                <col style={{ width: "15%" }} />
-                <col style={{ width: "19%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "12%" }} />
               </colgroup>
               <thead>
                 <tr>
