@@ -23,6 +23,7 @@ import {
   LayoutGrid,
   LogOut,
   Menu,
+  Pencil,
   RotateCw,
   Search,
   Settings,
@@ -64,6 +65,7 @@ type MasterFile = {
   file_size_bytes: number | null;
   created_at: string;
   effective_from?: string | null;
+  effective_until?: string | null;
   is_active: boolean;
 };
 
@@ -87,6 +89,20 @@ type ManpowerEditorRow = {
   shift: string;
   shiftStart: string;
   shiftEnd: string;
+};
+
+// ตั้งกะพิเศษเฉพาะวันล่วงหน้าของพนักงานรายคน (แถวจากตาราง shift_schedule_overrides) — ใช้ override
+// กะ/เวลา/dayoff ของวันนั้นในการคำนวณ report โดยไม่กระทบตารางกะประจำของพนักงานคนนั้น
+type ShiftOverrideRow = {
+  id?: string;
+  emp_id: string;
+  work_date: string;
+  dept?: string | null;
+  job_site?: string | null;
+  shift: string;
+  shift_start?: string | null;
+  shift_end?: string | null;
+  recorded_by?: string | null;
 };
 
 type SkillMatrixSaveRow = {
@@ -371,6 +387,7 @@ export default function Home() {
     for (const s of Object.values(buddhistHolyDaysByYear)) for (const d of s) all.add(d);
     return all;
   });
+  const [shiftOverrideRows, setShiftOverrideRows] = useState<ShiftOverrideRow[]>([]);
 
   const isoTargetDate = reportData?.isoTargetDate ?? "";
 
@@ -686,6 +703,27 @@ export default function Home() {
       });
   }, []);
 
+  // ตารางเล็ก โหลดเก็บไว้ที่ระดับแอป เหมือน holidayDates — buildReportData เป็นคน filter ด้วยวันที่ที่กำลัง
+  // คำนวณเอง (ดู shiftOverrideByEmp ใน buildReportData) — ต้อง reload ได้ (ไม่ใช่แค่ตอน mount ครั้งเดียว)
+  // เพราะหน้า "ตั้งกะล่วงหน้ารายคน" ต้องเรียกให้โหลดใหม่หลังบันทึก/ลบ ไม่งั้นรายงานในหน้าเดิม (ไม่ reload
+  // เบราว์เซอร์) จะยังใช้ค่าเก่าที่โหลดตอน mount อยู่ — .order + .limit กันไม่ให้ค่า default row cap ของ
+  // PostgREST (มักเป็น 1000 แถว) ตัดข้อมูลทิ้งแบบเงียบๆ เมื่อมีการตั้งกะล่วงหน้าสะสมมาก
+  async function loadShiftOverrides() {
+    // เรียง work_date ใหม่สุดก่อน (ไม่ใช่เก่าสุดก่อน) แล้ว limit — ถ้าวันหนึ่งข้อมูลเกิน 5000 แถวจริง อยาก
+    // ให้แถวที่ถูกตัดทิ้งคือของเก่ามาก ๆ ไม่ใช่ของปัจจุบัน/อนาคตที่ยังใช้งานจริงอยู่
+    const { data, error } = await supabase
+      .from("shift_schedule_overrides")
+      .select("id, emp_id, work_date, dept, job_site, shift, shift_start, shift_end, recorded_by")
+      .order("work_date", { ascending: false })
+      .limit(5000);
+    if (error) { setError(error.message); return; }
+    setShiftOverrideRows((data ?? []) as ShiftOverrideRow[]);
+  }
+
+  useEffect(() => {
+    void loadShiftOverrides();
+  }, []);
+
   async function loadDashboard() {
     await Promise.all([loadRuns(), loadActiveMasters()]);
   }
@@ -693,17 +731,31 @@ export default function Home() {
   async function loadActiveMasters() {
     let { data, error: loadError } = await supabase
       .from("master_data_files")
-      .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at,effective_from")
+      .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at,effective_from,effective_until")
       .order("created_at", { ascending: false });
+
+    if (loadError && loadError.message.toLowerCase().includes("effective_until")) {
+      const fallback = await supabase
+        .from("master_data_files")
+        .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at,effective_from")
+        .order("created_at", { ascending: false });
+      data = fallback.data?.map((file: Omit<MasterFile, "effective_until">) => ({
+        ...file,
+        effective_from: file.effective_from ?? null,
+        effective_until: null,
+      })) ?? null;
+      loadError = fallback.error;
+    }
 
     if (loadError && loadError.message.toLowerCase().includes("effective_from")) {
       const fallback = await supabase
         .from("master_data_files")
         .select("id,file_type,file_path,original_filename,file_size_bytes,is_active,created_at")
         .order("created_at", { ascending: false });
-      data = fallback.data?.map((file: Omit<MasterFile, "effective_from">) => ({
+      data = fallback.data?.map((file: Omit<MasterFile, "effective_from" | "effective_until">) => ({
         ...file,
         effective_from: file.created_at.slice(0, 10),
+        effective_until: null,
       })) ?? null;
       loadError = fallback.error;
     }
@@ -753,11 +805,31 @@ export default function Home() {
       }
     }
 
-    const latestByType = new Map<MasterFileKey, MasterFile>();
+    // เลือกไฟล์ "ที่มีผลจริงวันนี้" ต่อ file_type ด้วยตรรกะเดียวกับ getMasterForDate (เรียงตาม
+    // effective_from desc แล้วหาตัวแรกที่ effective_from <= วันนี้) แทนที่จะเชื่อ flag is_active ตรงๆ
+    // เพราะไฟล์ที่ตั้งกะล่วงหน้าไว้ (effective_from ในอนาคต) จะถูก insert โดย is_active: false — พอถึงวันที่
+    // effective ไฟล์นั้นควร "กลายเป็น active" เองโดยไม่ต้องมี cron มาพลิก flag
+    const todayIso = todayIsoLocal();
+    const byType = new Map<MasterFileKey, MasterFile[]>();
     for (const item of allFiles) {
-      if (item.is_active && !latestByType.has(item.file_type)) {
-        latestByType.set(item.file_type, item);
-      }
+      const list = byType.get(item.file_type) ?? [];
+      list.push(item);
+      byType.set(item.file_type, list);
+    }
+    const latestByType = new Map<MasterFileKey, MasterFile>();
+    for (const [fileType, files] of byType) {
+      const sorted = [...files].sort((a, b) => {
+        const effectiveDiff = (b.effective_from ?? b.created_at.slice(0, 10)).localeCompare(a.effective_from ?? a.created_at.slice(0, 10));
+        if (effectiveDiff !== 0) return effectiveDiff;
+        return b.created_at.localeCompare(a.created_at);
+      });
+      const current = sorted.find((f) => isMasterFileEffectiveOn(f, todayIso))
+        // เหมือนใน getMasterForDate — ถ้าไม่มีเวอร์ชันไหนยังไม่หมดอายุครอบคลุมวันนี้ ให้ใช้เวอร์ชันที่เริ่มแล้ว
+        // ล่าสุดแทนก่อนจะพึ่ง is_active ซึ่งอาจค้างอยู่ที่เวอร์ชันเดียวกันที่หมดอายุไปแล้ว
+        ?? sorted.find((f) => (f.effective_from ?? f.created_at.slice(0, 10)) <= todayIso)
+        ?? sorted.find((f) => f.is_active)
+        ?? sorted[0];
+      if (current) latestByType.set(fileType, current);
     }
 
     setActiveMasters(Array.from(latestByType.values()));
@@ -791,7 +863,11 @@ export default function Home() {
         if (effectiveDiff !== 0) return effectiveDiff;
         return b.created_at.localeCompare(a.created_at);
       });
-    return candidates.find((file) => (file.effective_from ?? file.created_at.slice(0, 10)) <= isoDate)
+    return candidates.find((file) => isMasterFileEffectiveOn(file, isoDate))
+      // ไม่มีเวอร์ชันไหน "ยังไม่หมดอายุ" ครอบคลุมวันนี้เลย (เช่น เวอร์ชันล่าสุดมี effective_until ที่หมดไปแล้ว
+      // และไม่มีเวอร์ชันเก่ากว่าให้ย้อนกลับไปใช้) — fallback มาใช้เวอร์ชันที่ "เริ่มแล้ว" ล่าสุดโดยไม่สนวันหมดอายุ
+      // ดีกว่าใช้ flag is_active ตรงๆ ซึ่งอาจค้างอยู่ที่เวอร์ชันที่หมดอายุไปแล้วเหมือนกัน
+      ?? candidates.find((file) => (file.effective_from ?? file.created_at.slice(0, 10)) <= isoDate)
       ?? candidates.find((file) => file.is_active)
       ?? null;
   }
@@ -889,9 +965,31 @@ export default function Home() {
     }
   }
 
-  async function saveDayoffShiftRows(rows: DayoffShiftEditorRow[]) {
+  // effectiveFrom: วันที่ให้เวอร์ชันนี้เริ่มมีผล (ค่าเริ่มต้น = วันนี้ = มีผลทันทีเหมือนเดิม)
+  // effectiveUntil: วันสุดท้ายที่ยังมีผล (ไม่ระบุ = ไม่มีกำหนด ใช้ต่อเนื่องไปจนกว่าจะมีเวอร์ชันใหม่มาแทน) —
+  // พอพ้นวันนี้ไป isMasterFileEffectiveOn จะข้ามเวอร์ชันนี้เอง แล้วย้อนกลับไปใช้เวอร์ชันก่อนหน้าโดยอัตโนมัติ
+  // replaceFileId: id ของเวอร์ชัน "ตั้งกะล่วงหน้า" เดิมที่กำลังแก้ไขอยู่ (ถ้ามี) — ลบทิ้งก่อน insert ใหม่
+  // กันไม่ให้มีหลายเวอร์ชันซ้อนกันที่ effective_from เดียวกันจากการกด Save ซ้ำ
+  async function saveDayoffShiftRows(
+    rows: DayoffShiftEditorRow[],
+    effectiveFrom?: string,
+    replaceFileId?: string | null,
+    effectiveUntil?: string | null,
+  ) {
     setError("");
     setMessage("");
+
+    const todayIso = todayIsoLocal();
+    // ห้ามย้อนหลัง แม้ผู้เรียกจะส่งวันที่ในอดีตมา (เช่น input ที่ browser ไม่ได้บังคับ min ให้จริงๆ) —
+    // ยึดตรรกะเดียวกับที่ UI ใช้กันไว้แล้ว แต่บังคับซ้ำที่ระดับฟังก์ชันนี้ด้วยเพื่อความปลอดภัย
+    const targetEffectiveFrom = effectiveFrom && effectiveFrom > todayIso ? effectiveFrom : todayIso;
+    const targetEffectiveUntil = effectiveUntil || null;
+    if (targetEffectiveUntil && targetEffectiveUntil < targetEffectiveFrom) {
+      const msg = "วันสิ้นสุดต้องไม่น้อยกว่าวันที่มีผลตั้งแต่";
+      setError(msg);
+      throw new Error(msg);
+    }
+    const isFutureScheduled = targetEffectiveFrom > todayIso;
 
     const fileId = crypto.randomUUID();
     const path = `${publicWorkspace}/masters/dayoff_shift/${fileId}.xlsx`;
@@ -925,6 +1023,60 @@ export default function Home() {
       throw new Error(uploadError.message);
     }
 
+    if (isFutureScheduled) {
+      // ตั้งกะล่วงหน้า: ห้ามแตะไฟล์ที่ active อยู่ตอนนี้ — insert เป็นเวอร์ชันใหม่ is_active: false แล้วปล่อยให้
+      // getMasterForDate/loadActiveMasters เป็นคนเลือกใช้เองอัตโนมัติเมื่อถึงวันที่ effective_from จริง
+      // insert เวอร์ชันใหม่ก่อนเสมอ แล้วค่อยลบเวอร์ชัน pending เดิมทีหลัง (ไม่ใช่ลบก่อน insert) — ถ้า insert
+      // ล้มเหลว (เช่น เน็ตหลุดกลางทาง) เวอร์ชันเดิมที่ผู้ใช้เคยตั้งไว้จะยังอยู่ครบ ไม่หายไปเฉยๆ โดยไม่มีอะไรมาแทน
+      const { error: insertError } = await supabase
+        .from("master_data_files")
+        .insert({
+          owner_id: null,
+          file_type: "dayoff_shift",
+          file_path: path,
+          original_filename: "Dayoffandshift-edited.xlsx",
+          is_active: false,
+          effective_from: targetEffectiveFrom,
+          effective_until: targetEffectiveUntil,
+        });
+
+      if (insertError) {
+        setError(insertError.message);
+        throw new Error(insertError.message);
+      }
+
+      // insert สำเร็จแล้ว — ค่อยลบเวอร์ชัน pending เดิมที่ effective_from วันเดียวกันทิ้ง (ไม่ใช่แค่ตอน
+      // replaceFileId ถูกส่งมา) กันไม่ให้มีสองเวอร์ชันซ้อนกันที่วันเดียวกันจากการกด Save ซ้ำโดยไม่ได้กด "แก้ไข"
+      // เวอร์ชันเดิมก่อน — ถ้าขั้นตอนนี้ล้มเหลวหลัง insert สำเร็จแล้ว อย่างมากก็มีไฟล์เก่าค้าง (ลบซ้ำทีหลังได้)
+      // ไม่ใช่ข้อมูลหาย เพราะเวอร์ชันใหม่ถูกบันทึกไว้แล้วจริง
+      const { data: pendingFiles } = await supabase
+        .from("master_data_files")
+        .select("id, file_path")
+        .is("owner_id", null)
+        .eq("file_type", "dayoff_shift")
+        .eq("effective_from", targetEffectiveFrom)
+        .neq("file_path", path);
+      const idsToRemove = new Set((pendingFiles ?? []).map((f) => f.id));
+      if (replaceFileId) idsToRemove.add(replaceFileId);
+      if (idsToRemove.size > 0) {
+        const pathsToRemove = (pendingFiles ?? [])
+          .filter((f) => idsToRemove.has(f.id))
+          .map((f) => f.file_path);
+        await supabase.from("master_data_files").delete().in("id", Array.from(idsToRemove));
+        if (pathsToRemove.length > 0) {
+          await supabase.storage.from("workforce-inputs").remove(pathsToRemove);
+        }
+      }
+
+      setMessage(
+        targetEffectiveUntil
+          ? `ตั้งกะล่วงหน้าไว้แล้ว มีผลตั้งแต่วันที่ ${targetEffectiveFrom} ถึง ${targetEffectiveUntil}`
+          : `ตั้งกะล่วงหน้าไว้แล้ว มีผลตั้งแต่วันที่ ${targetEffectiveFrom}`,
+      );
+      await loadActiveMasters();
+      return;
+    }
+
     const { data: prevActive } = await supabase
       .from("master_data_files")
       .select("id")
@@ -953,6 +1105,8 @@ export default function Home() {
         file_path: path,
         original_filename: "Dayoffandshift-edited.xlsx",
         is_active: true,
+        effective_from: targetEffectiveFrom,
+        effective_until: targetEffectiveUntil,
       });
 
     if (insertError) {
@@ -961,6 +1115,20 @@ export default function Home() {
       }
       setError(insertError.message);
       throw new Error(insertError.message);
+    }
+
+    // ถ้ากำลังแก้เวอร์ชัน "ตั้งล่วงหน้า" เดิมอยู่ แล้วเปลี่ยนใจให้มีผลทันที (ย้ายวันที่กลับมาเป็นวันนี้) —
+    // ต้องลบเวอร์ชัน pending เดิมทิ้งด้วย ไม่งั้นมันจะค้างอยู่แล้วย้อนมาแทนที่การบันทึกนี้เองเมื่อถึงวันที่เดิม
+    if (replaceFileId) {
+      const { data: pendingFile } = await supabase
+        .from("master_data_files")
+        .select("file_path")
+        .eq("id", replaceFileId)
+        .maybeSingle();
+      await supabase.from("master_data_files").delete().eq("id", replaceFileId);
+      if (pendingFile?.file_path) {
+        await supabase.storage.from("workforce-inputs").remove([pendingFile.file_path]);
+      }
     }
 
     setMessage("บันทึก Dayoff & Shift master แล้ว");
@@ -1212,7 +1380,14 @@ export default function Home() {
 
   async function deleteMasterFile(file: MasterFile) {
     const label = file.original_filename ?? file.file_type;
-    const activeWarning = file.is_active ? "\n⚠️ ไฟล์นี้กำลัง Active อยู่ — หลังลบระบบจะไม่มีข้อมูล Master สำหรับประเภทนี้" : "";
+    // เช็คว่าเป็นไฟล์ที่ "กำลังใช้งานจริง" ตอนนี้จาก activeMasterMap (คำนวณตามวันที่จริง) ไม่ใช่ flag is_active
+    // ดิบๆ — เพราะไฟล์ที่ตั้งกะล่วงหน้าไว้ (ยังไม่ถึงวันที่) จะมี is_active: false อยู่แล้วโดยตั้งใจ ไม่ควรเตือนแบบนี้
+    // ส่วนไฟล์เก่าที่เคย active แต่ถูกแทนที่ไปแล้ว ถ้าลบไฟล์ที่ active อยู่ตอนนี้ ระบบจะย้อนไปใช้ไฟล์เก่าที่สุด
+    // ที่ยังไม่หมดอายุแทน (ไม่ได้ว่างเปล่าไปเฉยๆ เหมือนคำเตือนเดิมบอก)
+    const isCurrentlyActive = file.id === activeMasterMap[file.file_type]?.id;
+    const activeWarning = isCurrentlyActive
+      ? "\n⚠️ ไฟล์นี้กำลังใช้งานอยู่ — หลังลบระบบจะย้อนไปใช้เวอร์ชันก่อนหน้าล่าสุดที่ยังไม่หมดอายุแทน (ถ้ามี) หรือไม่มีข้อมูล Master สำหรับประเภทนี้เลยถ้าไม่มีเวอร์ชันก่อนหน้า"
+      : "";
     if (!window.confirm(`ต้องการลบ "${label}" ใช่ไหม?\nการลบไม่สามารถย้อนกลับได้${activeWarning}`)) return;
     setError("");
     // Delete DB record first — if storage fails the record is gone (clean UI) but file is orphaned (harmless)
@@ -1353,7 +1528,7 @@ export default function Home() {
           : Promise.resolve([] as Record<string, unknown>[]),
       ]);
 
-      const baseReport = buildReportData(employeeRows, scanRows, manpowerRows, dayoffShiftRows, holidayDates, prevScanRows, nextScanRows, currentDateKey);
+      const baseReport = buildReportData(employeeRows, scanRows, manpowerRows, dayoffShiftRows, holidayDates, prevScanRows, nextScanRows, currentDateKey, shiftOverrideRows);
       const { data: leaveRows, error: leaveError } = await supabase
         .from("leave_records")
         .select("emp_id, leave_type")
@@ -1476,7 +1651,7 @@ export default function Home() {
         const runEmpRows      = (runEmpPath      ? masterRowsCache.get(runEmpPath)      : null) ?? employeeRows;
         const runManpowerRows = (runManpowerPath ? masterRowsCache.get(runManpowerPath) : null) ?? manpowerRows;
         const runDayoffRows   = (runDayoffPath   ? masterRowsCache.get(runDayoffPath)   : null) ?? dayoffShiftRows;
-        const dayReport = buildReportData(runEmpRows, rows, runManpowerRows, runDayoffRows, holidayDates, prevRows, nextRows, runDate);
+        const dayReport = buildReportData(runEmpRows, rows, runManpowerRows, runDayoffRows, holidayDates, prevRows, nextRows, runDate, shiftOverrideRows);
 
         if (dayReport.targetMonthKey === latestReport.targetMonthKey) {
           const runDate = dayReport.isoTargetDate;
@@ -1701,6 +1876,10 @@ export default function Home() {
     const targetDate = new Date(`${workDate}T12:00:00`);
     const dayoffMap = buildDayoffShiftMap(dayoffRows);
     const manpowerLookup = buildManpowerLookup(parseManpowerRows(manpowerRows));
+    // ตั้งกะพิเศษเฉพาะวันล่วงหน้าไว้หรือไม่ — ใช้ผูก production_user ให้เห็นคนที่ถูกตั้งกะพิเศษด้วย
+    // เหมือนที่ buildReportData ทำกับ report/dashboard หลัก ไม่งั้นระบบอื่นที่อ่าน production_user ต่อ
+    // (เช่น Late Arrivals Dashboard) จะไม่รู้จักกะพิเศษที่ตั้งไว้ในหน้า "ตั้งกะล่วงหน้ารายคน" เลย
+    const overrideByEmp = new Map(shiftOverrideRows.filter((r) => r.work_date === workDate).map((r) => [r.emp_id, r]));
     const { data: leaveRows, error: leaveError } = await supabase
       .from("leave_records")
       .select("emp_id")
@@ -1712,22 +1891,25 @@ export default function Home() {
       const firstName = String(row["First Name (Local)"] ?? "").trim();
       const lastName = String(row["Last Name (Local)"] ?? "").trim();
       const schedule = dayoffMap.get(empId);
+      const override = overrideByEmp.get(empId);
       const dept = String(row["หน่วยงาน"] ?? row["dept"] ?? row["Name (Section)"] ?? "ไม่ระบุ").trim() || "ไม่ระบุ";
-      const shift = normalizeShiftLabel(schedule?.shift) || "กะ 1";
-      const manpower = lookupManpowerTime(manpowerLookup, dept, schedule?.section ?? "", shift);
+      const jobSite = override?.job_site || schedule?.section || "";
+      const shift = normalizeShiftLabel(override?.shift || schedule?.shift) || "กะ 1";
+      const manpower = lookupManpowerTime(manpowerLookup, override?.dept || dept, jobSite, shift);
       return {
         empId,
         name: `${firstName} ${lastName}`.trim() || String(row["Employee Name"] ?? row["Name"] ?? empId).trim(),
         dept,
-        jobSite: schedule?.section ?? "",
+        jobSite,
         shift,
-        shiftStart: schedule?.shiftStart || manpower?.shiftStart || "07:00",
+        shiftStart: override?.shift_start || schedule?.shiftStart || manpower?.shiftStart || "07:00",
         dayoff: schedule?.dayoff,
+        hasOverride: Boolean(override),
       };
     }).filter((employee) =>
       employee.empId
       && !leaveIds.has(employee.empId)
-      && !isEmployeeDayOff(employee.dayoff, targetDate, holidayDates),
+      && (employee.hasOverride || !isEmployeeDayOff(employee.dayoff, targetDate, holidayDates)),
     );
     const expectedById = new Map(expectedEmployees.map((row) => [row.empId, row]));
     const ids = [...expectedById.keys()];
@@ -2214,6 +2396,8 @@ export default function Home() {
             masterUploads={masterUploads}
             onDeleteMasterFile={guardedProp(4, "Master Data", deleteMasterFile)}
             onHolidaysChanged={(dates) => setHolidayDates(dates)}
+            onShiftOverridesChanged={loadShiftOverrides}
+            shiftOverrideRows={shiftOverrideRows}
             onMastersSaved={async () => {
               await loadActiveMasters();
               await syncProductionAfterMasterChange();
@@ -2431,6 +2615,7 @@ function buildReportData(
   prevDayScanRows: Record<string, unknown>[] = [],
   nextDayScanRows: Record<string, unknown>[] = [],
   explicitTargetDate?: string,
+  shiftOverrideRows: ShiftOverrideRow[] = [],
 ): ReportData {
   const employees = employeeRows.map((row) => {
     const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
@@ -2492,6 +2677,11 @@ function buildReportData(
   const targetTimestamp = isoTargetDate ? new Date(`${isoTargetDate}T12:00:00`) : latestTimestamp;
   const targetDate = targetTimestamp?.toLocaleDateString("th-TH") ?? "-";
   const targetMonthKey = isoTargetDate ? isoTargetDate.slice(0, 7) : "";
+
+  // กะพิเศษเฉพาะวันที่ตั้งล่วงหน้าไว้ (shift_schedule_overrides) เฉพาะของวันที่กำลังคำนวณอยู่นี้
+  const shiftOverrideByEmp = new Map(
+    shiftOverrideRows.filter((r) => r.work_date === isoTargetDate).map((r) => [r.emp_id, r]),
+  );
   const _now = new Date();
   const todayIso = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
   const nowMinutes = _now.getHours() * 60 + _now.getMinutes();
@@ -2569,23 +2759,29 @@ function buildReportData(
 
   const records: AttendanceRecord[] = baseEmployees.flatMap((employee): AttendanceRecord[] => {
     const dayoffShift = dayoffShiftMap.get(employee.empId);
+    // ตั้งกะพิเศษเฉพาะวันนี้ไว้หรือไม่ — ถ้ามี ให้ใช้กะ/เวลา/หน่วยงานย่อยจาก override แทนตารางกะประจำ
+    // และถือว่ามาทำงานวันนี้เสมอ (ไม่ใช่วันหยุด) แม้ตารางกะประจำจะกำหนดให้วันนี้เป็นวันหยุดก็ตาม
+    const override = shiftOverrideByEmp.get(employee.empId);
     const scans = scanByEmp.get(employee.empId)?.times ?? [];
-    const shift = normalizeShiftLabel(dayoffShift?.shift) || "กะ 1";
-    const manpowerEntry = lookupManpowerTime(manpowerLookup, employee.dept, dayoffShift?.section ?? "", shift);
-    const shiftStart = dayoffShift?.shiftStart || manpowerEntry?.shiftStart || "07:00";
-    const shiftEnd = dayoffShift?.shiftEnd || manpowerEntry?.shiftEnd || "";
+    const section = override?.job_site || dayoffShift?.section || "";
+    const shift = normalizeShiftLabel(override?.shift || dayoffShift?.shift) || "กะ 1";
+    const manpowerEntry = lookupManpowerTime(manpowerLookup, override?.dept || employee.dept, section, shift);
+    const shiftStart = override?.shift_start || dayoffShift?.shiftStart || manpowerEntry?.shiftStart || "07:00";
+    const shiftEnd = override?.shift_end || dayoffShift?.shiftEnd || manpowerEntry?.shiftEnd || "";
     // Use the known shift start time to pick the correct clock-in timestamp.
     // For night shifts (e.g. shiftStart=22:00) this selects the evening scan,
     // not the early-morning clock-out that a plain min() would return.
     const scanIn = findScanIn(scans, shiftStart, isoTargetDate);
-    const isScheduledOff = targetTimestamp
-      ? isEmployeeDayOff(dayoffShift?.dayoff, targetTimestamp, holidaySet)
-      : false;
+    const isScheduledOff = override
+      ? false
+      : targetTimestamp
+        ? isEmployeeDayOff(dayoffShift?.dayoff, targetTimestamp, holidaySet)
+        : false;
     if (isScheduledOff) return [{
       empId: employee.empId,
       name: employee.name,
       dept: employee.dept,
-      section: dayoffShift?.section ?? "",
+      section,
       position: employee.position,
       shift,
       shiftStart,
@@ -2636,7 +2832,7 @@ function buildReportData(
       empId: employee.empId,
       name: employee.name,
       dept: employee.dept,
-      section: dayoffShift?.section ?? "",
+      section,
       position: employee.position,
       shift,
       shiftStart,
@@ -2757,6 +2953,23 @@ function findRowCol(row: Record<string, unknown>, ...targets: string[]): string 
   return val === undefined ? "" : String(val).trim();
 }
 
+// วันที่ "วันนี้" ตามเวลาเครื่อง (local) ในรูปแบบ ISO — ใช้เทียบกับ effective_from/work_date
+// ที่เป็นวันที่ล้วนๆ (ไม่มีเวลา) เพื่อไม่ให้ toISOString() (UTC) เพี้ยนช่วงเที่ยงคืนถึงตี 7 เวลาไทย
+function todayIsoLocal(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+// เวอร์ชัน master ไฟล์นี้ "มีผล" ในวันที่ isoDate หรือไม่ — เริ่มมีผลตั้งแต่ effective_from และ (ถ้ามีกำหนด
+// effective_until) หมดผลหลังวันนั้นไป ใช้ตัดสินทั้งตอนเลือกไฟล์ปัจจุบัน (loadActiveMasters) และตอน resolve
+// ไฟล์ของวันที่ใดๆ (getMasterForDate) เพื่อให้พอพ้นช่วงที่กำหนดไว้ ระบบย้อนกลับไปใช้เวอร์ชันก่อนหน้าเองอัตโนมัติ
+function isMasterFileEffectiveOn(file: MasterFile, isoDate: string): boolean {
+  const from = file.effective_from ?? file.created_at.slice(0, 10);
+  if (from > isoDate) return false;
+  if (file.effective_until && file.effective_until < isoDate) return false;
+  return true;
+}
+
 // Like findRowCol but returns the original value (Date/number/string) instead
 // of stringifying it, so callers like normalizeTimeText can still tell a
 // Date or Excel serial number apart from plain text.
@@ -2862,6 +3075,17 @@ function addHoursToTime(timeStr: string, hours: number): string {
   const nh = Math.floor(total / 60) % 24;
   const nm = total % 60;
   return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
+}
+
+// เวลาออก < เวลาเข้า = ข้ามเที่ยงคืน (กะกลางคืน) — เทียบเป็นนาทีทั้งคู่ ไม่ใช่แค่ตัวเลขชั่วโมง เพราะกะที่ชั่วโมง
+// เข้า-ออกเท่ากันแต่นาทีต่างกัน (เช่น 23:45 → 23:15) เทียบแค่ชั่วโมงจะพลาด (23 < 23 เป็นเท็จ ทั้งที่ข้ามเที่ยงคืนจริง)
+function isOvernightShift(shiftStart: string, shiftEnd: string): boolean {
+  if (!shiftStart || !shiftEnd) return false;
+  const toMinutes = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + (m || 0);
+  };
+  return toMinutes(shiftEnd) < toMinutes(shiftStart);
 }
 
 function TimeInput24({
@@ -4573,6 +4797,126 @@ function DiffPreviewModal({
   );
 }
 
+// ป็อปอัพยืนยันก่อนบันทึกในหน้า "แก้ไข Dayoff & Shift" — โชว์สรุปว่าแก้ใครไปบ้าง อะไรเปลี่ยนจากอะไรเป็นอะไร
+// แทน window.confirm() แบบเดิมที่บอกแค่วันที่มีผล ไม่บอกรายละเอียดว่าแก้อะไรไปบ้าง — ใช้คลาส CSS ชุดเดียวกับ
+// DiffPreviewModal (diff-row, diff-field-row ฯลฯ) เพื่อให้หน้าตาสอดคล้องกับป็อปอัพยืนยันอื่นในระบบ
+type ScheduleConfirmField = { changed: boolean; from: string; to: string };
+type ScheduleConfirmRow = {
+  empId: string;
+  name: string;
+  dept: string;
+  jobSite: ScheduleConfirmField;
+  dayoff: ScheduleConfirmField;
+  shift: ScheduleConfirmField;
+  shiftStart: ScheduleConfirmField;
+  shiftEnd: ScheduleConfirmField;
+};
+
+// เซลล์เดียว: ถ้าไม่เปลี่ยนโชว์ค่าปัจจุบันเฉยๆ, ถ้าเปลี่ยนโชว์ "ค่าเดิม → ค่าใหม่" (ค่าเดิมขีดฆ่าสีแดง ค่าใหม่สีเขียว)
+function ScheduleConfirmCell({ field }: { field: ScheduleConfirmField }) {
+  if (!field.changed) return <>{field.to || "-"}</>;
+  return (
+    <>
+      <span className="diff-from">{field.from || "(ว่าง)"}</span>
+      <span className="diff-arrow"> → </span>
+      <span className="diff-to">{field.to || "(ว่าง)"}</span>
+    </>
+  );
+}
+
+function ScheduleSaveConfirmModal({
+  effectiveFrom,
+  effectiveUntil,
+  isFutureScheduled,
+  collidesWithOtherPending,
+  changedRows,
+  isSaving,
+  onConfirm,
+  onCancel,
+}: {
+  effectiveFrom: string;
+  effectiveUntil: string;
+  isFutureScheduled: boolean;
+  collidesWithOtherPending: boolean;
+  changedRows: ScheduleConfirmRow[];
+  isSaving: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="modal-overlay">
+      <div className="modal-panel diff-modal schedule-confirm-modal">
+        <div className="modal-header">
+          <h3>{isFutureScheduled ? "ยืนยันตั้งกะล่วงหน้า" : "ยืนยันบันทึก"}</h3>
+          <button className="icon-button" onClick={onCancel} disabled={isSaving} type="button">
+            <X size={18} />
+          </button>
+        </div>
+
+        <p className="schedule-confirm-note" style={{ margin: "0 0 4px", fontSize: 13, color: "var(--muted)" }}>
+          มีผลตั้งแต่วันที่ {formatDateBE(effectiveFrom)}
+          {effectiveUntil ? ` ถึง ${formatDateBE(effectiveUntil)}` : ""}
+          {isFutureScheduled
+            ? " — กะ/วันหยุดปัจจุบัน (วันนี้) จะไม่ถูกกระทบจนกว่าจะถึงวันที่นี้"
+            : effectiveUntil
+              ? " (พ้นวันนั้นจะย้อนกลับไปใช้กะก่อนหน้าเอง)"
+              : ""}
+        </p>
+
+        {collidesWithOtherPending ? (
+          <p className="field-error schedule-confirm-note" style={{ margin: "0 0 8px" }}>
+            มีกะที่ตั้งล่วงหน้าไว้แล้วสำหรับวันที่นี้ — การบันทึกนี้จะเขียนทับเวอร์ชันเดิมทั้งชุด
+            (แนะนำกด &quot;แก้ไข&quot; ที่รายการเดิมในกล่อง &quot;สรุปกะที่แก้ไขล่วงหน้า&quot; แทน)
+          </p>
+        ) : null}
+
+        <div className="diff-body">
+          <div className="diff-section schedule-confirm-section">
+          <div className="diff-section-title">รายการที่แก้ไข ({changedRows.length} คน)</div>
+          {changedRows.length === 0 ? (
+            <p style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: "24px 0" }}>
+              ไม่มีแถวที่แก้ไข
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="table schedule-confirm-table">
+                <thead>
+                  <tr><th>รหัส</th><th>ชื่อ-สกุล</th><th>หน่วยงาน</th><th>หน่วยงานย่อย</th><th>Dayoff</th><th>กะ</th><th>เวลาเข้า</th><th>เวลาออก</th></tr>
+                </thead>
+                <tbody>
+                  {changedRows.map((r) => (
+                    <tr key={r.empId}>
+                      <td>{r.empId}</td>
+                      <td>{r.name || "—"}</td>
+                      <td>{r.dept || "—"}</td>
+                      <td><ScheduleConfirmCell field={r.jobSite} /></td>
+                      <td><ScheduleConfirmCell field={r.dayoff} /></td>
+                      <td><ScheduleConfirmCell field={r.shift} /></td>
+                      <td><ScheduleConfirmCell field={r.shiftStart} /></td>
+                      <td><ScheduleConfirmCell field={r.shiftEnd} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button className="secondary-button" onClick={onCancel} disabled={isSaving} type="button">
+            Cancel
+          </button>
+          <button className="primary-button" disabled={isSaving} onClick={onConfirm} type="button">
+            <UploadCloud size={16} />
+            {isSaving ? "กำลังบันทึก..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MasterDataPage({
   activeMasterMap,
   guardAction,
@@ -4584,6 +4928,8 @@ function MasterDataPage({
   onDeleteMasterFile,
   onHolidaysChanged,
   onMastersSaved,
+  onShiftOverridesChanged,
+  shiftOverrideRows,
   saveDayoffShiftRows,
   saveManpowerRows,
   saveMasterFiles,
@@ -4601,7 +4947,9 @@ function MasterDataPage({
   onDeleteMasterFile: (file: MasterFile) => Promise<void>;
   onHolidaysChanged: (dates: Set<string>) => void;
   onMastersSaved: () => Promise<void>;
-  saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
+  onShiftOverridesChanged: () => Promise<void>;
+  shiftOverrideRows: ShiftOverrideRow[];
+  saveDayoffShiftRows: (rows: DayoffShiftEditorRow[], effectiveFrom?: string, replaceFileId?: string | null, effectiveUntil?: string | null) => Promise<void>;
   saveManpowerRows: (rows: ManpowerEditorRow[]) => Promise<void>;
   saveMasterFiles: () => Promise<void>;
   setError: (msg: string) => void;
@@ -4613,6 +4961,7 @@ function MasterDataPage({
   const [diffResult, setDiffResult] = useState<EmployeeDiff | null>(null);
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const todayIsoForHistory = todayIsoLocal();
 
   function downloadCombinedTemplate() {
     const headers = [
@@ -4919,7 +5268,9 @@ function MasterDataPage({
                     <div className="ts-history-info">
                       <div className="ts-history-name-row">
                         <strong>{file.original_filename ?? "ไฟล์"}</strong>
-                        {file.is_active ? <span className="status-pill uploaded">Active</span> : null}
+                        {file.effective_from && file.effective_from > todayIsoForHistory
+                          ? <span className="status-pill">มีผล {formatDateBE(file.effective_from)}{file.effective_until ? ` - ${formatDateBE(file.effective_until)}` : ""}</span>
+                          : file.id === activeMasterMap[file.file_type]?.id ? <span className="status-pill uploaded">Active</span> : null}
                       </div>
                       <span>{dateText}{file.file_size_bytes != null ? ` · ${(file.file_size_bytes / 1024).toFixed(0)} KB` : ""}</span>
                     </div>
@@ -5031,7 +5382,9 @@ function MasterDataPage({
                       <div className="ts-history-info">
                         <div className="ts-history-name-row">
                           <strong>{file.original_filename ?? "ไฟล์"}</strong>
-                          {file.is_active ? <span className="status-pill uploaded">Active</span> : null}
+                          {file.effective_from && file.effective_from > todayIsoForHistory
+                            ? <span className="status-pill">มีผล {formatDateBE(file.effective_from)}{file.effective_until ? ` - ${formatDateBE(file.effective_until)}` : ""}</span>
+                            : file.id === activeMasterMap[file.file_type]?.id ? <span className="status-pill uploaded">Active</span> : null}
                         </div>
                         <span>{dateText}{file.file_size_bytes != null ? ` · ${(file.file_size_bytes / 1024).toFixed(0)} KB` : ""}</span>
                       </div>
@@ -5079,6 +5432,11 @@ function MasterDataPage({
           activeFile={activeMasterMap.dayoff_shift}
           employeeMasterFile={activeMasterMap.employee_master}
           manpowerFile={activeMasterMap.manpower_plan}
+          masterFileHistory={masterFileHistory}
+          onDeleteMasterFile={onDeleteMasterFile}
+          onShiftOverridesChanged={onShiftOverridesChanged}
+          shiftOverrideRows={shiftOverrideRows}
+          guardAction={(action, onCancel) => guardAction(4, "Master Data", action, onCancel)}
           saveDayoffShiftRows={saveDayoffShiftRows}
           saveManpowerRows={saveManpowerRows}
         />
@@ -5386,6 +5744,541 @@ function LeavePlanningPage({
         <div className="table-wrap"><table className="table data-table"><thead><tr><th>วันที่</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>หน่วยงาน</th><th>ประเภทลา</th><th>ผู้บันทึก</th><th></th></tr></thead>
           <tbody>{visibleLeaves.map((leave) => { const employee = employeeById.get(leave.emp_id); return <tr key={leave.id}><td>{new Date(leave.leave_date + "T00:00:00").toLocaleDateString("th-TH")}</td><td>{leave.emp_id}</td><td>{employee?.name ?? "-"}</td><td>{employee?.dept ?? "-"}</td><td><span className={`leave-select ${getLeaveTypeClass(leave.leave_type)}`} style={{ cursor: "default" }}>{leave.leave_type}</span></td><td>{leave.recorded_by ?? "-"}</td><td><button className="icon-button danger" type="button" title="ลบรายการลา" onClick={() => guardAction(() => void deleteLeave(leave.id))}><Trash2 size={15} /></button></td></tr>; })}
           {visibleLeaves.length === 0 ? <tr><td colSpan={7}>{loading ? "กำลังโหลด..." : "ยังไม่มีรายการลาล่วงหน้า"}</td></tr> : null}</tbody>
+        </table></div>
+      </section>
+    </div>
+  );
+}
+
+// ตั้งกะพิเศษเฉพาะวัน/ช่วงวันในอนาคตของพนักงานรายคน โดยไม่กระทบตารางกะประจำของเขา — เหมือน
+// LeavePlanningPage แต่ upsert เข้า shift_schedule_overrides แทน leave_records แล้ว buildReportData
+// จะดึงไปใช้ override กะ/เวลาของวันนั้นแทนตารางกะประจำ (ดู shiftOverrideByEmp ใน buildReportData)
+function ShiftDayScheduleForm({
+  employeeMasterFile,
+  manpowerFile,
+  masterFileHistory,
+  onDeleteMasterFile,
+  guardAction,
+  onOverridesChanged,
+}: {
+  employeeMasterFile?: MasterFile;
+  manpowerFile?: MasterFile;
+  masterFileHistory: MasterFile[];
+  onDeleteMasterFile: (file: MasterFile) => Promise<void>;
+  guardAction: (action: () => void, onCancel?: () => void) => void;
+  onOverridesChanged: () => Promise<void>;
+}) {
+  type EmployeeOption = { empId: string; name: string; dept: string };
+  const localToday = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  };
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [manpowerRows, setManpowerRows] = useState<ManpowerRow[]>([]);
+  const [overrides, setOverrides] = useState<ShiftOverrideRow[]>([]);
+  const [empId, setEmpId] = useState("");
+  const [empQuery, setEmpQuery] = useState("");
+  const [showEmpSuggestions, setShowEmpSuggestions] = useState(false);
+  const [dateMode, setDateMode] = useState<"single" | "range">("single");
+  const [workDate, setWorkDate] = useState(localToday);
+  const [workEndDate, setWorkEndDate] = useState(localToday);
+  const [shift, setShift] = useState("");
+  const [jobSite, setJobSite] = useState("");
+  const [shiftStart, setShiftStart] = useState("");
+  const [shiftEnd, setShiftEnd] = useState("");
+  const [recordedBy, setRecordedBy] = useState("");
+  const [query, setQuery] = useState("");
+  // หน่วง 200ms ก่อนเอาไปกรองตารางจริง — พิมพ์ในกล่องค้นหายังลื่นทันที (query อัปเดตทุกตัวอักษร) แต่การ
+  // คำนวณ visibleOverrides/combinedSummaryRows (ซึ่งวิ่งทับแถวทั้งหมดทุกครั้ง) จะรอให้พิมพ์หยุดก่อนค่อยรีคำนวณ
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), 200);
+    return () => clearTimeout(timer);
+  }, [query]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const minDate = localToday();
+  const isPastDate = Boolean(workDate && workDate < minDate);
+  const isPastEndDate = Boolean(dateMode === "range" && workEndDate && workEndDate < minDate);
+  const isInvalidRange = Boolean(dateMode === "range" && workDate && workEndDate && workEndDate < workDate);
+
+  const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.empId, employee])), [employees]);
+  const empSuggestions = useMemo(() => {
+    const needle = empQuery.trim().toLocaleLowerCase("th-TH");
+    const matches = !needle
+      ? employees
+      : employees.filter((employee) =>
+          `${employee.empId} ${employee.name}`.toLocaleLowerCase("th-TH").includes(needle),
+        );
+    return matches.slice(0, 50);
+  }, [employees, empQuery]);
+  const selectedDept = employeeById.get(empId)?.dept ?? "";
+
+  const manpowerLookup = useMemo(() => buildManpowerLookup(manpowerRows), [manpowerRows]);
+  const shiftChoices = useMemo(() => {
+    const list = new Set<string>();
+    for (const r of manpowerRows) if (r.dept === selectedDept && r.shift) list.add(r.shift);
+    return Array.from(list).sort();
+  }, [manpowerRows, selectedDept]);
+  const jobSiteChoices = useMemo(() => {
+    const list = new Set<string>();
+    for (const r of manpowerRows) if (r.dept === selectedDept && r.jobSite) list.add(r.jobSite);
+    return Array.from(list).sort();
+  }, [manpowerRows, selectedDept]);
+
+  function selectEmployee(employee: EmployeeOption) {
+    setEmpId(employee.empId);
+    setEmpQuery(`${employee.empId} - ${employee.name}`);
+    setShowEmpSuggestions(false);
+    setShift("");
+    setJobSite("");
+    setShiftStart("");
+    setShiftEnd("");
+  }
+
+  function reconcileEmpSelection() {
+    const needle = empQuery.trim().toLocaleLowerCase("th-TH");
+    const currentEmployee = employeeById.get(empId);
+    const expectedQuery = currentEmployee ? `${currentEmployee.empId} - ${currentEmployee.name}` : "";
+    if (empQuery === expectedQuery) return;
+    const exactMatch = employees.find(
+      (employee) =>
+        employee.empId.toLowerCase() === needle || employee.name.toLocaleLowerCase("th-TH") === needle,
+    );
+    if (exactMatch) {
+      setEmpId(exactMatch.empId);
+      setEmpQuery(`${exactMatch.empId} - ${exactMatch.name}`);
+    } else {
+      setEmpQuery(expectedQuery);
+    }
+  }
+
+  function selectShift(nextShift: string) {
+    setShift(nextShift);
+    const locked = lookupManpowerTime(manpowerLookup, selectedDept, jobSite, nextShift);
+    if (locked) { setShiftStart(locked.shiftStart); setShiftEnd(locked.shiftEnd); }
+  }
+
+  function updateWorkDate(nextDate: string) {
+    setMessage("");
+    if (nextDate && nextDate < minDate) {
+      setWorkDate(minDate);
+      if (workEndDate < minDate) setWorkEndDate(minDate);
+      setError("เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต");
+      return;
+    }
+    setWorkDate(nextDate);
+    if (dateMode === "range" && workEndDate && nextDate && workEndDate < nextDate) setWorkEndDate(nextDate);
+    if (error === "เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต") setError("");
+  }
+
+  function updateWorkEndDate(nextDate: string) {
+    setMessage("");
+    if (nextDate && nextDate < minDate) {
+      setWorkEndDate(minDate);
+      setError("เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต");
+      return;
+    }
+    setWorkEndDate(nextDate);
+    if (error === "เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต") setError("");
+  }
+
+  function getScheduleDates() {
+    if (!workDate) return [];
+    if (dateMode === "single") return [workDate];
+    if (!workEndDate || workEndDate < workDate) return [];
+    const dates: string[] = [];
+    const start = new Date(`${workDate}T00:00:00`);
+    const end = new Date(`${workEndDate}T00:00:00`);
+    for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+      dates.push(getLocalIsoDate(cursor));
+    }
+    return dates;
+  }
+
+  const visibleOverrides = useMemo(() => {
+    const needle = debouncedQuery.trim().toLocaleLowerCase("th-TH");
+    if (!needle) return overrides;
+    return overrides.filter((row) => {
+      const employee = employeeById.get(row.emp_id);
+      return [row.emp_id, employee?.name, employee?.dept, row.job_site, row.shift, row.work_date]
+        .some((value) => String(value ?? "").toLocaleLowerCase("th-TH").includes(needle));
+    });
+  }, [employeeById, overrides, debouncedQuery]);
+
+  // เวอร์ชัน dayoff_shift ที่ตั้งล่วงหน้าไว้แบบ "ทั้งหน่วยงาน" จากแท็บ "แก้ไข Dayoff & Shift" — เอามารวมโชว์
+  // ในตารางสรุปเดียวกันนี้ด้วย เพื่อให้เห็นทุกอย่างที่ตั้งล่วงหน้าไว้ (ทั้งแบบทั้งหน่วยงานและแบบรายคน) ในที่เดียว
+  const pendingRosterVersions = useMemo(
+    () => masterFileHistory
+      .filter((f) => f.file_type === "dayoff_shift" && (f.effective_from ?? "") > minDate)
+      .sort((a, b) => (a.effective_from ?? "").localeCompare(b.effective_from ?? "")),
+    [masterFileHistory, minDate],
+  );
+
+  type SummaryRow =
+    | { kind: "org"; date: string; file: MasterFile }
+    | { kind: "person"; date: string; row: ShiftOverrideRow };
+
+  const combinedSummaryRows = useMemo<SummaryRow[]>(() => {
+    const orgRows: SummaryRow[] = pendingRosterVersions.map((f) => ({ kind: "org", date: f.effective_from ?? "", file: f }));
+    const personRows: SummaryRow[] = visibleOverrides.map((row) => ({ kind: "person", date: row.work_date, row }));
+    return [...orgRows, ...personRows].sort((a, b) => a.date.localeCompare(b.date));
+  }, [pendingRosterVersions, visibleOverrides]);
+
+  // ไฟล์ dayoff_shift ที่ active จริงตอนนี้ (baseline) — ใช้ตรรกะเดียวกับ getMasterForDate เพื่อหาว่าเวอร์ชัน
+  // ที่ตั้งล่วงหน้าไว้แต่ละอันเปลี่ยนอะไรไปจากตารางกะที่ใช้งานอยู่จริงตอนนี้บ้าง (สำหรับ diff ด้านล่าง)
+  const activeDayoffShiftFile = useMemo(() => {
+    const candidates = masterFileHistory
+      .filter((f) => f.file_type === "dayoff_shift")
+      .sort((a, b) => {
+        const diff = (b.effective_from ?? b.created_at.slice(0, 10)).localeCompare(a.effective_from ?? a.created_at.slice(0, 10));
+        if (diff !== 0) return diff;
+        return b.created_at.localeCompare(a.created_at);
+      });
+    return candidates.find((f) => isMasterFileEffectiveOn(f, minDate))
+      ?? candidates.find((f) => (f.effective_from ?? f.created_at.slice(0, 10)) <= minDate)
+      ?? candidates.find((f) => f.is_active)
+      ?? null;
+  }, [masterFileHistory, minDate]);
+
+  // รายชื่อพนักงานที่เวอร์ชัน "ทั้งหน่วยงาน" แต่ละอันแก้จริง (เทียบกับตารางกะที่ใช้งานอยู่ตอนนี้) — แยกด้วยว่า
+  // เปลี่ยน Dayoff / หน่วยงานย่อย / กะ-เวลา ฟิลด์ไหนบ้าง เอาไปโชว์แยกคอลัมน์ในตารางสรุป — โหลดแบบ async เพราะ
+  // ต้องดาวน์โหลด+parse xlsx มาเทียบกัน ไม่ใช่ข้อมูลที่มีอยู่แล้วในมือ, ดึงแต่ละไฟล์ที่ตั้งล่วงหน้าไว้พร้อมกัน
+  // (Promise.all) แทนทีละไฟล์ตามลำดับ เพราะแต่ละไฟล์ไม่ได้ขึ้นกับกัน รอพร้อมกันเร็วกว่ารอทีละไฟล์
+  type OrgDiffResult = { empIds: string[]; dayoffChangedIds: string[]; jobSiteChangedIds: string[]; shiftChangedIds: string[] };
+  const [orgDiffCache, setOrgDiffCache] = useState<Map<string, OrgDiffResult | "loading" | "error">>(new Map());
+  const orgDiffRequestedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!activeDayoffShiftFile) return;
+    const toFetch = pendingRosterVersions.filter((f) => !orgDiffRequestedRef.current.has(f.id));
+    if (toFetch.length === 0) return;
+    for (const f of toFetch) orgDiffRequestedRef.current.add(f.id);
+    let cancelled = false;
+    // แยกไว้ว่าไฟล์ไหนใน toFetch "จบงานแล้ว" ทั้ง success/error — กันไม่ให้ markAllFailed (timeout) ไปทับผล
+    // ของไฟล์ที่โหลดสำเร็จอยู่แล้วในชุดเดียวกัน (เดิม toFetch ทั้งก้อนโดน mark error หมดถ้ามีแค่ไฟล์เดียวช้า)
+    const settledIds = new Set<string>();
+    // กันค้างที่ "กำลังตรวจสอบ..." ตลอดไปถ้า network/parse ค้างหรือพังแบบไม่คาดคิด (เช่น request แขวนไม่ reject
+    // ไม่ resolve) — ถ้าเกิน 20 วินาทียังไม่เสร็จ ให้ถือว่า error เฉพาะไฟล์ที่ยังไม่จบงาน อย่างน้อยเลิก spinner
+    // ค้างให้ผู้ใช้เห็น โดยไม่แตะไฟล์อื่นในชุดเดียวกันที่โหลดเสร็จไปแล้ว
+    const markUnsettledAsFailed = () => {
+      if (cancelled) return;
+      const stillPending = toFetch.filter((f) => !settledIds.has(f.id));
+      if (stillPending.length === 0) return;
+      setOrgDiffCache((prev) => {
+        const next = new Map(prev);
+        for (const f of stillPending) next.set(f.id, "error");
+        return next;
+      });
+      for (const f of stillPending) orgDiffRequestedRef.current.delete(f.id);
+    };
+    const timeoutId = setTimeout(markUnsettledAsFailed, 20000);
+    (async () => {
+      try {
+        const baselineRows = await downloadSheetRows(activeDayoffShiftFile.file_path);
+        const baselineMap = buildDayoffShiftMap(baselineRows);
+        await Promise.all(toFetch.map(async (f) => {
+          try {
+            const pendingRows = await downloadSheetRows(f.file_path);
+            const pendingMap = buildDayoffShiftMap(pendingRows);
+            const empIds: string[] = [];
+            const dayoffChangedIds: string[] = [];
+            const jobSiteChangedIds: string[] = [];
+            const shiftChangedIds: string[] = [];
+            for (const [empId, entry] of pendingMap) {
+              const base = baselineMap.get(empId);
+              const dayoffChanged = !base || base.dayoff !== entry.dayoff;
+              const jobSiteChanged = !base || base.section !== entry.section;
+              const shiftChanged = !base
+                || normalizeShiftKey(base.shift) !== normalizeShiftKey(entry.shift)
+                || base.shiftStart !== entry.shiftStart
+                || base.shiftEnd !== entry.shiftEnd;
+              if (dayoffChanged) dayoffChangedIds.push(empId);
+              if (jobSiteChanged) jobSiteChangedIds.push(empId);
+              if (shiftChanged) shiftChangedIds.push(empId);
+              if (dayoffChanged || jobSiteChanged || shiftChanged) empIds.push(empId);
+            }
+            settledIds.add(f.id);
+            if (!cancelled) setOrgDiffCache((prev) => new Map(prev).set(f.id, { empIds, dayoffChangedIds, jobSiteChangedIds, shiftChangedIds }));
+          } catch (err) {
+            console.error("[dayoff-shift] diff failed for pending version", f.id, err);
+            settledIds.add(f.id);
+            if (!cancelled) {
+              setOrgDiffCache((prev) => new Map(prev).set(f.id, "error"));
+              orgDiffRequestedRef.current.delete(f.id);
+            }
+          }
+        }));
+      } catch (err) {
+        console.error("[dayoff-shift] diff baseline load failed", err);
+        markUnsettledAsFailed();
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    })();
+    return () => { cancelled = true; clearTimeout(timeoutId); };
+  }, [pendingRosterVersions, activeDayoffShiftFile]);
+
+  async function loadOverrides() {
+    const { data, error: loadError } = await supabase
+      .from("shift_schedule_overrides")
+      .select("id, emp_id, work_date, dept, job_site, shift, shift_start, shift_end, recorded_by")
+      .gte("work_date", minDate)
+      .order("work_date", { ascending: true });
+    if (loadError) throw new Error(loadError.message);
+    setOverrides((data ?? []) as ShiftOverrideRow[]);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      employeeMasterFile ? downloadSheetRows(employeeMasterFile.file_path) : Promise.resolve([]),
+      manpowerFile ? downloadSheetRows(manpowerFile.file_path) : Promise.resolve([]),
+      supabase.from("shift_schedule_overrides").select("id, emp_id, work_date, dept, job_site, shift, shift_start, shift_end, recorded_by").gte("work_date", minDate).order("work_date", { ascending: true }),
+    ]).then(([employeeRows, manpowerSheetRows, overrideResult]) => {
+      if (cancelled) return;
+      if (overrideResult.error) throw new Error(overrideResult.error.message);
+      const parsed = employeeRows.map((row) => {
+        const parsedId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+        const firstName = String(row["First Name (Local)"] ?? "").trim();
+        const lastName = String(row["Last Name (Local)"] ?? "").trim();
+        return {
+          empId: parsedId,
+          name: `${firstName} ${lastName}`.trim() || String(row["Employee Name"] ?? row["Name"] ?? parsedId).trim(),
+          dept: String(row["หน่วยงาน"] ?? row["dept"] ?? row["Name (Section)"] ?? "-").trim() || "-",
+        };
+      }).filter((row) => row.empId).sort((a, b) => a.empId.localeCompare(b.empId));
+      setEmployees(parsed);
+      setManpowerRows(parseManpowerRows(manpowerSheetRows));
+      setOverrides((overrideResult.data ?? []) as ShiftOverrideRow[]);
+    }).catch((reason) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : "โหลดข้อมูลไม่สำเร็จ");
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [employeeMasterFile?.file_path, manpowerFile?.file_path]);
+
+  async function saveSchedule() {
+    if (!empId || !workDate || !shift || !recordedBy.trim()) return;
+    if (workDate < minDate) {
+      setWorkDate(minDate);
+      setError("เลือกวันที่ย้อนหลังไม่ได้ กรุณาเลือกวันนี้หรือวันที่ในอนาคต");
+      setMessage("");
+      return;
+    }
+    if (dateMode === "range" && (!workEndDate || workEndDate < workDate)) {
+      setError("วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น");
+      setMessage("");
+      return;
+    }
+    const dates = getScheduleDates();
+    if (dates.length === 0) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    const now = new Date().toISOString();
+    const { error: saveError } = await supabase.from("shift_schedule_overrides").upsert(dates.map((date) => ({
+      emp_id: empId,
+      work_date: date,
+      dept: selectedDept || null,
+      job_site: jobSite || null,
+      shift,
+      shift_start: shiftStart || null,
+      shift_end: shiftEnd || null,
+      recorded_by: recordedBy.trim() || null,
+      updated_at: now,
+    })), { onConflict: "emp_id,work_date" });
+    if (saveError) setError(saveError.message);
+    else {
+      setMessage(dates.length > 1 ? `ตั้งกะล่วงหน้าแล้ว ${dates.length} วัน` : "ตั้งกะล่วงหน้าแล้ว");
+      try { await loadOverrides(); } catch (reason) { setError(reason instanceof Error ? reason.message : "โหลดข้อมูลไม่สำเร็จ"); }
+      // แจ้ง parent ให้โหลด shiftOverrideRows ระดับแอปใหม่ด้วย ไม่งั้นรายงาน/แดชบอร์ดในหน้าเดิม
+      // (ไม่ได้ reload เบราว์เซอร์) จะยังใช้ค่าที่โหลดตอน mount อยู่ ไม่เห็นกะพิเศษที่เพิ่งตั้งนี้
+      await onOverridesChanged();
+    }
+    setSaving(false);
+  }
+
+  async function deleteOverride(id: string) {
+    setError("");
+    const { error: deleteError } = await supabase.from("shift_schedule_overrides").delete().eq("id", id);
+    if (deleteError) setError(deleteError.message);
+    else {
+      setOverrides((current) => current.filter((row) => row.id !== id));
+      await onOverridesChanged();
+    }
+  }
+
+  return (
+    <div className="leave-planning-page">
+      <section className="panel leave-planning-form">
+        <div className="section-heading-row">
+          <div><h3>ตั้งกะล่วงหน้ารายคน</h3><p>เลือกพนักงาน กะ และวันที่ต้องการ — ไม่กระทบตารางกะประจำของเขา</p></div>
+          <CalendarClock size={24} />
+        </div>
+        {error ? <p className="error-banner">{error}</p> : null}
+        {message ? <p className="success-banner">{message}</p> : null}
+        <div className="leave-form-grid shift-schedule-form-grid">
+          <label className="emp-search-field">
+            <span>พนักงาน<span className="required-mark">*</span></span>
+            <input
+              value={empQuery}
+              onChange={(event) => {
+                setEmpQuery(event.target.value);
+                setShowEmpSuggestions(true);
+              }}
+              onFocus={() => setShowEmpSuggestions(true)}
+              onBlur={() => setTimeout(() => { setShowEmpSuggestions(false); reconcileEmpSelection(); }, 150)}
+              disabled={loading}
+              placeholder="ค้นหาชื่อหรือรหัสพนักงาน..."
+              autoComplete="off"
+            />
+            {showEmpSuggestions && empSuggestions.length > 0 ? (
+              <div className="emp-search-suggestions">
+                {empSuggestions.map((employee) => (
+                  <button
+                    key={employee.empId}
+                    type="button"
+                    className="emp-search-suggestion-item"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectEmployee(employee)}
+                  >
+                    {employee.empId} - {employee.name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </label>
+          <div className="leave-date-field">
+            <div className="leave-date-label-row">
+              <span>วันที่ตั้งกะพิเศษ<span className="required-mark">*</span></span>
+              <div className="leave-date-mode">
+                <label><input type="radio" checked={dateMode === "single"} onChange={() => setDateMode("single")} /> วันเดียว</label>
+                <label><input type="radio" checked={dateMode === "range"} onChange={() => { setDateMode("range"); if (workEndDate < workDate) setWorkEndDate(workDate); }} /> ช่วงวันที่</label>
+              </div>
+            </div>
+            <div className="leave-date-inputs">
+              <div className="date-input-shell">
+                <input
+                  type="date"
+                  min={minDate}
+                  value={workDate}
+                  onInput={(event) => updateWorkDate(event.currentTarget.value)}
+                  onChange={(event) => updateWorkDate(event.target.value)}
+                  onBlur={(event) => updateWorkDate(event.target.value)}
+                />
+                <span className="date-input-be">{workDate ? formatDateBE(workDate) : "วว/ดด/ปปปป"}</span>
+              </div>
+              {dateMode === "range" ? (
+                <>
+                  <span className="date-range-separator">ถึง</span>
+                  <div className="date-input-shell">
+                    <input
+                      type="date"
+                      min={workDate || minDate}
+                      value={workEndDate}
+                      onInput={(event) => updateWorkEndDate(event.currentTarget.value)}
+                      onChange={(event) => updateWorkEndDate(event.target.value)}
+                      onBlur={(event) => updateWorkEndDate(event.target.value)}
+                    />
+                    <span className="date-input-be">{workEndDate ? formatDateBE(workEndDate) : "วว/ดด/ปปปป"}</span>
+                  </div>
+                </>
+              ) : null}
+            </div>
+            {isInvalidRange ? <small className="field-error">วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น</small> : null}
+          </div>
+          <label>
+            <span>กะ<span className="required-mark">*</span></span>
+            <select value={shift} onChange={(event) => selectShift(event.target.value)} disabled={!empId}>
+              <option value="">เลือกกะ</option>
+              {shiftChoices.map((option) => <option key={option} value={option}>{option}</option>)}
+              {shift && !shiftChoices.includes(shift) ? <option value={shift}>{shift}</option> : null}
+            </select>
+          </label>
+          <label>
+            <span>หน่วยงานย่อย</span>
+            <select value={jobSite} onChange={(event) => setJobSite(event.target.value)} disabled={!empId}>
+              <option value="">ไม่ระบุ</option>
+              {jobSiteChoices.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+          <label><span>เวลาเข้า</span><input type="time" value={shiftStart} onChange={(event) => setShiftStart(event.target.value)} /></label>
+          <label><span>เวลาออก</span><input type="time" value={shiftEnd} onChange={(event) => setShiftEnd(event.target.value)} /></label>
+          <label><span>ผู้บันทึก<span className="required-mark">*</span></span><input value={recordedBy} onChange={(event) => setRecordedBy(event.target.value)} placeholder="ชื่อผู้บันทึก" /></label>
+          <div className="leave-form-actions">
+            <button
+              className="primary-button"
+              type="button"
+              disabled={saving || !empId || !workDate || !shift || (dateMode === "range" && !workEndDate) || isPastDate || isPastEndDate || isInvalidRange || !recordedBy.trim()}
+              onClick={() => guardAction(() => void saveSchedule())}
+            >
+              <ClipboardCheck size={16} />{saving ? "กำลังบันทึก..." : "ตั้งกะล่วงหน้า"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel leave-planning-list">
+        <div className="section-heading-row">
+          <div><h3>สรุปกะที่แก้ไขล่วงหน้า</h3><p>{combinedSummaryRows.length.toLocaleString()} รายการ ({pendingRosterVersions.length} ทั้งหน่วยงาน + {visibleOverrides.length} รายคน)</p></div>
+          <label className="search-box"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อ รหัส หรือหน่วยงาน" /></label>
+        </div>
+        <div className="table-wrap"><table className="table data-table"><thead><tr><th>วันที่</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>หน่วยงาน</th><th>หน่วยงานย่อย</th><th>Dayoff</th><th>กะ</th><th>เวลา</th><th>ผู้บันทึก</th><th></th></tr></thead>
+          <tbody>
+            {combinedSummaryRows.map((item) => {
+              if (item.kind === "org") {
+                const f = item.file;
+                const diff = orgDiffCache.get(f.id);
+                const loaded = diff && diff !== "loading" && diff !== "error" ? diff : null;
+                const changedNames = loaded ? loaded.empIds.map((id) => `${employeeById.get(id)?.name ?? id} (${id})`) : [];
+                const summaryText = !diff || diff === "loading"
+                  ? "กำลังตรวจสอบว่าแก้ไขใครไปบ้าง..."
+                  : diff === "error"
+                    ? "ทั้งหน่วยงาน (ตรวจสอบรายชื่อไม่สำเร็จ)"
+                    : changedNames.length === 0
+                      ? "ไม่พบความเปลี่ยนแปลงเทียบกับตารางปัจจุบัน"
+                      : changedNames.length > 10
+                        ? `ทั้งหน่วยงาน (แก้ไข ${changedNames.length} คน)`
+                        : changedNames.join(", ");
+                return (
+                  <tr className="dayoff-summary-org-row" key={`org-${f.id}`}>
+                    <td>
+                      {formatDateBE(f.effective_from ?? "")}
+                      {f.effective_until ? ` - ${formatDateBE(f.effective_until)}` : ""}
+                    </td>
+                    <td colSpan={3}><span className="dayoff-summary-type-badge">ทั้งหน่วยงาน</span> {summaryText}</td>
+                    <td>{loaded && loaded.jobSiteChangedIds.length > 0 ? `${loaded.jobSiteChangedIds.length} คน` : "-"}</td>
+                    <td>{loaded && loaded.dayoffChangedIds.length > 0 ? `${loaded.dayoffChangedIds.length} คน` : "-"}</td>
+                    <td>{loaded && loaded.shiftChangedIds.length > 0 ? `${loaded.shiftChangedIds.length} คน` : "-"}</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td><button className="icon-button danger" type="button" title="ยกเลิกกะที่ตั้งล่วงหน้านี้" onClick={() => guardAction(() => void onDeleteMasterFile(f))}><Trash2 size={15} /></button></td>
+                  </tr>
+                );
+              }
+              const row = item.row;
+              const employee = employeeById.get(row.emp_id);
+              return (
+                <tr key={`person-${row.id}`}>
+                  <td>{new Date(row.work_date + "T00:00:00").toLocaleDateString("th-TH")}</td>
+                  <td>{row.emp_id}</td>
+                  <td>{employee?.name ?? "-"}</td>
+                  <td>{employee?.dept ?? row.dept ?? "-"}</td>
+                  <td>{row.job_site || "-"}</td>
+                  <td>-</td>
+                  <td>{row.shift}</td>
+                  <td>{row.shift_start || "-"}{row.shift_end ? ` - ${row.shift_end}` : ""}</td>
+                  <td>{row.recorded_by ?? "-"}</td>
+                  <td><button className="icon-button danger" type="button" title="ลบกะพิเศษนี้" onClick={() => guardAction(() => void deleteOverride(row.id!))}><Trash2 size={15} /></button></td>
+                </tr>
+              );
+            })}
+            {combinedSummaryRows.length === 0 ? <tr><td colSpan={10}>{loading ? "กำลังโหลด..." : "ยังไม่มีกะที่แก้ไขล่วงหน้า"}</td></tr> : null}
+          </tbody>
         </table></div>
       </section>
     </div>
@@ -6240,15 +7133,56 @@ function DayoffShiftEditor({
   activeFile,
   employeeMasterFile,
   manpowerFile,
+  masterFileHistory,
+  onDeleteMasterFile,
+  onShiftOverridesChanged,
+  shiftOverrideRows,
+  guardAction,
   saveDayoffShiftRows,
   saveManpowerRows,
 }: {
   activeFile?: MasterFile;
   employeeMasterFile?: MasterFile;
   manpowerFile?: MasterFile;
-  saveDayoffShiftRows: (rows: DayoffShiftEditorRow[]) => Promise<void>;
+  masterFileHistory: MasterFile[];
+  onDeleteMasterFile: (file: MasterFile) => Promise<void>;
+  onShiftOverridesChanged: () => Promise<void>;
+  shiftOverrideRows: ShiftOverrideRow[];
+  guardAction: (action: () => void, onCancel?: () => void) => void;
+  saveDayoffShiftRows: (rows: DayoffShiftEditorRow[], effectiveFrom?: string, replaceFileId?: string | null, effectiveUntil?: string | null) => Promise<void>;
   saveManpowerRows: (rows: ManpowerEditorRow[]) => Promise<void>;
 }) {
+  const [viewMode, setViewMode] = useState<"edit" | "schedule">("edit");
+  const todayIso = todayIsoLocal();
+  // จำนวนกะพิเศษรายคนที่ตั้งล่วงหน้าไว้ (วันที่ >= วันนี้) — เอาไปโชว์เป็น badge บนแท็บ "ตั้งกะล่วงหน้ารายคน"
+  // ให้เห็นทั้งสองระบบพร้อมกันจากแท็บไหนก็ได้ ไม่ต้องสลับไปมาถึงจะรู้ว่ามีอะไรตั้งไว้บ้าง
+  const upcomingOverrideCount = useMemo(
+    () => shiftOverrideRows.filter((r) => r.work_date >= todayIso).length,
+    [shiftOverrideRows, todayIso],
+  );
+  // ไฟล์ dayoff_shift ที่ตั้งกะล่วงหน้าไว้ (effective_from ในอนาคต, ยังไม่มีผล) เรียงจากใกล้สุดก่อน
+  const pendingFutureVersions = masterFileHistory
+    .filter((f) => f.file_type === "dayoff_shift" && (f.effective_from ?? "") > todayIso)
+    .sort((a, b) => (a.effective_from ?? "").localeCompare(b.effective_from ?? ""));
+  // ถ้าไม่ null แปลว่ากำลังแก้ไขเวอร์ชันที่ตั้งล่วงหน้าไว้อยู่ (โหลดจากไฟล์นี้แทน activeFile ปัจจุบัน)
+  const [pendingEditFile, setPendingEditFile] = useState<MasterFile | null>(null);
+  const [effectiveFrom, setEffectiveFrom] = useState(todayIso);
+  // "" = ไม่มีกำหนดสิ้นสุด (มีผลต่อเนื่องไปจนกว่าจะมีเวอร์ชันใหม่มาแทน)
+  const [effectiveUntil, setEffectiveUntil] = useState("");
+  const sourceFile = pendingEditFile ?? activeFile;
+  // บังคับให้ useEffect โหลดตารางใหม่ (ดูด้านล่าง) แม้ sourceFile?.file_path จะไม่เปลี่ยนค่า — ใช้ตอนบันทึก
+  // "ตั้งกะล่วงหน้า" สำเร็จแล้วอยากดึงข้อมูลจริงของวันนี้กลับมาโชว์ใหม่ ทั้งที่ activeFile ไม่ได้ถูกแตะเลย
+  // (ไม่มีผลต่อวันนี้) จึงมี file_path เดิมเป๊ะ — ถ้าไม่มีตัวนับนี้ effect จะไม่รู้ว่าต้องโหลดใหม่
+  const [reloadTick, setReloadTick] = useState(0);
+  // เปิดป็อปอัพสรุปยืนยันก่อนบันทึก (ดู ScheduleSaveConfirmModal) — เฉพาะเคสตั้งล่วงหน้า/มีวันสิ้นสุด
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
+  // ตัว modal นี้ render เฉพาะตอน viewMode === "edit" เท่านั้น (ดู return ด้านล่าง) — ถ้าสลับไปแท็บ "schedule"
+  // ระหว่างที่เปิดค้างอยู่ (เช่น กด Enter/Space ตอน focus อยู่ที่แท็บผ่านคีย์บอร์ด) ตัว modal จะหายไปจาก DOM แต่
+  // state ยังเป็น true ค้างอยู่ พอสลับกลับมาแท็บ "edit" จะเด้งเปิดขึ้นมาเองอีกทั้งที่ไม่ได้กด Save ใหม่ — เคลียร์
+  // state ทิ้งทุกครั้งที่ออกจากแท็บ "edit" กันปัญหานี้
+  useEffect(() => {
+    if (viewMode !== "edit") setSaveConfirmOpen(false);
+  }, [viewMode]);
   const [rows, setRows] = useState<DayoffShiftEditorRow[]>([]);
   const [originalRows, setOriginalRows] = useState<DayoffShiftEditorRow[]>([]);
   const [jobSiteOptions, setJobSiteOptions] = useState<string[]>([]);
@@ -6586,7 +7520,16 @@ function DayoffShiftEditor({
     rows
       .filter((row) => {
         const orig = originalRows.find((r) => r.id === row.id);
-        return orig && (orig.dayoff !== row.dayoff || orig.shift !== row.shift || orig.shiftStart !== row.shiftStart || orig.jobSite !== row.jobSite);
+        // เดิมไม่เช็ค shiftEnd — ถ้ามีคนแก้แค่ "เวลาออก" อย่างเดียว (ไม่แตะ dayoff/shift/shiftStart/jobSite)
+        // แถวนั้นจะไม่ถูกนับว่าแก้ไข ทั้งที่ shiftEnd จริงๆ เปลี่ยนและจะถูกบันทึกจริง — badge "N แก้ไข" กับ
+        // ป็อปอัพยืนยันก่อนบันทึกจะไม่โชว์คนนี้เลย ทั้งที่ข้อมูลเขาเปลี่ยนจริง
+        return orig && (
+          orig.dayoff !== row.dayoff
+          || orig.shift !== row.shift
+          || orig.shiftStart !== row.shiftStart
+          || orig.shiftEnd !== row.shiftEnd
+          || orig.jobSite !== row.jobSite
+        );
       })
       .map((r) => r.id),
   );
@@ -6594,7 +7537,7 @@ function DayoffShiftEditor({
   const allFilteredSelected = filteredRows.length > 0 && filteredRows.every((r) => selectedIds.has(r.id));
 
   useEffect(() => {
-    if (!activeFile?.file_path) {
+    if (!sourceFile?.file_path) {
       setRows([]);
       setOriginalRows([]);
       setSelectedIds(new Set());
@@ -6607,7 +7550,7 @@ function DayoffShiftEditor({
     // กะ1=AI(col 34), กะ2=AL(col 37), กะ3=AO(col 40)
     const SHIFT_TIME_COL: Record<string, number> = { "กะ1": 34, "กะ2": 37, "กะ3": 40 };
 
-    const dayoffPromise = downloadSheetRows(activeFile.file_path);
+    const dayoffPromise = downloadSheetRows(sourceFile.file_path);
     const empPromise: Promise<{ rows: Record<string, unknown>[]; rawRows: unknown[][] }> =
       employeeMasterFile?.file_path
         ? (async () => {
@@ -6696,7 +7639,7 @@ function DayoffShiftEditor({
       });
 
     return () => { isMounted = false; };
-  }, [activeFile?.file_path, employeeMasterFile?.file_path]);
+  }, [sourceFile?.file_path, employeeMasterFile?.file_path, reloadTick]);
 
   function updateRow(id: string, field: "dayoff" | "shift" | "jobSite", value: string) {
     const targets =
@@ -6835,6 +7778,49 @@ function DayoffShiftEditor({
     setBulkShiftEnd("");
   }
 
+  // เติมเวลาเข้า-ออกให้แถวที่ยังไม่มีเวลาของตัวเอง (ดึงจาก Manpower Plan) — ใช้ฟังก์ชันเดียวกันทั้งตอนคำนวณ
+  // ป็อปอัพยืนยัน (ด้านล่าง) และตอน Save จริงใน performSave เพื่อไม่ให้สิ่งที่โชว์ในป็อปอัพกับสิ่งที่บันทึกจริง
+  // เพี้ยนกัน (เดิมป็อปอัพเทียบจาก rows ดิบก่อน resolve แต่ของจริงบันทึกจาก rows หลัง resolve — ถ้ามีแถวที่
+  // เวลายังว่างตอนแก้ แต่ resolve ได้เวลาจาก Manpower ตอน Save จริง ป็อปอัพจะไม่โชว์เวลาที่กำลังจะถูกเติมนั้นเลย)
+  function resolveRowTimes(sourceRows: DayoffShiftEditorRow[]): DayoffShiftEditorRow[] {
+    return sourceRows.map((row) => {
+      // ผู้จัดการไม่มีกะตายตัว ไม่ต้อง resolve เวลา ปล่อยตามเดิม (มักจะว่างอยู่แล้ว)
+      if (row.shift === "ผู้จัดการ") return row;
+      // ถ้าแถวนี้มีเวลาของตัวเองครบอยู่แล้ว ให้เชื่อเวลานั้นเป็นหลัก ไม่ทับด้วยเวลา "ทางการ" ของกะชื่อเดียวกัน —
+      // เพราะยอมให้หลายคนใช้ชื่อกะซ้ำกันได้ (เช่น "กะ 08:00" ทั้งคู่) แต่เวลาออกจริงต่างกัน
+      // แต่ละคนต้องเก็บเวลาของตัวเองไว้ในแถวตัวเอง ไม่ถูกทับให้เท่ากับคนแรกที่ตั้งชื่อนี้
+      if (row.shiftStart && row.shiftEnd) return row;
+      const locked = lookupManpower(row.dept, row.jobSite, row.shift);
+      // ไม่มีเวลาของตัวเองเลย ต้องหาเวลามาเติม — ถ้าไม่พบใน Manpower ด้วยก็ปล่อยว่างไป
+      const shiftStart = locked?.shiftStart ?? "";
+      const shiftEnd = locked?.shiftEnd ?? "";
+      if (shiftStart === row.shiftStart && shiftEnd === row.shiftEnd) return row;
+      let raw = setRowCol(row.raw, shiftStart, "เวลาเข้างาน", "เวลาเข้า", "shift_start");
+      raw = setRowCol(raw, shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
+      return { ...row, shiftStart, shiftEnd, raw };
+    });
+  }
+
+  // สรุปว่าแก้ใครไปบ้าง อะไรเปลี่ยนจากอะไรเป็นอะไร — ใช้โชว์เป็นตารางในป็อปอัพยืนยันก่อนบันทึก (แทน window.confirm
+  // ที่บอกแค่วันที่มีผล ไม่บอกรายละเอียด) ไม่ต้องดาวน์โหลด/parse ไฟล์ไหนเพิ่มเลย เพราะ rows/originalRows
+  // มีอยู่ในหน่วยความจำอยู่แล้วจากตอนโหลดหน้านี้ — เป็นตาราง 1 แถวต่อ 1 คน อ่านง่ายกว่าตอนแก้หลายคนพร้อมกัน
+  // เทียบจาก resolveRowTimes(rows) (หลัง resolve เวลาแล้ว) ไม่ใช่ rows ดิบ ให้ตรงกับสิ่งที่จะถูกบันทึกจริง
+  const changedRowsForConfirm = resolveRowTimes(rows)
+    .filter((row) => modifiedIds.has(row.id))
+    .map((row) => {
+      const orig = originalRows.find((r) => r.id === row.id);
+      return {
+        empId: row.empId,
+        name: row.name,
+        dept: row.dept,
+        jobSite: { changed: Boolean(orig && orig.jobSite !== row.jobSite), from: orig?.jobSite ?? "", to: row.jobSite },
+        dayoff: { changed: Boolean(orig && orig.dayoff !== row.dayoff), from: orig?.dayoff ?? "", to: row.dayoff },
+        shift: { changed: Boolean(orig && orig.shift !== row.shift), from: orig?.shift ?? "", to: row.shift },
+        shiftStart: { changed: Boolean(orig && orig.shiftStart !== row.shiftStart), from: orig?.shiftStart ?? "", to: row.shiftStart },
+        shiftEnd: { changed: Boolean(orig && orig.shiftEnd !== row.shiftEnd), from: orig?.shiftEnd ?? "", to: row.shiftEnd },
+      };
+    });
+
   async function handleSave() {
     // นับคนที่มีกะแล้วแต่ยังไม่มีเวลาของตัวเองและไม่มีข้อมูลใน Manpower Plan ให้อ้างอิง
     // (ไม่นับคนที่ยังไม่ได้ตั้งกะ ผู้จัดการซึ่งไม่มีกะตายตัวอยู่แล้ว หรือคนที่มีเวลาของตัวเองครบแล้ว)
@@ -6851,11 +7837,31 @@ function DayoffShiftEditor({
       );
       if (!ok) return;
     }
+    if (effectiveUntil && effectiveUntil < effectiveFrom) {
+      window.alert("วันสิ้นสุดต้องไม่น้อยกว่าวันที่มีผลตั้งแต่");
+      return;
+    }
+    // มีผลทันที (ไม่ใช่ตั้งล่วงหน้า) และไม่ได้กำหนดวันสิ้นสุด — เคสธรรมดาสุด ไม่ต้องมีป็อปอัพสรุปมาคั่น
+    if (effectiveFrom <= todayIso && !effectiveUntil) {
+      await performSave();
+      return;
+    }
+    // เคสอื่น (ตั้งล่วงหน้า และ/หรือ กำหนดวันสิ้นสุด) — โชว์ป็อปอัพสรุปก่อนเสมอ ให้ ScheduleSaveConfirmModal
+    // เรียก performSave() เองตอนกด Save ในป็อปอัพ
+    setSaveConfirmOpen(true);
+  }
+
+  async function performSave() {
+    const isFutureScheduled = effectiveFrom > todayIso;
     setIsSaving(true);
     try {
       // บันทึก Manpower ก่อน ถ้ามีกะใหม่ที่สร้างจากการปรับเวลาในหน้านี้ค้างอยู่ — ต้องให้ Manpower มีแถวนั้นจริง
       // ก่อนที่ resolve เวลาด้านล่างจะไปค้นหามันเจอ
-      if (manpowerDirty) {
+      // แต่ถ้ากำลังตั้งกะล่วงหน้า (ยังไม่มีผลถึงวันนี้) ห้ามบันทึก Manpower Plan ทันที เพราะ Manpower Plan
+      // ไม่มีแนวคิด "มีผลตั้งแต่วันที่" แบบ dayoff_shift — บันทึกตอนนี้จะไปเปลี่ยนเวลาทำงานของ "วันนี้" จริง
+      // ทั้งที่กะที่เพิ่งตั้งยังไม่ถึงกำหนด ไม่จำเป็นด้วยเพราะแต่ละแถวใน dayoff_shift ที่ resolve ด้านล่าง
+      // จะฝังเวลาของตัวเองไว้ในแถวอยู่แล้ว ไม่ต้องพึ่ง Manpower Plan มาเติมให้ตอนโหลดเวอร์ชันล่วงหน้านี้อีกที
+      if (manpowerDirty && !isFutureScheduled) {
         const mpRowsToSave: ManpowerEditorRow[] = manpowerRows.map((r, i) => ({ id: `mp-${i}`, ...r }));
         await saveManpowerRows(mpRowsToSave);
         setManpowerDirty(false);
@@ -6878,9 +7884,19 @@ function DayoffShiftEditor({
         raw = setRowCol(raw, shiftEnd, "เวลาออก", "เวลาออกงาน", "shift_end");
         return { ...row, shiftStart, shiftEnd, raw };
       });
-      await saveDayoffShiftRows(resolved);
-      setRows(resolved);
-      setOriginalRows(resolved);
+      await saveDayoffShiftRows(resolved, effectiveFrom, pendingEditFile?.id ?? null, effectiveUntil || null);
+      setEffectiveUntil("");
+      if (isFutureScheduled) {
+        // บันทึกเป็นเวอร์ชันล่วงหน้าเรียบร้อย — กลับไปแสดง/แก้กะปัจจุบันของวันนี้ต่อ (ไม่ใช่เวอร์ชันที่เพิ่งตั้งไว้)
+        // activeFile ไม่ได้ถูกแตะเลย (การตั้งล่วงหน้าไม่กระทบวันนี้) — file_path เดิมเป๊ะ ต้องสั่ง reload ตรงๆ
+        // ด้วย reloadTick ไม่งั้น useEffect จะไม่รู้ว่าต้องดึงข้อมูลใหม่ ตารางจะค้างโชว์ข้อมูลที่เพิ่งแก้ไปแทน
+        setPendingEditFile(null);
+        setEffectiveFrom(todayIso);
+        setReloadTick((t) => t + 1);
+      } else {
+        setRows(resolved);
+        setOriginalRows(resolved);
+      }
     } catch {
       // error already set by saveDayoffShiftRows/saveManpowerRows
     } finally {
@@ -6888,14 +7904,101 @@ function DayoffShiftEditor({
     }
   }
 
+  // โชว์ badge จำนวนกะที่ตั้งล่วงหน้าไว้ของทั้งสองระบบบนแท็บเสมอ ไม่ว่าจะอยู่แท็บไหน — เพื่อให้เห็นว่ามีอะไร
+  // ตั้งล่วงหน้าไว้บ้างจากทั้งสองระบบพร้อมกัน (ระบบตารางหลักทั้งบริษัท vs ระบบกะพิเศษรายคน) โดยไม่ต้องสลับแท็บไปดู
+  const tabSwitcher = (
+    <div className="master-sub-tabs dayoff-view-tabs">
+      <button className={`master-sub-tab${viewMode === "edit" ? " active" : ""}`} type="button" onClick={() => setViewMode("edit")}>
+        <Pencil size={15} />แก้ไข Dayoff & Shift
+        {pendingFutureVersions.length > 0 ? <span className="modified-badge">{pendingFutureVersions.length}</span> : null}
+      </button>
+      <button className={`master-sub-tab${viewMode === "schedule" ? " active" : ""}`} type="button" onClick={() => setViewMode("schedule")}>
+        <CalendarClock size={15} />ตั้งกะล่วงหน้ารายคน
+        {upcomingOverrideCount > 0 ? <span className="modified-badge">{upcomingOverrideCount}</span> : null}
+      </button>
+    </div>
+  );
+
+  if (viewMode === "schedule") {
+    return (
+      <>
+        {tabSwitcher}
+        <ShiftDayScheduleForm
+          employeeMasterFile={employeeMasterFile}
+          manpowerFile={manpowerFile}
+          masterFileHistory={masterFileHistory}
+          onDeleteMasterFile={onDeleteMasterFile}
+          guardAction={guardAction}
+          onOverridesChanged={onShiftOverridesChanged}
+        />
+      </>
+    );
+  }
+
   return (
+    <>
+    {tabSwitcher}
     <section className="panel dayoff-editor-panel">
       <div className="panel-title-row">
-        <div>
+        <div className="dayoff-header-title">
           <h3>แก้ไข Dayoff & Shift</h3>
-          <p>ปรับวันหยุดประจำสัปดาห์และกะทำงานรายคน แล้วบันทึกเป็น master active ชุดใหม่</p>
+          <p>
+            {pendingEditFile
+              ? `กำลังแก้ไขกะที่ตั้งล่วงหน้าไว้ มีผลตั้งแต่ ${formatDateBE(pendingEditFile.effective_from ?? "")}` +
+                (pendingEditFile.effective_until ? ` ถึง ${formatDateBE(pendingEditFile.effective_until)}` : "")
+              : <>ปรับวันหยุดประจำสัปดาห์และกะทำงานรายคน<br />แล้วบันทึกเป็น master active ชุดใหม่</>}
+          </p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="dayoff-header-actions">
+          <label className="effective-from-field">
+            ตั้งกะทำงานล่วงหน้า ตั้งแต่วันที่
+            <div className="date-input-shell">
+              <input
+                type="date"
+                value={effectiveFrom}
+                min={todayIso}
+                onChange={(e) => {
+                  const next = e.target.value || todayIso;
+                  setEffectiveFrom(next);
+                  // ผูกตารางกับวันที่ที่เลือก: ถ้าวันนี้มีเวอร์ชันที่ตั้งล่วงหน้าไว้อยู่แล้ว โหลดข้อมูลของเวอร์ชัน
+                  // นั้นมาให้แก้ต่อทันที (เหมือนกด "แก้ไข" ในกล่องด้านล่างให้เอง) ไม่ต้องไปหากดเอง — ถ้าไม่มี
+                  // เวอร์ชันของวันนี้ ให้กลับไปโหลดตารางกะ "ปัจจุบันจริง" เป็นฐานตั้งต้นแทน (ออกจากโหมดแก้ pending
+                  // เดิมถ้ากำลังแก้อยู่) เพื่อไม่ให้ตารางค้างโชว์ข้อมูลของวันที่ไม่ตรงกับช่องวันที่อีกต่อไป
+                  const matchingPending = pendingFutureVersions.find((f) => f.effective_from === next);
+                  if (matchingPending) {
+                    setPendingEditFile(matchingPending);
+                    setEffectiveUntil(matchingPending.effective_until ?? "");
+                  } else {
+                    if (effectiveUntil && effectiveUntil < next) setEffectiveUntil(next);
+                    if (pendingEditFile && next !== pendingEditFile.effective_from) setPendingEditFile(null);
+                  }
+                }}
+              />
+              <span className="date-input-be">{effectiveFrom ? formatDateBE(effectiveFrom) : "วว/ดด/ปปปป"}</span>
+            </div>
+          </label>
+          <label className="effective-from-field">
+            <span className="effective-until-toggle">
+              <input
+                type="checkbox"
+                checked={effectiveUntil !== ""}
+                onChange={(e) => setEffectiveUntil(e.target.checked ? (effectiveFrom || todayIso) : "")}
+              />
+              ถึงวันที่ (ไม่บังคับ)
+            </span>
+            {/* render ไว้ตลอด (แค่ซ่อนด้วย visibility เมื่อไม่ติ๊ก) แทนการ conditional-render ไม่งั้นความกว้าง
+                ของแถวนี้จะเปลี่ยนตอนติ๊ก/ไม่ติ๊ก ทำให้ปุ่มข้างๆ (Save ฯลฯ) ขยับตำแหน่งไปมา */}
+            <div className={`date-input-shell${effectiveUntil === "" ? " date-input-shell-hidden" : ""}`}>
+              <input
+                type="date"
+                value={effectiveUntil || effectiveFrom || todayIso}
+                min={effectiveFrom || todayIso}
+                disabled={effectiveUntil === ""}
+                onChange={(e) => setEffectiveUntil(e.target.value || effectiveFrom || todayIso)}
+              />
+              <span className="date-input-be">{formatDateBE(effectiveUntil || effectiveFrom || todayIso)}</span>
+            </div>
+          </label>
           <button
             className="secondary-button"
             disabled={!rows.length}
@@ -6907,13 +8010,17 @@ function DayoffShiftEditor({
             แนะนำหน่วยงานย่อยจาก Manpower
           </button>
           <button
-            className="primary-button"
-            disabled={!rows.length || isSaving}
+            className="primary-button dayoff-save-button"
+            disabled={!rows.length || isSaving || saveConfirmOpen}
             onClick={handleSave}
             type="button"
           >
             <UploadCloud size={17} />
-            {isSaving ? "Saving..." : `Save${modifiedIds.size > 0 ? ` (${modifiedIds.size} แก้ไข)` : ""}`}
+            {isSaving
+              ? "Saving..."
+              : effectiveFrom > todayIso
+                ? "ตั้งกะล่วงหน้า"
+                : `Save${modifiedIds.size > 0 ? ` (${modifiedIds.size} แก้ไข)` : ""}`}
           </button>
         </div>
       </div>
@@ -7160,6 +8267,9 @@ function DayoffShiftEditor({
                   const knownTitle = locked
                     ? "ตรงกับเวลาที่ตั้งไว้ใน Manpower"
                     : "ยังไม่มีเวลานี้ใน Manpower — กด Save แล้วระบบจะบันทึกเป็นกะใหม่ให้อัตโนมัติ";
+                  // เวลาออกน้อยกว่าเวลาเข้า = ข้ามเที่ยงคืน (กะกลางคืน) — โชว์ badge +1D ให้เห็นตรงแถวเลย
+                  // ไม่ใช่แค่คำอธิบายลอยๆ ท้ายตาราง (ดู legend "+1D" ด้านล่าง)
+                  const crossesMidnight = isOvernightShift(row.shiftStart, row.shiftEnd);
                   return (
                     <>
                       <td>
@@ -7171,12 +8281,17 @@ function DayoffShiftEditor({
                         />
                       </td>
                       <td className="shift-end-cell">
-                        <TimeInput24
-                          value={row.shiftEnd}
-                          onChange={(v) => updateRowTime(row, "shiftEnd", v)}
-                          className={`time24-btn shift-time-input${locked ? "" : " time24-unresolved"}`}
-                          title={knownTitle}
-                        />
+                        <span className="shift-end-cell-inner">
+                          <TimeInput24
+                            value={row.shiftEnd}
+                            onChange={(v) => updateRowTime(row, "shiftEnd", v)}
+                            className={`time24-btn shift-time-input${locked ? "" : " time24-unresolved"}`}
+                            title={knownTitle}
+                          />
+                          {crossesMidnight ? (
+                            <span className="shift-end-plus1d" title="เวลาออกงานเป็นวันถัดไป (กะกลางคืน)">+1D</span>
+                          ) : null}
+                        </span>
                       </td>
                     </>
                   );
@@ -7195,17 +8310,31 @@ function DayoffShiftEditor({
           </tbody>
         </table>
       </div>
-      {filteredRows.some((r) => {
-        const locked = lookupManpower(r.dept, r.jobSite, r.shift);
-        const start = locked?.shiftStart || r.shiftStart;
-        const end = locked?.shiftEnd || r.shiftEnd || (start ? addHoursToTime(start, 9) : "");
-        return end && Number(end.split(":")[0]) < Number((start || "0").split(":")[0]);
-      }) && (
+      {/* ใช้เงื่อนไขเดียวกับ badge +1D รายแถวเป๊ะ (เทียบ shiftStart/shiftEnd ดิบของแถวเท่านั้น ไม่ปนเวลาที่
+          resolve จาก Manpower) กันไม่ให้ legend กับ badge จริงไม่ตรงกัน (เช่น legend ขึ้นแต่ไม่มีแถวไหนมี badge) */}
+      {filteredRows.some((r) => isOvernightShift(r.shiftStart, r.shiftEnd)) && (
         <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>
           <span style={{ color: "#fcd34d", fontWeight: 600 }}>+1D</span> = เวลาออกงานเป็นวันถัดไป (กะกลางคืน)
         </p>
       )}
     </section>
+    {saveConfirmOpen ? (
+      <ScheduleSaveConfirmModal
+        effectiveFrom={effectiveFrom}
+        effectiveUntil={effectiveUntil}
+        isFutureScheduled={effectiveFrom > todayIso}
+        collidesWithOtherPending={pendingFutureVersions.some(
+          (f) => f.effective_from === effectiveFrom && f.id !== pendingEditFile?.id,
+        )}
+        changedRows={changedRowsForConfirm}
+        isSaving={isSaving}
+        onCancel={() => setSaveConfirmOpen(false)}
+        onConfirm={() => {
+          void performSave().then(() => setSaveConfirmOpen(false));
+        }}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -11315,3 +12444,4 @@ function HelpGuidePage({
     </section>
   );
 }
+

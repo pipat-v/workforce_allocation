@@ -2297,6 +2297,106 @@ button {
   margin-top: 6px;
 }
 
+.dayoff-view-tabs {
+  margin-bottom: 10px;
+}
+
+/* แถว "ทั้งหน่วยงาน" ในตารางสรุปกะที่แก้ไขล่วงหน้า — ทำพื้นหลังต่างจากแถวรายคนเล็กน้อยให้แยกประเภทง่ายด้วยตา
+   จำกัดสี text แค่ td โดยตรง (ไม่ลาม descendant) แล้วคืนสีปกติให้ .icon-button ที่อยู่ข้างในแถวนี้โดยเฉพาะ —
+   เดิม `.dayoff-summary-org-row td { color }` มี specificity สูงกว่า `.icon-button` เลยทำให้ไอคอนถังขยะ
+   ในแถวนี้กลายเป็นสีม่วงแทนสีเทาปกติ (ถูกต้องแค่ตอน hover ที่มี .icon-button.danger:hover specificity สูงกว่า) */
+.dayoff-summary-org-row > td {
+  color: #5b21b6;
+}
+
+.dayoff-summary-org-row .icon-button {
+  color: var(--muted);
+}
+
+.dayoff-summary-type-badge {
+  display: inline-block;
+  background: #ede9fe;
+  color: #5b21b6;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  margin-right: 6px;
+}
+
+.dayoff-header-title {
+  min-width: 0;
+}
+
+.dayoff-header-title p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+}
+
+/* แถวหัวข้อของ dayoff-editor-panel เดิม align-items:center (มาจาก .panel-title-row) ทำให้แถวควบคุม
+   ทางขวาซึ่งเตี้ยกว่าบล็อกหัวข้อ+คำอธิบาย ถูกดันลงมากลางแนวตั้ง ดูต่ำไปหน่อย เลยชิดขึ้นบนแทน */
+.dayoff-editor-panel > .panel-title-row {
+  align-items: flex-start;
+}
+
+/* ซ่อนช่อง "ถึงวันที่" ตอนยังไม่ติ๊ก แต่ยังกินพื้นที่เท่าเดิม (visibility ไม่ใช่ display) กันปุ่มข้างๆ ขยับ */
+.date-input-shell-hidden {
+  visibility: hidden;
+}
+
+.dayoff-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 10px;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.effective-from-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.effective-from-field input[type="date"] {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ความกว้างคงที่ กันไม่ให้ปุ่มข้างๆ ขยับตำแหน่งตอนข้อความเปลี่ยนยาวสั้นระหว่าง "Save" กับ "ตั้งกะล่วงหน้า" */
+.dayoff-save-button {
+  justify-content: center;
+  min-width: 148px;
+}
+
+.effective-until-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* ไม่ใส่ min-height — ต้องสูงเท่าบรรทัดข้อความล้วนของ label "ตั้งกะทำงานล่วงหน้า ตั้งแต่วันที่" ข้างๆ
+     ไม่งั้นสองแถวจะไม่ตรงกัน (checkbox ทำให้บรรทัดนี้สูงกว่าบรรทัดข้อความเฉยๆ) */
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.effective-until-toggle input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  cursor: pointer;
+}
+
 .modified-badge {
   background: #fef3c7;
   color: #92400e;
@@ -2471,6 +2571,25 @@ button {
   color: var(--muted);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ห่อแค่เนื้อหาข้างใน ไม่ใส่ display:flex ที่ตัว td เอง เพราะ <td> ที่เป็น flex container จะเสีย
+   vertical-align:middle ของ table cell ปกติไป ทำให้เนื้อหาลอยไม่ตรงแนวกับคอลัมน์อื่นในแถวเดียวกัน */
+.shift-end-cell-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shift-end-plus1d {
+  color: #92400e;
+  background: #fef3c7;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
   white-space: nowrap;
 }
 
@@ -5228,6 +5347,7 @@ button.stacked-row {
 
 .modal-panel {
   background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: 14px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.22);
   display: flex;
@@ -5238,6 +5358,32 @@ button.stacked-row {
 
 .diff-modal {
   max-width: 660px;
+}
+
+/* กว้างกว่า .diff-modal ปกติ เพราะแสดงเป็นตารางหลายคอลัมน์ (รหัส/ชื่อ/หน่วยงาน/หน่วยงานย่อย/Dayoff/กะ)
+   แทนการ์ดแบบ diff-changed-row เดิม — อ่านง่ายกว่าเวลาแก้พร้อมกันหลายคน เพราะเทียบกันเป็นแถวตารางตรงๆ */
+.schedule-confirm-modal {
+  max-width: 900px;
+}
+
+.schedule-confirm-table {
+  font-size: 12.5px;
+}
+
+.schedule-confirm-table th,
+.schedule-confirm-table td {
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+/* ข้อความ/คำเตือนเหนือตารางใน ScheduleSaveConfirmModal เดิมไม่มี padding แนวนอนเลย (ต่างจาก .modal-header/
+   .diff-section ที่มี 20px) เลยดูเหมือนข้อความชิดขอบกล่อง — เติม padding แนวนอนให้เท่ากันตลอดทั้งกล่อง */
+.schedule-confirm-note {
+  padding: 0 20px;
+}
+
+.schedule-confirm-section {
+  padding-top: 4px;
 }
 
 .modal-header {
@@ -7420,6 +7566,18 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
 .leave-form-actions .primary-button {
   height: 42px;
   white-space: nowrap;
+}
+
+/* ฟอร์ม "ตั้งกะล่วงหน้ารายคน" มีช่องเยอะกว่าฟอร์มลาล่วงหน้า (กะ, หน่วยงานย่อย, เวลาเข้า, เวลาออก เพิ่มมา)
+   เลยแยก grid template ของตัวเองให้ทุกช่องพอดีแถวเดียว แทนที่จะ wrap ไป 2 แถวเหมือน .leave-form-grid เดิม
+   (ยังใช้คลาส .leave-form-grid ร่วมด้วยเพื่อสืบสไตล์ label/input/select เดิมทั้งหมด แค่ override เฉพาะ
+   grid-template-columns กับ span ของช่องวันที่) */
+.shift-schedule-form-grid.leave-form-grid {
+  grid-template-columns: 1.3fr 1.7fr 0.9fr 0.9fr 0.8fr 0.8fr 0.9fr auto;
+}
+
+.shift-schedule-form-grid .leave-date-field {
+  grid-column: span 1;
 }
 
 .leave-planning-page .error-banner,
