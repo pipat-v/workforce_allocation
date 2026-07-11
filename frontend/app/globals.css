@@ -7362,6 +7362,40 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
   color: #15803d;
 }
 
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+}
+
+.search-box svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.search-box input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13.5px;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+
 .leave-planning-list .search-box {
   width: min(320px, 100%);
 }
