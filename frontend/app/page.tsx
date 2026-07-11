@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -3375,6 +3375,128 @@ function formatLateTime(minutes: number): string {
   return `${h} ชม. ${m} นาที`;
 }
 
+// Renders the badge as a button that opens a portal-based popover instead of
+// an inline <details> block — needed because the dashboard's late-people
+// table lives in a fixed-height, overflow-scrolled card, so an inline expansion
+// either balloons row height or gets clipped by the scroll container.
+function DateHistoryPopover({
+  title,
+  triggerLabel,
+  triggerClassName,
+  dates,
+  chipClassName,
+  emptyText,
+}: {
+  title: string;
+  triggerLabel: ReactNode;
+  triggerClassName: string;
+  dates: string[];
+  chipClassName: string;
+  emptyText: string;
+}) {
+  const [open, setOpen] = useState(false);
+  // null while unmeasured — the popover renders off-screen (hidden) for one
+  // layout pass so we can read its real height before deciding whether it
+  // fits below the trigger or needs to flip above it.
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+  const POPOVER_WIDTH = 208;
+  const GAP = 6;
+
+  const reposition = () => {
+    if (!btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const left = Math.min(rect.left, window.innerWidth - POPOVER_WIDTH - 8);
+    const popoverHeight = dropRef.current?.getBoundingClientRect().height ?? 0;
+    const fitsBelow = rect.bottom + GAP + popoverHeight <= window.innerHeight;
+    const top = fitsBelow ? rect.bottom + GAP : Math.max(8, rect.top - GAP - popoverHeight);
+    setPos({ top, left });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    setPos(null);
+    reposition();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Scroll/resize aren't the only things that can move the trigger button —
+  // e.g. warning a different row can re-sort the table and shift every row
+  // below it, with no scroll or resize event firing at all. Poll every frame
+  // instead so the popover always tracks its trigger regardless of *why* it
+  // moved; the position comparison keeps this from causing extra re-renders.
+  useEffect(() => {
+    if (!open) return;
+    let rafId = requestAnimationFrame(function loop() {
+      if (!btnRef.current) { setOpen(false); return; }
+      const rect = btnRef.current.getBoundingClientRect();
+      const left = Math.min(rect.left, window.innerWidth - POPOVER_WIDTH - 8);
+      const popoverHeight = dropRef.current?.getBoundingClientRect().height ?? 0;
+      const fitsBelow = rect.bottom + GAP + popoverHeight <= window.innerHeight;
+      const top = fitsBelow ? rect.bottom + GAP : Math.max(8, rect.top - GAP - popoverHeight);
+      setPos((prev) => (prev && prev.top === top && prev.left === left) ? prev : { top, left });
+      rafId = requestAnimationFrame(loop);
+    });
+    return () => cancelAnimationFrame(rafId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleDown = (e: MouseEvent) => {
+      const clickedPortal = dropRef.current?.contains(e.target as Node);
+      const clickedBtn = btnRef.current?.contains(e.target as Node);
+      if (!clickedPortal && !clickedBtn) setOpen(false);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", handleDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const sortedDates = [...dates].sort().reverse();
+
+  const popover = open && typeof document !== "undefined"
+    ? createPortal(
+        <div
+          ref={dropRef}
+          className="date-history-popover"
+          style={
+            pos
+              ? { position: "fixed", top: pos.top, left: pos.left, width: POPOVER_WIDTH }
+              : { position: "fixed", top: -9999, left: -9999, width: POPOVER_WIDTH, visibility: "hidden" }
+          }
+        >
+          <div className="date-history-popover-title">{title}</div>
+          {sortedDates.length > 0 ? (
+            <div className="date-history-popover-grid">
+              {sortedDates.map((date, i) => (
+                <span key={date} className={`${chipClassName}${i === 0 ? " date-history-latest" : ""}`}>{formatDateTH(date)}</span>
+              ))}
+            </div>
+          ) : (
+            <span className="no-warn">{emptyText}</span>
+          )}
+        </div>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <>
+      <button type="button" ref={btnRef} className={triggerClassName} onClick={() => setOpen((o) => !o)}>
+        {triggerLabel}
+      </button>
+      {popover}
+    </>
+  );
+}
+
 function getSafeFileExtension(filename: string) {
   const match = filename.toLowerCase().match(/\.(csv|xlsx|xls)$/);
   return match ? `.${match[1]}` : "";
@@ -3611,32 +3733,33 @@ function DashboardPanels({
     }
     return counts;
   }, [monthlyAbsentDates]);
+  // A warning issued for the date currently being viewed shouldn't retroactively
+  // hide that same date's own lateness (the reason it was warned) — it should
+  // only reset the streak going forward, starting from the next late day. So
+  // the warn date used as the cutoff excludes isoTargetDate itself; only PAST
+  // warn dates count toward resetting what's shown for the current view.
   const lateAfterLastWarnCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const [empId, lateDates] of Object.entries(monthlyLateDates)) {
-      const effectiveWarnDates = warnedIds.has(empId) && isoTargetDate
-        ? Array.from(new Set([...(warnDates[empId] ?? []), isoTargetDate])).sort()
-        : (warnDates[empId] ?? []);
-      const latestWarnDate = effectiveWarnDates.at(-1);
+      const priorWarnDates = (warnDates[empId] ?? []).filter((d) => d !== isoTargetDate);
+      const latestWarnDate = priorWarnDates.at(-1);
       counts[empId] = latestWarnDate
         ? lateDates.filter((date) => date > latestWarnDate).length
         : lateDates.length;
     }
     return counts;
-  }, [isoTargetDate, monthlyLateDates, warnDates, warnedIds]);
+  }, [isoTargetDate, monthlyLateDates, warnDates]);
   const lateAfterLastWarnDates = useMemo(() => {
     const datesByEmployee: Record<string, string[]> = {};
     for (const [empId, lateDates] of Object.entries(monthlyLateDates)) {
-      const effectiveWarnDates = warnedIds.has(empId) && isoTargetDate
-        ? Array.from(new Set([...(warnDates[empId] ?? []), isoTargetDate])).sort()
-        : (warnDates[empId] ?? []);
-      const latestWarnDate = effectiveWarnDates.at(-1);
+      const priorWarnDates = (warnDates[empId] ?? []).filter((d) => d !== isoTargetDate);
+      const latestWarnDate = priorWarnDates.at(-1);
       datesByEmployee[empId] = latestWarnDate
         ? lateDates.filter((date) => date > latestWarnDate)
         : lateDates;
     }
     return datesByEmployee;
-  }, [isoTargetDate, monthlyLateDates, warnDates, warnedIds]);
+  }, [isoTargetDate, monthlyLateDates, warnDates]);
   const previousAttendanceCompareDates = useMemo(() => getPreviousDateKeys(isoTargetDate, 3), [isoTargetDate]);
   const dashboardLateRows = lateSort
     ? lateSort.key === "scanIn"
@@ -3756,13 +3879,14 @@ function DashboardPanels({
           <div className="late-preview-table">
             <table className="table compact-table">
               <colgroup>
-                <col style={{ width: "17%" }} />
-                <col style={{ width: "15%" }} />
-                <col style={{ width: "9%" }} />
+                <col style={{ width: "18%" }} />
                 <col style={{ width: "14%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "12%" }} />
                 <col style={{ width: "11%" }} />
-                <col style={{ width: "15%" }} />
-                <col style={{ width: "19%" }} />
               </colgroup>
               <thead>
                 <tr>
@@ -3788,37 +3912,32 @@ function DashboardPanels({
                   return (
                   <tr key={`dashboard-late-${row.empId}-${row.scanIn}`} className={warned ? "row-warned" : ""}>
                     <td>{row.name}</td>
-                    <td><span className="dept-chip">{row.dept}</span></td>
+                    <td><span className="dept-chip" title={row.dept}>{row.dept}</span></td>
                     <td><span className="shift-start-badge">{row.shiftStart}</span></td>
                     <td className="scan-cell">{scanDateBadge(row.scanInDate || isoTargetDate)}{row.scanIn}</td>
-                    <td><span className="late-minutes-badge">{formatLateTime(row.minutesLate)}</span></td>
+                    <td><span className={`late-minutes-badge${row.minutesLate >= 60 ? " fire" : ""}`}>{formatLateTime(row.minutesLate)}</span></td>
                     <td>
                       {monthlyLate > 0 ? (
-                        <details className="warn-history-details">
-                          <summary className={`monthly-count-badge late-count-clickable${riskLevel ? ` ${riskLevel}` : ""}`}>
-                            {monthlyLate} ครั้ง
-                            {riskLevel === "fire" ? " 🔴" : riskLevel === "warn" ? " 🟡" : ""}
-                          </summary>
-                          <div className="warn-history-dates">
-                            {monthlyLateDateList.map((date) => (
-                              <span key={date} className="warn-date-chip late-date-chip">{formatDateTH(date)}</span>
-                            ))}
-                          </div>
-                        </details>
+                        <DateHistoryPopover
+                          title={`วันที่สาย (${monthlyLate} ครั้ง)`}
+                          triggerLabel={`${monthlyLate} ครั้ง`}
+                          triggerClassName={`monthly-count-badge late-count-clickable${riskLevel ? ` ${riskLevel}` : ""}`}
+                          dates={monthlyLateDateList}
+                          chipClassName="warn-date-chip late-date-chip"
+                          emptyText="-"
+                        />
                       ) : <span className="no-warn">-</span>}
                     </td>
                     <td>
                       {warnCount > 0 ? (
-                        <details className="warn-history-details">
-                          <summary className="warn-count-badge">✓ {warnCount} ครั้ง</summary>
-                          <div className="warn-history-dates">
-                            {warningDates.length > 0
-                              ? warningDates.map((d) => (
-                                  <span key={d} className="warn-date-chip">{formatDateTH(d)}</span>
-                                ))
-                              : <span className="no-warn">ยังไม่มีวันที่เตือน</span>}
-                          </div>
-                        </details>
+                        <DateHistoryPopover
+                          title={`วันที่เตือน (${warnCount} ครั้ง)`}
+                          triggerLabel={`✓ ${warnCount} ครั้ง`}
+                          triggerClassName="warn-count-badge"
+                          dates={warningDates}
+                          chipClassName="warn-date-chip"
+                          emptyText="ยังไม่มีวันที่เตือน"
+                        />
                       ) : <span className="no-warn">-</span>}
                     </td>
                     <td>

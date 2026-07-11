@@ -998,6 +998,23 @@ button {
   border-radius: 999px;
   background: #fef3c7;
   color: #92400e;
+  white-space: nowrap;
+}
+
+.late-minutes-badge.fire {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.shift-start-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #475569;
+  white-space: nowrap;
 }
 
 .link-button {
@@ -1646,12 +1663,14 @@ button {
   align-items: center;
   gap: 3px;
   padding: 2px 8px;
+  border: 0;
   border-radius: 10px;
   font-size: 12px;
   font-weight: 600;
   background: #f1f5f9;
   color: #475569;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .monthly-count-badge.warn {
@@ -1672,12 +1691,14 @@ button {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
+  border: 0;
   border-radius: 12px;
   background: #fef3c7;
   color: #92400e;
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .no-warn {
@@ -2635,11 +2656,33 @@ button {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
-.late-preview-table .warn-history-dates {
-  position: static;
-  margin-top: 6px;
-  min-width: 0;
-  box-shadow: none;
+.date-history-popover {
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+.date-history-popover-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  padding-bottom: 7px;
+  margin-bottom: 7px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.date-history-popover-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.date-history-popover-grid .warn-date-chip {
+  text-align: center;
 }
 
 .warn-date-chip {
@@ -2650,6 +2693,12 @@ button {
   border-radius: 4px;
   padding: 2px 7px;
   white-space: nowrap;
+}
+
+.date-history-latest {
+  background: #fde68a;
+  border-color: #f5c542;
+  font-weight: 700;
 }
 
 /* ── Report topstrip: date + dept filter + refresh button ── */
@@ -3403,9 +3452,9 @@ button.stacked-row {
   font-size: 12px;
 }
 
-.compact-table th,
-.compact-table td {
-  padding: 9px 6px;
+.table.compact-table th,
+.table.compact-table td {
+  padding: 7px 6px;
   white-space: normal;
   word-break: break-word;
   overflow-wrap: break-word;
@@ -3424,7 +3473,16 @@ button.stacked-row {
   text-align: center;
 }
 
-.compact-table .dept-chip,
+.compact-table .dept-chip {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
 .compact-table .monthly-count-badge {
   white-space: normal;
   max-width: 100%;
