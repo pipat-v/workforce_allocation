@@ -7416,6 +7416,10 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
     grid-template-columns: 1fr;
   }
 
+  .leave-date-field {
+    grid-column: auto;
+  }
+
   .section-heading-row {
     flex-direction: column;
   }
@@ -7612,10 +7616,27 @@ button.diff-badge.active { outline: 2px solid currentColor; outline-offset: 1px;
     gap: 12px;
   }
 
+  .leave-date-field {
+    grid-column: auto;
+  }
+
   .leave-form-grid input,
   .leave-form-grid select {
     height: 50px;
     font-size: 16px;
+  }
+
+  .leave-date-inputs {
+    flex-wrap: wrap;
+  }
+
+  .date-input-shell {
+    flex: 1 1 100%;
+  }
+
+  .date-range-separator {
+    flex: 1 1 100%;
+    text-align: center;
   }
 
   .leave-form-actions {
